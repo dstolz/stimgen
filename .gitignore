@@ -1,0 +1,9 @@
+# MATLAB autosave files
+*.asv
+
+# MATLAB editor / session artifacts
+*.m~
+slprj/
+
+# Calibration output written during local testing
+*.esgc
