@@ -87,15 +87,17 @@ If the protocol is missing or the expected parameters are unavailable, the GUIs 
 
 - `.esgc`: calibration files from the `stimgen.calibration` package (legacy `.sgc` files can still be loaded)
 - `.spl`: stimulus-bank files from `StimPlayer`
-- `.eprot`: EPsych protocols, which `StimPlayer` can load to reach hardware
+- `.eprot`: EPsych protocols, which a host can load to reach hardware
 
-The repository also includes `StimGen.prot`/`StimGen.ecfg` assets from earlier tooling generations; current save/load paths revolve around `.esgc` and `.spl`.
+The `StimGen.prot`/`StimGen.ecfg` assets from earlier tooling generations now
+live with EPsych under `examples/stimgen/`, since they deserialize into EPsych
+objects; current save/load paths revolve around `.esgc` and `.spl`.
 
 ## Developer notes
 
 Several package behaviors are driven by file and metadata conventions:
 
-- `stimgen.StimType.list()` scans `obj/+stimgen` to decide which classes appear in GUI lists.
+- `stimgen.StimType.list()` scans `+stimgen` to decide which classes appear in GUI lists.
 - `propMeta()` and `create_gui()` control how stimulus editors are built; a new subclass with clean metadata usually appears in `StimPlayer` without any player changes.
 - `StimType.apply_calibration()` and the calibration engine are coupled through the stimulus class's `CalibrationType` constant.
 

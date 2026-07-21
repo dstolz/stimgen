@@ -117,7 +117,7 @@ experiment timer.
 
 At run time the class:
 
-1. Resolves hardware parameters from its internal runtime.
+1. Resolves hardware parameters through `host.findParameter`.
 2. Regenerates signals for every bank item.
 3. Starts a fixed-rate timer.
 4. Chooses the next bank index using the player-level `SelectionType`.
@@ -130,8 +130,8 @@ between buffer `0` and buffer `1` on successive trials.
 
 ### Required hardware parameters
 
-Hardware playback is enabled only when the loaded protocol's interfaces
-expose these parameter names:
+Hardware playback is enabled only when the host resolves all of these
+parameter names:
 
 - `BufferData_0`
 - `BufferData_1`
@@ -194,7 +194,7 @@ original wrapper object, so round-tripping a multi-object entry through
 
 ## Extending the tool
 
-When a new stimulus class is added under `obj/+stimgen`, `StimPlayer` can
+When a new stimulus class is added under `+stimgen`, `StimPlayer` can
 usually pick it up automatically because it relies on `stimgen.StimType.list`
 and the metadata returned by `get_prop_meta()`.
 
