@@ -9,7 +9,7 @@ classdef (Abstract) HwAdapter < handle
     % absent (fail-fast).
     %
     % See also: stimgen.calibration.WindowsSoundCardAdapter, stimgen.calibration.Engine,
-    %           documentation/stimgen/stimgen_calibration.md
+    %           documentation/stimgen_calibration.md
 
     methods (Abstract)
         % Fs = sample_rate(obj)

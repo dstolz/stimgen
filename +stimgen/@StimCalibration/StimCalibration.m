@@ -23,7 +23,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     %   save_calibration         - Save Engine data to .esgc file.
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.HwAdapter,
-    %           documentation/stimgen/stimgen_StimCalibration.md
+    %           documentation/stimgen_StimCalibration.md
 
     properties (SetAccess = protected)
         Engine  stimgen.calibration.Engine  % core calibration engine

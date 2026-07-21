@@ -4,7 +4,7 @@ classdef StimPlayer < handle
     % obj = stimgen.StimPlayer(HOST)
     % Standalone stimulus bank and playback peripheral.
     %
-    % Developer guide: documentation/stimgen/stimgen_StimPlayer.md
+    % Developer guide: documentation/stimgen_StimPlayer.md
     %
     % Manages a named bank of stimgen.StimPlay objects, schedules them
     % using a serial or shuffle strategy at a configurable global ISI,

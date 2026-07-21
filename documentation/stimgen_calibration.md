@@ -107,13 +107,15 @@ adapter = stimgen.calibration.WindowsSoundCardAdapter( ...
     InputChannel=1);        % microphone input channel index
 ```
 
-**TDT/hardware interface** (when you have an `hw.Interface` object, e.g. from a loaded protocol):
+**Lab hardware via a host application.** stimgen ships no hardware-specific adapter; the host provides one implementing `HwAdapter`. Under EPsych, that is `stimbridge.InterfaceAdapter`, which wraps an `hw.Interface`:
 
 ```matlab
 protocol = epsych.Protocol.load('MyProtocol.eprot');
 protocol.Interfaces(1).connect();
-adapter = stimgen.calibration.InterfaceAdapter(protocol.Interfaces(1));
+adapter = stimbridge.InterfaceAdapter(protocol.Interfaces(1));
 ```
+
+To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`.
 
 ### Step 2 — Create An Engine
 
@@ -226,12 +228,14 @@ The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagn
 
 ## Reference: Package Components
 
-Source: `obj/+stimgen/+calibration/`
+Source: `+stimgen/+calibration/`
 
 - `Engine.m` — calibration orchestration, result storage, save/load, and voltage lookup.
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`).
-- `InterfaceAdapter.m` — concrete adapter wrapping an `hw.Interface` (TDT and similar hardware).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
+
+Host-supplied adapters live outside this package; EPsych provides
+`stimbridge.InterfaceAdapter` for `hw.Interface` devices (TDT and similar).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
 
 ---

@@ -2,46 +2,54 @@
 
 ![CalibrationGui in offline mode: measurement controls and calibrate buttons disabled on the left, empty Temporal/Spectral/Transfer Curve plots on the right, and a "No adapter attached" status message](images/CalibrationGui.png)
 
-Source file: obj/+stimgen/+calibration/CalibrationGui.m  
+Source file: +stimgen/+calibration/CalibrationGui.m  
 Related reference: [stimgen_calibration.md](stimgen_calibration.md)
 
 The screenshot above shows the GUI immediately after construction in [offline mode](#constructor), before `File > Initialize Runtime From Protocol...` has attached an adapter — the calibrate buttons are disabled per [Button Enable Rules](#button-enable-rules) and the status label explains the next step.
 
-CalibrationGui is the standalone calibration UI for the stimgen calibration stack. It owns a `stimgen.calibration.Engine`, can initialize its own `epsych.Runtime` from a protocol file, attaches a compatible hardware interface through `InterfaceAdapter`, and provides interactive controls for reference, tone, click, swept-sine, and filter design workflows.
+CalibrationGui is the standalone calibration UI for the stimgen calibration stack. It owns a `stimgen.calibration.Engine` and provides interactive controls for reference, tone, click, swept-sine, and filter design workflows.
+
+It has no knowledge of any particular hardware or experiment framework. Protocol loading, hardware connection, and adapter construction are delegated to a `stimgen.HardwareHost` supplied by the host application; without one, the GUI runs offline and can still inspect and load saved calibrations.
 
 ## What This File Does
 
 CalibrationGui.m implements:
 
-1. Constructor wiring (offline default or pre-built Engine).
+1. Constructor wiring (offline default, pre-built Engine, or host-driven).
 2. GUI creation (controls, plots, menu actions).
-3. Runtime lifecycle management inside the GUI.
-4. Adapter discovery and attachment from runtime interfaces.
-5. Calibration execution and state/status updates.
-6. Load/save for .esgc calibration files.
+3. Delegation of runtime lifecycle to the host.
+4. Calibration execution and state/status updates.
+5. Load/save for .esgc calibration files.
 
 ## Constructor
 
-Two call patterns are supported:
+Three call patterns are supported:
 
 ```matlab
-% Offline mode — attach hardware later via File > Initialize Runtime From Protocol:
+% Offline mode — no hardware; load/inspect a saved calibration:
 gui = stimgen.calibration.CalibrationGui()
 
 % Pre-built Engine with adapter already attached:
 eng = stimgen.calibration.Engine(adapter);
 gui = stimgen.calibration.CalibrationGui(eng)
+
+% Host-driven — enables File > Initialize Runtime From Protocol:
+gui = stimgen.calibration.CalibrationGui(stimgen.calibration.Engine(), host)
 ```
 
-In both cases, if no adapter is attached at construction time, live calibration buttons are disabled until adapter attachment succeeds.
+If no adapter is attached at construction time, live calibration buttons are disabled until adapter attachment succeeds. The runtime menu actions require a host and raise `stimgen:calibration:CalibrationGui:noHost` without one.
 
 ## Creating An Engine
 
-An `Engine` requires an `HwAdapter` for live measurement. The most common adapter for hardware interfaces is `InterfaceAdapter`:
+An `Engine` requires an `HwAdapter` for live measurement. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; host applications supply their own for lab hardware (EPsych provides `stimbridge.InterfaceAdapter` for `hw.Interface` devices):
 
 ```matlab
-% From an hw.Interface object (e.g. from a loaded protocol):
-adapter = stimgen.calibration.InterfaceAdapter(iface);
+% Built-in sound card adapter:
+adapter = stimgen.calibration.WindowsSoundCardAdapter();
+eng = stimgen.calibration.Engine(adapter);
+
+% Or a host-supplied adapter, e.g. under EPsych:
+adapter = stimbridge.InterfaceAdapter(iface);
 eng = stimgen.calibration.Engine(adapter);
 ```
 
@@ -69,7 +77,7 @@ This section defines the exact requirements for a protocol to be usable with Fil
 1. The protocol must load successfully through epsych.Protocol.load(path).
 2. protocol.Interfaces must contain at least one interface object.
 3. At least one interface must be connectable (iface.connect() results in iface.IsConnected == true).
-4. At least one connected interface must be compatible with stimgen.calibration.InterfaceAdapter.
+4. At least one connected interface must be compatible with stimbridge.InterfaceAdapter.
 
 ### Required interface capabilities
 
@@ -94,13 +102,14 @@ If neither is true, adapter attachment fails with InterfaceAdapter no-sample-rat
 
 ### Runtime integration behavior
 
-When initialization is requested:
+When initialization is requested, CalibrationGui delegates every hardware step to its `stimgen.HardwareHost`:
 
-1. CalibrationGui creates a new epsych.Runtime instance.
-2. It assigns runtime.Interfaces = protocol.Interfaces.
-3. It connects each interface if needed.
-4. It sets runtime interfaces to hw.DeviceState.Preview.
-5. It scans interfaces in order and attaches the first one that can build a calibration InterfaceAdapter.
+1. `host.loadProtocol(path)` — load the protocol.
+2. `host.connect()` — connect each interface.
+3. `host.setMode("Preview")` — put devices in preview mode.
+4. `host.calibrationAdapter()` — obtain an `HwAdapter` for the calibration-capable device.
+
+Choosing *which* device can drive calibration is the host's decision, not the GUI's. Under EPsych, `stimbridge.RuntimeHost` scans interfaces in order and returns the first that can build a `stimbridge.InterfaceAdapter`.
 
 Practical implication:
 
@@ -157,23 +166,23 @@ The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibra
 
 ## Runtime Ownership And Independence
 
-CalibrationGui now owns runtime state internally:
+CalibrationGui holds no runtime or protocol state of its own. It keeps a single `Host` reference (a `stimgen.HardwareHost`, or empty when offline) and asks the host for everything hardware-related. All runtime and protocol objects live on the host side.
 
-1. Runtime property stores the GUI-managed epsych.Runtime.
-2. Protocol property stores the loaded protocol object.
-3. ProtocolFile stores the source path for visibility/debugging.
-
-It does not require StimPlayer runtime handoff to function.
+This is what keeps stimgen independent of any experiment framework, and it means CalibrationGui does not require a StimPlayer runtime handoff to function.
 
 ## Error Surfaces You Should Expect
 
-Common errors for incompatible protocols/interfaces:
+Raised by the GUI itself:
 
-1. stimgen:calibration:CalibrationGui:noRuntimeInterfaces
-2. stimgen:calibration:CalibrationGui:attachAdapterFailed
-3. stimgen:calibration:InterfaceAdapter:missingParameter
-4. stimgen:calibration:InterfaceAdapter:noSampleRate
-5. stimgen:calibration:CalibrationGui:runtimeConnectFailed
+1. `stimgen:calibration:CalibrationGui:noHost` — a runtime menu action was used with no host attached.
+
+Raised by the host (identifiers below are EPsych's `stimbridge`; other hosts will differ):
+
+2. `stimbridge:RuntimeHost:noRuntimeInterfaces`
+3. `stimbridge:RuntimeHost:attachAdapterFailed`
+4. `stimbridge:InterfaceAdapter:missingParameter`
+5. `stimbridge:InterfaceAdapter:noSampleRate`
+6. `stimbridge:RuntimeHost:connectFailed`
 
 These are surfaced in the status label and a uialert dialog.
 
@@ -182,7 +191,7 @@ These are surfaced in the status label and a uialert dialog.
 Use this quick test after protocol changes:
 
 ```matlab
-gui = stimgen.calibration.CalibrationGui();
+gui = stimgen.calibration.CalibrationGui(stimgen.calibration.Engine(), host);
 % In GUI: File > Initialize Runtime From Protocol... and select protocol
 % Expect: status shows adapter attached, calibration buttons enabled
 ```
@@ -202,5 +211,5 @@ When editing protocol hardware circuits for calibration support:
 
 1. [stimgen_calibration.md](stimgen_calibration.md)
 2. [stimgen_StimCalibration.md](stimgen_StimCalibration.md)
-3. obj/+stimgen/+calibration/InterfaceAdapter.m
-4. obj/+stimgen/+calibration/Engine.m
+3. epsych2: obj/+stimbridge/InterfaceAdapter.m
+4. +stimgen/+calibration/Engine.m

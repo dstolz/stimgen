@@ -136,6 +136,6 @@ it.
 
 ## Related files
 
-- [obj/+stimgen/StimPlay.m](../../obj/+stimgen/StimPlay.m)
-- [obj/+stimgen/@StimType/StimType.m](../../obj/+stimgen/@StimType/StimType.m)
-- [obj/+stimgen/@StimPlayer/StimPlayer.m](../../obj/+stimgen/@StimPlayer/StimPlayer.m)
+- [+stimgen/StimPlay.m](../../+stimgen/StimPlay.m)
+- [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
+- [+stimgen/@StimPlayer/StimPlayer.m](../../+stimgen/@StimPlayer/StimPlayer.m)

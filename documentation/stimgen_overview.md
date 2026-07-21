@@ -1,6 +1,6 @@
 # Stimulus Generation Package
 
-`stimgen` is EPsych's stimulus authoring, calibration, and playback layer.
+`stimgen` is a standalone stimulus authoring, calibration, and playback toolbox. It originated as a layer inside EPsych and is now its own package with no dependency on it; host applications integrate through the abstract `stimgen.HardwareHost` and `stimgen.calibration.HwAdapter` classes.
 
 At a high level, the package lets you:
 
@@ -71,11 +71,11 @@ See [stimgen_calibration.md](stimgen_calibration.md) for the full walkthrough.
 - you want easy local speaker preview even when hardware is absent
 - you want to save and reload stimulus banks as `.spl` files
 
-`stimgen.StimPlayer` optionally accepts an `epsych.Protocol` (object or `.eprot` file path) that defines the hardware interfaces used for playback. The older `StimGenInterface` and `StimGenInterface_Simple` GUIs have been removed; `StimPlayer` is the current playback tool.
+`stimgen.StimPlayer` optionally accepts a `stimgen.HardwareHost` that provides the hardware interfaces used for playback; omit it for speaker-preview-only operation. The older `StimGenInterface` and `StimGenInterface_Simple` GUIs have been removed; `StimPlayer` is the current playback tool.
 
 ## Runtime and hardware expectations
 
-Hardware playback assumes a protocol whose hardware layer exposes the parameter names expected by the stimgen RPvds circuit (`StimGenCircuit.rcx`):
+Hardware playback assumes the host exposes the parameter names expected by the stimgen RPvds circuit (`StimGenCircuit.rcx`, shipped with EPsych under `examples/stimgen/`):
 
 - `BufferData_0`, `BufferData_1` — audio data buffers
 - `BufferSize_0`, `BufferSize_1` — buffer length in samples
@@ -106,8 +106,8 @@ Practical implications:
 
 ## Related files
 
-- [obj/+stimgen/@StimType/StimType.m](../../obj/+stimgen/@StimType/StimType.m)
-- [obj/+stimgen/StimPlay.m](../../obj/+stimgen/StimPlay.m)
-- [obj/+stimgen/@StimPlayer/StimPlayer.m](../../obj/+stimgen/@StimPlayer/StimPlayer.m)
-- [obj/+stimgen/@StimCalibration/StimCalibration.m](../../obj/+stimgen/@StimCalibration/StimCalibration.m)
-- [obj/+stimgen/+calibration/](../../obj/+stimgen/+calibration/)
+- [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
+- [+stimgen/StimPlay.m](../../+stimgen/StimPlay.m)
+- [+stimgen/@StimPlayer/StimPlayer.m](../../+stimgen/@StimPlayer/StimPlayer.m)
+- [+stimgen/@StimCalibration/StimCalibration.m](../../+stimgen/@StimCalibration/StimCalibration.m)
+- [+stimgen/+calibration/](../../+stimgen/+calibration/)

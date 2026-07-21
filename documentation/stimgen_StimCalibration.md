@@ -6,7 +6,7 @@ This is a developer reference. If you just want to calibrate a rig, follow [stim
 
 Source class:
 
-- [obj/+stimgen/@StimCalibration/StimCalibration.m](../../obj/+stimgen/@StimCalibration/StimCalibration.m)
+- [+stimgen/@StimCalibration/StimCalibration.m](../../+stimgen/@StimCalibration/StimCalibration.m)
 
 ## Two construction modes
 
@@ -22,10 +22,10 @@ Without arguments the object holds an offline `Engine`. Load a saved `.esgc` fil
 ### Online (measurement) mode
 
 ```matlab
-cal = stimgen.StimCalibration(RUNTIME);
+cal = stimgen.StimCalibration(adapter);
 ```
 
-With a runtime, the constructor builds a `stimgen.calibration.InterfaceAdapter` around the runtime's hardware and launches the calibration GUI so a new calibration can be measured.
+Pass a `stimgen.calibration.HwAdapter` connected to your hardware and the constructor builds an `Engine` around it and launches the calibration GUI so a new calibration can be measured. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; under EPsych, use `stimbridge.InterfaceAdapter(RUNTIME.HW)`.
 
 ## Delegated properties
 

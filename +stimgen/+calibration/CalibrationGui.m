@@ -32,8 +32,8 @@ classdef CalibrationGui < handle
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.HwAdapter,
     %           stimgen.HardwareHost,
-    %           documentation/stimgen/stimgen_CalibrationGui.md,
-    %           documentation/stimgen/stimgen_calibration.md
+    %           documentation/stimgen_CalibrationGui.md,
+    %           documentation/stimgen_calibration.md
 
     properties (SetAccess = private)
         Engine stimgen.calibration.Engine

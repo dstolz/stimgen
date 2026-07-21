@@ -37,18 +37,24 @@ Create the GUI without hardware (speaker preview only):
 sp = stimgen.StimPlayer;
 ```
 
-Create it with a protocol that defines the hardware interfaces, so the `Run`
-button can write buffers and trigger hardware playback:
+Create it with a `stimgen.HardwareHost` so the `Run` button can write buffers
+and trigger hardware playback:
 
 ```matlab
-sp = stimgen.StimPlayer(PROTOCOL);            % epsych.Protocol object
-sp = stimgen.StimPlayer('C:\path\to\my.eprot'); % or a protocol file path
+sp = stimgen.StimPlayer(HOST);   % a stimgen.HardwareHost implementation
 ```
 
-A protocol can also be loaded later from the GUI's **File** menu. Internally,
-`StimPlayer` builds its own private `epsych.Runtime` from the protocol's
-interfaces and puts them in Preview mode; it does not use the main experiment
-timer or session runtime.
+Under EPsych, that host is `stimbridge.RuntimeHost`, which wraps a protocol:
+
+```matlab
+sp = stimgen.StimPlayer(stimbridge.RuntimeHost('C:\path\to\my.eprot'));
+```
+
+A protocol can also be loaded later from the GUI's **File** menu, which
+delegates to the host. `StimPlayer` itself holds no runtime or protocol state:
+it asks the host to connect the interfaces and put them in Preview mode, then
+resolves buffer/trigger parameters through `host.findParameter`. It does not
+use the main experiment timer or session runtime.
 
 ## UI workflow
 
@@ -203,8 +209,8 @@ before changing `StimPlayer` itself.
 
 ## Related files
 
-- [obj/+stimgen/@StimPlayer/StimPlayer.m](../../obj/+stimgen/@StimPlayer/StimPlayer.m)
-- [obj/+stimgen/StimPlay.m](../../obj/+stimgen/StimPlay.m)
+- [+stimgen/@StimPlayer/StimPlayer.m](../../+stimgen/@StimPlayer/StimPlayer.m)
+- [+stimgen/StimPlay.m](../../+stimgen/StimPlay.m)
 
 ## Related documentation
 

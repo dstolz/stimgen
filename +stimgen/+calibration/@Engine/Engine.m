@@ -35,7 +35,7 @@ classdef Engine < handle
     %
     % See also: stimgen.calibration.HwAdapter,
     %           stimgen.calibration.WindowsSoundCardAdapter,
-    %           documentation/stimgen/stimgen_calibration.md
+    %           documentation/stimgen_calibration.md
 
     % --- Persistent calibration parameters ---
     properties (SetAccess = protected, SetObservable, AbortSet)
