@@ -179,6 +179,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
                     set(hen, 'Enable', 'off');
                     h.RefMeasure.Enable = 'on';
                     h.RefMeasure.Text   = 'Stop';
+                    if isfield(h, 'RefMeasureTool'), h.RefMeasureTool.Enable = 'on'; end
                     drawnow;
 
                     try
@@ -202,6 +203,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
                     set(hen, 'Enable', 'off');
                     h.RunCalibration.Enable = 'on';
                     h.RunCalibration.Text   = 'Stop';
+                    if isfield(h, 'RunCalibrationTool'), h.RunCalibrationTool.Enable = 'on'; end
                     drawnow;
 
                     try

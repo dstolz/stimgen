@@ -134,6 +134,10 @@ File menu actions:
 4. Load .esgc
 5. Save .esgc
 
+A toolbar above the plots mirrors these five actions as icon buttons (built by
+`build_toolbar_`) for one-click access; it does not add any behavior beyond
+the File menu.
+
 Recommended sequence:
 
 1. Initialize Runtime From Protocol...
@@ -149,13 +153,15 @@ Recommended sequence:
 When Calibrate Tones, Calibrate Clicks, or Calibrate Swept Sine is invoked, the GUI prompts for measurement parameters via an input dialog. The previous values are remembered as MATLAB preferences between sessions.
 
 For tones and clicks, the dialog collects:
-- Frequency/duration vector (as a comma-separated or `linspace`/`logspace` expression)
+- Frequency vector in Hz / click-duration vector in **milliseconds** (as a comma-separated or `linspace`/`logspace` expression)
 - Repeat count (number of averages per point; default 1)
 
 For swept sine, the dialog collects:
-- Chirp duration in seconds (default 1)
+- Chirp duration in **milliseconds** (default 1000)
 - Frequency vector (optional override)
 - Repeat count (number of chirp captures to average; default 4)
+
+Durations are entered in milliseconds and converted to seconds before reaching the `Engine`, whose `calibrate_clicks` and `calibrate_swept_sine` signatures are unchanged and still take seconds. The stored preferences use `clickDurationsMs` and `sweptSineDurationMs` keys, so values remembered from a pre-milliseconds session are not silently reinterpreted.
 
 The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibrate_clicks`, or `Engine.calibrate_swept_sine` as the `repeatCount` argument.
 

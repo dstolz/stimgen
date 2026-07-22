@@ -1,12 +1,36 @@
 function playback_control(obj, src, ~)
 % playback_control(obj, src) - Handle Run/Pause/Stop button presses.
+% playback_control(obj, action) - Drive playback programmatically.
 %
 % Parameters:
-%   src - uibutton that was pressed (Text is 'Run', 'Stop', or 'Pause')
+%   src - uibutton that was pressed (Text is 'Run', 'Stop', 'Pause' or
+%         'Resume'), or an action string: "Run", "Stop", "Pause" or
+%         "Resume".  The string form lets an interfacing application run the
+%         session when the Run/Pause buttons are hidden — see
+%         set_control_visibility.
 
 h = obj.handles;
 
-switch lower(src.Text)
+if nargin < 2 || isempty(src)
+    src = h.RunBtn;
+end
+
+if ischar(src) || isstring(src)
+    action = lower(string(src));
+    switch action
+        case {"run", "stop"}
+            src = h.RunBtn;
+        case {"pause", "resume"}
+            src = h.PauseBtn;
+        otherwise
+            error('stimgen:StimPlayer:InvalidPlaybackAction', ...
+                'Playback action must be "Run", "Stop", "Pause" or "Resume".');
+    end
+else
+    action = lower(string(src.Text));
+end
+
+switch action
 
     case 'run'
         try
@@ -83,6 +107,7 @@ switch lower(src.Text)
             end
             h.RunBtn.Text     = 'Run';
             h.PauseBtn.Enable = 'off';
+            h.PauseBtn.Text   = 'Pause';
             obj.set_status_("Playback stopped.");
             obj.disconnect_interfaces_;
             obj.lock_bank_controls_(false);
@@ -92,7 +117,7 @@ switch lower(src.Text)
                 "StimPlayer could not stop playback cleanly.");
         end
 
-    case 'pause'
+    case {'pause', 'resume'}
         try
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
                 if strcmp(obj.Timer.Running, 'on')

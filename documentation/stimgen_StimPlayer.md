@@ -86,8 +86,12 @@ Important controls:
 - `BankList`: selects the item shown in the editor panel
 - `RepsField`: updates the repetition target for the selected bank item
 - `ISIField`: edits the global inter-stimulus interval range used by the
-  player timer
+  player timer, entered in **milliseconds** (`StimPlayer.ISI` itself stays in
+  seconds)
 - `OrderDD`: chooses the cross-item playback order, `Serial` or `Shuffle`
+
+`RepsField`, `ISIField`, and `OrderDD` can be hidden by an interfacing
+application — see [Hiding session controls](#hiding-session-controls-host-takeover).
 
 When you add a new item, `add_stim()` creates the stimulus object,
 constructs a `StimPlay`, assigns a default name such as `Tone_1`, and then
@@ -97,18 +101,82 @@ selects it so the editor panel is rebuilt immediately.
 
 The right panel is rebuilt every time the bank selection changes.
 
-`on_bank_selection_changed()` reads metadata from
-`stimObj.get_prop_meta()` and groups properties into these sections:
+`on_bank_selection_changed()` reads metadata from `stimObj.get_prop_meta()`
+and buckets properties into sections via
+`stimgen.StimType.group_prop_meta()`, in this fixed order:
 
 - `Waveform`: stimulus-specific properties such as frequency or filter
-  bounds
+  bounds — the default section for any property that doesn't declare one
 - `Level`: `SoundLevel` plus `ApplyCalibration`
-- `Timing`: duration and window settings
-- `Info`: the bank item `Name`
+- `Timing`: duration and window settings, including any subclass property
+  that reinterprets them (e.g. `Tone.WindowMethod`, which is tagged
+  `'group', 'Timing'` so it renders next to `WindowDuration` instead of
+  drifting into `Waveform`)
+- `Variant`: variant selection/combination policy properties
+
+A property opts into a section (and its position within it) via the
+optional `group`/`order` fields in its `propMeta()` entry — see
+[stimgen_StimType.md](stimgen_StimType.md#display-units). Properties
+without a `group` default to `Waveform`, and without an `order` sort after
+explicitly ordered ones in declaration order.
+
+Timing fields are entered and displayed in **milliseconds**, and the signal
+plot's time axis is in ms; the underlying `StimType` properties stay in
+seconds. The conversion comes from the `scale` field in `propMeta`.
 
 This means `StimPlayer` stays aligned with the underlying stimulus classes.
-If a new `StimType` subclass exposes good `propMeta()` metadata, the editor
-panel can usually handle it without any `StimPlayer` changes.
+If a new `StimType` subclass exposes good `propMeta()` metadata — including
+`group`/`order` where a property belongs somewhere other than `Waveform` —
+the editor panel can usually handle it without any `StimPlayer` changes.
+
+### Toolbar
+
+A toolbar above the signal plot gives one-click access to the most common
+actions, each a duplicate of an existing menu item or button: Load Protocol,
+Load Bank, Save Bank, Open Calibration GUI, Add Stimulus, Remove Stimulus,
+and Play Selected. Toolbar buttons that edit the bank (Load/Save
+Bank/Protocol, Open Calibration GUI, Add/Remove Stimulus) are disabled
+during playback by `lock_bank_controls_`, the same as their menu/button
+counterparts.
+
+## Hiding session controls (host takeover)
+
+An interfacing application that owns the session itself can hide the controls
+that would otherwise let the operator change it. Hidden controls are made
+invisible *and* their grid row/column is collapsed, so no empty space is left
+in the layout.
+
+```matlab
+sp = stimgen.StimPlayer(HOST);
+sp.set_control_visibility(ISI=false, Reps=false, PlayMode=false)  % host sets timing
+sp.set_control_visibility(All=false)                              % host runs everything
+sp.set_control_visibility(All=false, Run=true)                    % all but Run
+```
+
+Hideable controls: `Reps`, `ISI`, `PlayMode` (the `Shuffle`/`Serial`
+dropdown), `Run`, and `Pause`. `All` sets every one at once and is applied
+before the individual pairs, so the two can be combined as above. Each accepts
+`true`/`false` or `"on"`/`"off"`.
+
+The same state is readable and writable through the `ControlVisibility`
+property, which is a scalar struct of logicals:
+
+```matlab
+sp.ControlVisibility.Pause = false;   % applies immediately
+tf = sp.ControlVisibility.Run;
+```
+
+Hiding a control removes only the widget. The corresponding state stays fully
+available programmatically — `sp.ISI`, `sp.SelectionType`,
+`sp.StimPlayObjs(k).Reps` — and playback can be driven with the action-string
+form of `playback_control`:
+
+```matlab
+sp.playback_control("Run")      % also "Stop", "Pause", "Resume"
+```
+
+Bank editing is unaffected: `lock_bank_controls_` still disables the editing
+controls during playback whether or not they are visible.
 
 ## Playback model
 

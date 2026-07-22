@@ -128,8 +128,38 @@ classdef CalibrationGui < handle
             obj.Grid.RowHeight = {'1x'};
 
             obj.build_menu_();
+            obj.build_toolbar_();
             obj.build_controls_panel_();
             obj.build_plots_panel_();
+        end
+
+        function build_toolbar_(obj)
+            % Quick-access toolbar mirroring the most common File menu actions.
+            tb = uitoolbar(obj.Figure);
+
+            uipushtool(tb, Tooltip='Initialize Runtime From Protocol...', ...
+                Icon=stimgen.util.toolbar_icon('protocol'), ...
+                ClickedCallback=@(~,~) obj.on_initialize_runtime_());
+
+            uipushtool(tb, Tooltip='Attach Adapter', ...
+                Icon=stimgen.util.toolbar_icon('connect'), ...
+                ClickedCallback=@(~,~) obj.on_attach_adapter_());
+
+            uipushtool(tb, Tooltip='Disconnect Runtime/Adapter', ...
+                Icon=stimgen.util.toolbar_icon('disconnect'), ...
+                ClickedCallback=@(~,~) obj.on_disconnect_runtime_());
+
+            uipushtool(tb, Tooltip='Load .esgc', Separator='on', ...
+                Icon=stimgen.util.toolbar_icon('open'), ...
+                ClickedCallback=@(~,~) obj.on_load_());
+
+            uipushtool(tb, Tooltip='Save .esgc', ...
+                Icon=stimgen.util.toolbar_icon('save'), ...
+                ClickedCallback=@(~,~) obj.on_save_());
+
+            uipushtool(tb, Tooltip='Calibration Quick Start', Separator='on', ...
+                Icon=stimgen.util.toolbar_icon('help'), ...
+                ClickedCallback=@(~,~) obj.on_show_quick_start_());
         end
 
         function build_menu_(obj)
@@ -262,7 +292,7 @@ classdef CalibrationGui < handle
             obj.AxTime.Layout.Row = 1;
             obj.AxTime.Layout.Column = 1;
             title(obj.AxTime, 'Temporal Response');
-            xlabel(obj.AxTime, 'Time (s)');
+            xlabel(obj.AxTime, 'Time (ms)');
             ylabel(obj.AxTime, 'V');
             grid(obj.AxTime, 'on');
 
@@ -336,9 +366,9 @@ classdef CalibrationGui < handle
 
         function run_calibrate_clicks_(obj)
             [durs, repeatCount, wasCancelled] = obj.prompt_vector_parameter_( ...
-                'clickDurations', ...
+                'clickDurationsMs', ...
                 'clickRepeats', ...
-                'Click durations (s). Leave empty to use default 1..128 samples.', ...
+                'Click durations (ms). Leave empty to use default 1..128 samples.', ...
                 'Click Calibration', ...
                 '', ...
                 1);
@@ -349,7 +379,8 @@ classdef CalibrationGui < handle
             if isempty(durs)
                 obj.Engine.calibrate_clicks([], repeatCount);
             else
-                obj.Engine.calibrate_clicks(durs, repeatCount);
+                % Prompt is in ms; Engine.calibrate_clicks takes seconds.
+                obj.Engine.calibrate_clicks(durs ./ 1e3, repeatCount);
             end
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
@@ -537,10 +568,10 @@ classdef CalibrationGui < handle
                 return
             end
 
-            t = (0:numel(y)-1) ./ fs;
+            t = (0:numel(y)-1) ./ fs .* 1e3; % ms
             plot(obj.AxTime, t, y, 'b-');
             grid(obj.AxTime, 'on');
-            xlabel(obj.AxTime, 'Time (s)');
+            xlabel(obj.AxTime, 'Time (ms)');
             ylabel(obj.AxTime, 'V');
             title(obj.AxTime, sprintf('Temporal Response (N=%d)', numel(y)));
 
@@ -690,12 +721,15 @@ classdef CalibrationGui < handle
         end
 
         function [duration, freqs, repeatCount, wasCancelled] = prompt_swept_sine_parameters_(obj)
-            durationPref = obj.get_pref_('sweptSineDuration', '1.0');
+            % The dialog works in milliseconds; the returned duration is in
+            % seconds, as Engine.calibrate_swept_sine expects. The pref key
+            % carries a Ms suffix so pre-ms values are not reinterpreted.
+            durationPref = obj.get_pref_('sweptSineDurationMs', '1000');
             freqsPref = obj.get_pref_('sweptSineFreqs', '');
             repeatsPref = obj.get_pref_('sweptSineRepeats', '4');
 
             prompts = {
-                'Swept sine duration (s, >0):', ...
+                'Swept sine duration (ms, >0):', ...
                 'Swept sine frequencies (Hz). Leave empty to use default log sweep:', ...
                 'Number of averages (positive integer):'
             };
@@ -711,11 +745,12 @@ classdef CalibrationGui < handle
             end
 
             durationText = strtrim(string(answer{1}));
-            duration = str2double(durationText);
-            if isnan(duration) || ~isfinite(duration) || duration <= 0
+            durationMs = str2double(durationText);
+            if isnan(durationMs) || ~isfinite(durationMs) || durationMs <= 0
                 error('stimgen:calibration:CalibrationGui:badDuration', ...
-                    'Swept sine duration must be a positive number.');
+                    'Swept sine duration must be a positive number of milliseconds.');
             end
+            duration = durationMs / 1e3;
 
             freqsText = strtrim(string(answer{2}));
             freqs = obj.parse_numeric_vector_(freqsText, 'swept sine frequencies');
@@ -723,7 +758,7 @@ classdef CalibrationGui < handle
             repeatsText = strtrim(string(answer{3}));
             repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
 
-            obj.set_pref_('sweptSineDuration', char(durationText));
+            obj.set_pref_('sweptSineDurationMs', char(durationText));
             obj.set_pref_('sweptSineFreqs', char(freqsText));
             obj.set_pref_('sweptSineRepeats', char(repeatsText));
             wasCancelled = false;

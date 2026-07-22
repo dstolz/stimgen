@@ -49,7 +49,7 @@ selection built into `stimgen.StimType` — vectorized properties with
 
 - `StimObj`: the wrapped `StimType` object
 - `Reps`: target repetitions per presentable stimulus
-- `ISI`: scalar or two-element range in seconds
+- `ISI`: scalar or two-element range in seconds (GUIs enter it in ms)
 - `SelectionType`: `"Serial"` or `"Shuffle"`
 - `RepsPresented`: per-stimulus presentation counts
 - `StimIdx`: current child index inside the wrapped stimulus

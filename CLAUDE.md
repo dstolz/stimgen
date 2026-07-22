@@ -91,6 +91,23 @@ by `VariantCombinationMode` (Cartesian / PairwiseStrict / PairwiseScalarExpand) 
 combination table is cached and invalidated by a signature hash — see
 `refresh_variant_cache_if_needed_`.
 
+**Time is seconds in the object, milliseconds in the GUI.** `Duration`, `WindowDuration`,
+`ClickDuration`, `OnsetDelay` and `ISI` are stored in seconds and used that way by every signal
+computation and by `toStruct`/`fromStruct`. GUIs display and accept milliseconds. The factor is
+declared per property in `propMeta` as `'scale', 1000` and read back via
+`stimgen.StimType.display_scale(pm)`; `displayValue = propertyValue * scale`. Consequences:
+
+- `label`, `format` and `limits` in `propMeta` are all in *display* units. Vectorizable properties
+  render as expression text fields that ignore `format`, so the unit has to be in `label`.
+- `build_expression_context_` returns display units, so `evalPropertyExpression` both takes and
+  returns milliseconds. Every caller divides by the scale before assigning to the property — that
+  single division is the only conversion, so don't add another.
+- Time axes (`plot`, `plot_spectrogram`, StimPlayer signal plot, CalibrationGui temporal response)
+  are drawn in ms. The CalibrationGui transfer plot keeps click duration in µs, because that axis
+  is shared with frequency in Hz.
+- A property whose units depend on another property overrides its own `propMeta` entry — see
+  `Tone.WindowMethod`, where `WindowDuration` is ms/percent/periods depending on the mode.
+
 **GUIs are generated, not hand-built.** `create_gui` reads `propMeta()` and builds a label+widget
 grid; widget type is inferred from the property's class unless overridden. Subclass `propMeta`
 defines its own fields then calls

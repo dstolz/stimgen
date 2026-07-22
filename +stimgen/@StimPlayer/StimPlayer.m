@@ -29,6 +29,10 @@ classdef StimPlayer < handle
     %   Host          - Optional stimgen.HardwareHost for hardware playback
     %   ISI           - Global ISI range [min max] in seconds
     %   SelectionType - "Serial" or "Shuffle"
+    %
+    % An interfacing application that drives the session itself can hide the
+    % Reps/ISI/PlayMode/Run/Pause controls (see set_control_visibility) and
+    % run playback through playback_control("Run"|"Stop"|"Pause"|"Resume").
 
     % --- External method declarations ---
     methods
@@ -50,6 +54,7 @@ classdef StimPlayer < handle
         open_calibration_gui(obj)
         save_bank(obj, ffn)
         load_bank(obj, ffn)
+        set_control_visibility(obj, options)
     end
 
     % --- Public properties ---
@@ -61,6 +66,18 @@ classdef StimPlayer < handle
         SelectionType (1,1) string {mustBeMember(SelectionType,["Serial","Shuffle"])} = "Shuffle" % Playback order
 
         DataPath (1,1) string = string(fullfile('C:\Users', getenv('USERNAME'))) % Default save path
+
+        % Visibility of the session controls an interfacing application may
+        % want to own itself.  Scalar struct of logicals; assign whole or by
+        % field (sp.ControlVisibility.ISI = false), or use
+        % set_control_visibility for name-value syntax.  Hidden controls are
+        % collapsed out of the layout but remain settable programmatically.
+        ControlVisibility (1,1) struct = struct( ...
+            'Reps',     true, ...   % Per-stimulus repetition count field
+            'ISI',      true, ...   % Inter-stimulus interval field
+            'PlayMode', true, ...   % Playback order dropdown (Shuffle/Serial)
+            'Run',      true, ...   % Run/Stop button
+            'Pause',    true)       % Pause/Resume button
     end
 
     % --- Protected runtime state ---
@@ -84,12 +101,6 @@ classdef StimPlayer < handle
         els                        % Event listeners
         hFig                       % uifigure handle
         handles struct = struct()  % UI component handles
-    end
-
-    % --- Constants for tab grouping ---
-    properties (Constant, Access = private)
-        LEVEL_PROPS  = {'SoundLevel'}                              % Properties on Level tab
-        TIMING_PROPS = {'Duration','WindowDuration','ApplyWindow'} % Properties on Timing tab
     end
 
     % --- Dependent ---
@@ -153,6 +164,30 @@ classdef StimPlayer < handle
             required = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
                         'x_Trigger_0','x_Trigger_1'};
             tf = all(isfield(obj.PARAMS, required));
+        end
+
+        % -----------------------------------------------------------------
+        function set.ControlVisibility(obj, value)
+            % Merge the incoming struct over the current state so callers may
+            % pass only the controls they care about.
+            merged = obj.ControlVisibility;
+            names  = fieldnames(value);
+            for i = 1:numel(names)
+                if ~isfield(merged, names{i})
+                    error('stimgen:StimPlayer:InvalidControlVisibility', ...
+                        '"%s" is not a hideable StimPlayer control. Valid controls: %s.', ...
+                        names{i}, strjoin(fieldnames(merged)', ', '));
+                end
+                v = value.(names{i});
+                if ~isscalar(v) || ~(islogical(v) || isnumeric(v) || isa(v, 'matlab.lang.OnOffSwitchState'))
+                    error('stimgen:StimPlayer:InvalidControlVisibility', ...
+                        'ControlVisibility.%s must be a logical scalar.', names{i});
+                end
+                merged.(names{i}) = logical(v);
+            end
+
+            obj.ControlVisibility = merged;
+            obj.apply_control_visibility_;
         end
 
         % -----------------------------------------------------------------
@@ -304,7 +339,9 @@ classdef StimPlayer < handle
 
             fields = {'AddBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
                 'ISIField','OrderDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
-                'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu'};
+                'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
+                'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
+                'AddStimTool','RemoveStimTool'};
             for i = 1:numel(fields)
                 f = fields{i};
                 if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))
@@ -318,6 +355,74 @@ classdef StimPlayer < handle
                     if isprop(children(i), 'Enable')
                         children(i).Enable = targetState;
                     end
+                end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function apply_control_visibility_(obj)
+            % apply_control_visibility_() - Push ControlVisibility onto the GUI.
+            % Hidden widgets are made invisible and their grid row/column is
+            % collapsed to zero so no empty space is left behind.
+
+            h   = obj.handles;
+            vis = obj.ControlVisibility;
+
+            % Bank panel rows: {visibility field, widgets, row index field}
+            rows = { ...
+                'Reps',     {'RepsLabel','RepsField'}, 'RepsRow'; ...
+                'ISI',      {'ISILabel','ISIField'},   'ISIRow'; ...
+                'PlayMode', {'OrderDD'},               'OrderRow'};
+
+            if isfield(h,'BankGrid') && ~isempty(h.BankGrid) && isvalid(h.BankGrid)
+                heights = h.BankGrid.RowHeight;
+                for i = 1:size(rows,1)
+                    show = vis.(rows{i,1});
+                    obj.set_widgets_visible_(rows{i,2}, show);
+                    if ~isfield(h, rows{i,3}), continue; end
+                    r = h.(rows{i,3});
+                    if show
+                        heights{r} = h.BankGridRowHeight{r};
+                    else
+                        heights{r} = 0;
+                    end
+                end
+                h.BankGrid.RowHeight = heights;
+            end
+
+            % Playback bar columns: {visibility field, widget, column index field}
+            cols = { ...
+                'Run',   'RunBtn',   'RunCol'; ...
+                'Pause', 'PauseBtn', 'PauseCol'};
+
+            if isfield(h,'ControlGrid') && ~isempty(h.ControlGrid) && isvalid(h.ControlGrid)
+                widths = h.ControlGrid.ColumnWidth;
+                for i = 1:size(cols,1)
+                    show = vis.(cols{i,1});
+                    obj.set_widgets_visible_(cols(i,2), show);
+                    if ~isfield(h, cols{i,3}), continue; end
+                    c = h.(cols{i,3});
+                    if show
+                        widths{c} = h.ControlGridColumnWidth{c};
+                    else
+                        widths{c} = 0;
+                    end
+                end
+                h.ControlGrid.ColumnWidth = widths;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function set_widgets_visible_(obj, fieldNames, show)
+            % set_widgets_visible_(fieldNames, show) - Toggle Visible on handles.
+            state = 'off';
+            if show
+                state = 'on';
+            end
+            for i = 1:numel(fieldNames)
+                f = fieldNames{i};
+                if isfield(obj.handles, f) && ~isempty(obj.handles.(f)) && isvalid(obj.handles.(f))
+                    obj.handles.(f).Visible = state;
                 end
             end
         end
@@ -543,7 +648,7 @@ classdef StimPlayer < handle
 
             switch string(ME.identifier)
                 case "StimPlayer:InvalidISI"
-                    messageText = "Enter either one positive ISI value, such as 1, or a two-value range such as [0.5 1.5].";
+                    messageText = "Enter either one positive ISI value in milliseconds, such as 1000, or a two-value range such as [500 1500].";
                 case "StimPlayer:InvalidCalibrationFile"
                     messageText = "The selected calibration file did not contain a usable calibration object.";
                 case "stimgen:StimType:NonVectorizableProperty"

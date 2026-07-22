@@ -33,7 +33,8 @@ if isempty(stimObj.Signal)
 end
 
 if ~isempty(stimObj.Signal)
-    set(h.SignalLine, 'XData', stimObj.Time, 'YData', stimObj.Signal);
+    % Axis is labelled in ms (see create.m)
+    set(h.SignalLine, 'XData', stimObj.Time * 1e3, 'YData', stimObj.Signal);
     summary = stimObj.current_parameter_summary();
     if strlength(summary) > 0
         title(ax, {char(sp.Name), char(summary)});

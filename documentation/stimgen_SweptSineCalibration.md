@@ -85,7 +85,8 @@ eng.calibrate_swept_sine(2);
 ### 4. From GUI
 
 The `stimgen.CalibrationGui` includes:
-- **Swept Sine Duration (s)** — default 1.0 s
+- **Swept Sine Duration (ms)** — default 1000 ms (converted to seconds before
+  it reaches `Engine.calibrate_swept_sine`, which still takes seconds)
 - **Swept Sine Freqs (Hz)** — default empty (auto: 50-point log from 100 Hz to Nyquist)
 - **Calibrate Swept Sine** — button to run the measurement
 

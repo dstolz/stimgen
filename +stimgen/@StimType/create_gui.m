@@ -11,9 +11,11 @@ function h = create_gui(obj, src, ~)
 % Returns:
 %   h - struct of widget handles keyed by property name
 
-meta   = obj.propMeta();
-fields = fieldnames(meta);
-nRows  = numel(fields);
+meta     = obj.propMeta();
+sections = stimgen.StimType.group_prop_meta(meta); % Nx1 cell of {groupName, propNames}
+secRows  = vertcat(sections{:});                   % Nx2 cell: col 1 = name, col 2 = propNames
+fields   = vertcat(secRows{:, 2});                 % flatten propNames, section order preserved
+nRows    = numel(fields);
 
 mc = metaclass(obj);
 pl = mc.PropertyList;
@@ -33,12 +35,15 @@ for i = 1:nRows
     lbl.HorizontalAlignment = 'right';
 
     wt = stimgen.StimType.resolve_widget_type(propName, pm, pl);
+    sc = stimgen.StimType.display_scale(pm);
 
     switch wt
         case 'numeric'
+            % Widgets show display units (e.g. ms); pm.format and pm.limits
+            % are already expressed in those units.
             if obj.is_non_vectorizable_property_(propName)
                 x = uieditfield(g, 'numeric', 'Tag', propName);
-                x.Value = obj.(propName);
+                x.Value = obj.(propName) * sc;
                 if isfield(pm, 'format')
                     x.ValueDisplayFormat = pm.format;
                 end
@@ -47,7 +52,7 @@ for i = 1:nRows
                 end
             else
                 x = uieditfield(g, 'Tag', propName);
-                x.Value = stimgen.StimType.localFormatPropertyValue_(obj.(propName));
+                x.Value = stimgen.StimType.localFormatPropertyValue_(obj.(propName) * sc);
                 x.UserData = struct('isNumericExpression', true, 'propMeta', pm);
             end
         case 'checkbox'

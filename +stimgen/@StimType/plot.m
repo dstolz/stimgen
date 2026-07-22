@@ -22,14 +22,16 @@ if isempty(obj.Signal)
     obj.call_update_signal_with_variant_cycle_(); % subclass implementation
 end
 
+tms = obj.Time * 1e3; % seconds -> milliseconds for display
+
 if ~isempty(obj.plotLineHandle) && isvalid(obj.plotLineHandle) && ...
         isvalid(obj.plotAxHandle) && obj.plotAxHandle == ax
-    set(obj.plotLineHandle,'XData',obj.Time,'YData',obj.Signal);
+    set(obj.plotLineHandle,'XData',tms,'YData',obj.Signal);
     h = obj.plotLineHandle;
 else
-    h = plot(ax,obj.Time,obj.Signal);
+    h = plot(ax,tms,obj.Signal);
     obj.plotLineHandle = h;
     obj.plotAxHandle   = ax;
 end
 grid(ax,'on');
-xlabel(ax,'time (s)');
+xlabel(ax,'time (ms)');

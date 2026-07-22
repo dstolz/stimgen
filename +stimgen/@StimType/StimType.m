@@ -202,11 +202,13 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     methods (Static)
         obj = fromStruct(S)                                                        % Reconstruct StimType from serialized struct
         c = list                                                                    % Enumerate available stimgen stimulus classes
+        s = display_scale(pm, propName)                                            % GUI display scale factor for a propMeta entry
+        sections = group_prop_meta(meta)                                           % Bucket propMeta fields into ordered display groups
     end % methods (Static)
 
-    methods (Static, Access = private)
+    methods (Static, Access = protected)
         text = localFormatPropertyValue_(value)                                   % Format numeric values for GUI edit fields
         text = format_summary_value_(value)                                       % Format values for compact parameter summary
-    end % methods (Static, Access = private)
+    end % methods (Static, Access = protected)
 
 end

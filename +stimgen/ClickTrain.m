@@ -115,15 +115,17 @@ classdef ClickTrain < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for ClickTrain GUI properties.
             m = struct();
-            m.Rate          = struct('label', 'Rate',           'format', '%.1f Hz',  'limits', [0.1 1e6]);
-            m.ClickDuration = struct('label', 'Click Duration', 'format', '%.6f s',   'limits', [1e-6 1]);
+            m.Rate          = struct('label', 'Rate',                'format', '%.1f Hz',  'limits', [0.1 1e6]);
+            m.ClickDuration = struct('label', 'Click Duration (ms)', 'format', '%.4f ms',  'limits', [0.001 1000], ...
+                                     'scale', 1000);
             m.Polarity      = struct('label', 'Polarity', 'widget', 'dropdown', ...
                                     'items',     {{'+ Positive', '+/- Alternate', '- Negative'}}, ...
                                     'itemsData', {{1, 0, -1}});
-            m.OnsetDelay    = struct('label', 'Onset Delay',    'format', '%.4f s');
+            m.OnsetDelay    = struct('label', 'Onset Delay (ms)',    'format', '%.2f ms',  'limits', [0 10000], ...
+                                     'scale', 1000);
             m.Truncate      = struct('label', 'Truncate');
             base = propMeta@stimgen.StimType(obj);
-            base.Duration.label = 'Train Duration';
+            base.Duration.label = 'Train Duration (ms)';
             m = stimgen.StimType.merge_prop_meta(m, base);
         end
     end

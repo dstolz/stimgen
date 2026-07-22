@@ -6,9 +6,9 @@ if ~isempty(obj.plotLineHandle) && isvalid(obj.plotLineHandle)
     if isempty(obj.Signal)
         return
     end
-    set(obj.plotLineHandle,'XData',obj.Time,'YData',obj.Signal);
+    set(obj.plotLineHandle,'XData',obj.Time * 1e3,'YData',obj.Signal);
     if ~isempty(obj.plotAxHandle) && isvalid(obj.plotAxHandle)
         grid(obj.plotAxHandle,'on');
-        xlabel(obj.plotAxHandle,'time (s)');
+        xlabel(obj.plotAxHandle,'time (ms)');
     end
 end

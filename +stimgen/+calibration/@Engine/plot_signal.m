@@ -11,9 +11,9 @@ if reset, cla(ax); drawnow; return; end
 if isempty(obj.ResponseSignal), return; end
 fs = obj.Fs;
 if fs == 0, return; end
-t = (0:numel(obj.ResponseSignal)-1) ./ fs;
+t = (0:numel(obj.ResponseSignal)-1) ./ fs .* 1e3; % ms
 plot(ax, t, obj.ResponseSignal);
 grid(ax, 'on');
-xlabel(ax, 'time (s)');
+xlabel(ax, 'time (ms)');
 ylabel(ax, 'V');
 end

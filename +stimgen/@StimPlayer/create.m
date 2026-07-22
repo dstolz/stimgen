@@ -19,7 +19,7 @@ ax.Layout.Row    = 1;
 ax.Layout.Column = 1;
 grid(ax, 'on');
 box(ax, 'on');
-xlabel(ax, 'time (s)');
+xlabel(ax, 'time (ms)');
 ylabel(ax, 'amplitude');
 obj.handles.SignalAx   = ax;
 obj.handles.SignalLine = line(ax, nan, nan, 'Color', [0.2 0.4 0.8]);
@@ -43,6 +43,11 @@ bg.ColumnWidth = {'1x', '1x'};
 bg.RowHeight   = {26, 26, '1x', 26, 26, 26, 26, 26, 30};
 bg.Padding     = [6 6 6 6];
 bg.RowSpacing  = 4;
+
+% Retain the grid and its natural row heights so rows can be collapsed and
+% restored by set_control_visibility.
+obj.handles.BankGrid          = bg;
+obj.handles.BankGridRowHeight = bg.RowHeight;
 
 R = 1;
 
@@ -88,6 +93,8 @@ R = R + 1;
 lbl = uilabel(bg, 'Text', 'Reps:', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = R;
 lbl.Layout.Column = 1;
+obj.handles.RepsLabel = lbl;
+obj.handles.RepsRow   = R;
 
 h = uieditfield(bg, 'numeric', 'Tag', 'RepsField');
 h.Layout.Row              = R;
@@ -101,15 +108,17 @@ obj.handles.RepsField     = h;
 
 R = R + 1;
 
-% ISI field
-lbl = uilabel(bg, 'Text', 'ISI (s):', 'HorizontalAlignment', 'right');
+% ISI field (displayed in ms; stored on StimPlayer in seconds)
+lbl = uilabel(bg, 'Text', 'ISI (ms):', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = R;
 lbl.Layout.Column = 1;
+obj.handles.ISILabel = lbl;
+obj.handles.ISIRow   = R;
 
 h = uieditfield(bg, 'Tag', 'ISIField');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
-h.Value               = mat2str(obj.ISI);
+h.Value               = mat2str(obj.ISI * 1e3);
 h.ValueChangedFcn     = @(s,e) on_isi_changed_(obj,s,e);
 obj.handles.ISIField  = h;
 
@@ -123,7 +132,8 @@ h.Items           = {'Shuffle', 'Serial'};
 h.ItemsData       = {"Shuffle", "Serial"};
 h.Value           = "Shuffle";
 h.ValueChangedFcn = @(s,e) on_order_changed_(obj,s,e);
-obj.handles.OrderDD = h;
+obj.handles.OrderDD  = h;
+obj.handles.OrderRow = R;
 
 R = R + 1;
 
@@ -184,6 +194,11 @@ ctrlG.RowHeight     = {'1x'};
 ctrlG.Padding       = [0 0 0 0];
 ctrlG.ColumnSpacing = 6;
 
+% Retain the grid and its natural column widths so the Run/Pause columns can
+% be collapsed and restored by set_control_visibility.
+obj.handles.ControlGrid            = ctrlG;
+obj.handles.ControlGridColumnWidth = ctrlG.ColumnWidth;
+
 h = uibutton(ctrlG, 'Text', 'Run');
 h.Layout.Column   = 1;
 h.Layout.Row      = 1;
@@ -191,6 +206,7 @@ h.FontSize        = 14;
 h.FontWeight      = 'bold';
 h.ButtonPushedFcn = @obj.playback_control;
 obj.handles.RunBtn = h;
+obj.handles.RunCol = 1;
 
 h = uibutton(ctrlG, 'Text', 'Pause');
 h.Layout.Column   = 2;
@@ -200,6 +216,7 @@ h.FontWeight      = 'bold';
 h.Enable          = 'off';
 h.ButtonPushedFcn = @obj.playback_control;
 obj.handles.PauseBtn = h;
+obj.handles.PauseCol = 2;
 
 h = uilabel(ctrlG, 'Text', 'Protocol: none | HW: speaker preview only', ...
     'HorizontalAlignment', 'left', 'FontColor', [0.35 0.35 0.35]);
@@ -239,6 +256,44 @@ mExportAll = uimenu(mFile, 'Text', 'Export &All Signals to Workspace', ...
 mExportObjs = uimenu(mFile, 'Text', 'Export Bank as &StimType Objects', ...
     'MenuSelectedFcn', @(~,~) export_bank_as_stimtype_(obj));
 
+% ---- Toolbar ----
+tb = uitoolbar(f);
+
+h = uipushtool(tb, 'Tooltip', 'Load Protocol', ...
+    'Icon', stimgen.util.toolbar_icon('protocol'), ...
+    'ClickedCallback', @(~,~) obj.load_protocol_());
+obj.handles.LoadProtocolTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Load Bank', 'Separator', 'on', ...
+    'Icon', stimgen.util.toolbar_icon('open'), ...
+    'ClickedCallback', @(~,~) obj.load_bank());
+obj.handles.LoadBankTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Save Bank', ...
+    'Icon', stimgen.util.toolbar_icon('save'), ...
+    'ClickedCallback', @(~,~) obj.save_bank());
+obj.handles.SaveBankTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Open Calibration GUI', 'Separator', 'on', ...
+    'Icon', stimgen.util.toolbar_icon('calibration'), ...
+    'ClickedCallback', @(~,~) obj.open_calibration_gui());
+obj.handles.CalibrationGuiTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Add Stimulus', 'Separator', 'on', ...
+    'Icon', stimgen.util.toolbar_icon('add'), ...
+    'ClickedCallback', @obj.add_stim);
+obj.handles.AddStimTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Remove Stimulus', ...
+    'Icon', stimgen.util.toolbar_icon('remove'), ...
+    'ClickedCallback', @obj.remove_stim);
+obj.handles.RemoveStimTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Play Selected', 'Separator', 'on', ...
+    'Icon', stimgen.util.toolbar_icon('play'), ...
+    'ClickedCallback', @obj.play_preview);
+obj.handles.PlayTool = h;
+
 movegui(f, 'onscreen');
 
 obj.refresh_combo_controls_;
@@ -251,6 +306,8 @@ obj.handles.CalibrationGuiMenu = mOpenCalibrationGui;
 obj.handles.ExportSignalMenu  = mExportSignal;
 obj.handles.ExportAllMenu     = mExportAll;
 obj.handles.ExportObjsMenu    = mExportObjs;
+
+obj.apply_control_visibility_;
 
 end % create
 
@@ -275,6 +332,7 @@ end
 
 function on_isi_changed_(obj, src, event)
 % Validate and store ISI on StimPlayer; parse "[min max]" or scalar.
+% The field is in milliseconds; obj.ISI is stored in seconds.
 try
     v = str2num(src.Value); %#ok<ST2NM>
     v = sort(v(:)');
@@ -286,7 +344,7 @@ try
     elseif numel(v) ~= 2 || any(v <= 0)
         error('StimPlayer:InvalidISI', 'ISI must be a positive scalar or positive [min max] pair.');
     end
-    obj.ISI = v;
+    obj.ISI = v ./ 1e3;
     src.Value = mat2str(v);
 catch ME
     src.Value = event.PreviousValue;

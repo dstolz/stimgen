@@ -27,11 +27,12 @@ end
 fsValue = double(obj.get_selected_property_value_("Fs"));
 [~, ~, ~, ps] = spectrogram(obj.Signal, window, overlap, nfft, fsValue, 'power');
 freqVec = linspace(0, fsValue/2, size(ps,1));
-timeVec = linspace(0, obj.Duration, size(ps,2));
+durationValue = double(obj.get_selected_property_value_("Duration"));
+timeVec = linspace(0, durationValue * 1e3, size(ps,2)); % ms
 
 h = imagesc(ax, timeVec, freqVec, 10*log10(ps));
 axis(ax, 'xy');
-xlabel(ax, 'time (s)');
+xlabel(ax, 'time (ms)');
 ylabel(ax, 'frequency (Hz)');
 cb = colorbar(ax);
 cb.Label.String = 'Power (dB)';

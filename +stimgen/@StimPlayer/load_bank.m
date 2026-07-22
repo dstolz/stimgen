@@ -85,10 +85,10 @@ end
 
 
 function ISIField_sync_(obj)
-% Sync the ISI editfield text with obj.ISI after a load.
+% Sync the ISI editfield text with obj.ISI after a load (seconds -> ms).
 h = obj.handles;
 if isfield(h, 'ISIField') && isvalid(h.ISIField)
-    h.ISIField.Value = mat2str(obj.ISI);
+    h.ISIField.Value = mat2str(obj.ISI * 1e3);
 end
 if isfield(h, 'OrderDD') && isvalid(h.OrderDD)
     h.OrderDD.Value = obj.SelectionType;

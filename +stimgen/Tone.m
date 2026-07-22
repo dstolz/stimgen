@@ -68,21 +68,45 @@ classdef Tone < stimgen.StimType
             m = struct();
             m.Frequency    = struct('label', 'Frequency',     'format', '%.1f Hz',  'limits', [100 40000]);
             m.OnsetPhase   = struct('label', 'Onset Phase',   'format', '%.1f deg');
-            m.WindowMethod = struct('label', 'Window Method', 'widget', 'dropdown', 'items', ["Duration" "Proportional" "#Periods"]);
-            m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
+            % Grouped with Timing (order 20) so it sits next to Duration
+            % (order 10) and WindowDuration (order 30), which it controls.
+            m.WindowMethod = struct('label', 'Window Method', 'widget', 'dropdown', ...
+                'items', ["Duration" "Proportional" "#Periods"], 'group', 'Timing', 'order', 20);
+            base = propMeta@stimgen.StimType(obj);
+
+            % WindowMethod reinterprets WindowDuration: only the "Duration"
+            % method treats it as a time, so only that one is shown in ms.
+            switch obj.WindowMethod
+                case "Proportional"
+                    base.WindowDuration = struct('label', 'Window Duration (%)', ...
+                        'format', '%.2f %%', 'limits', [0 100], 'group', 'Timing', 'order', 30);
+                case "#Periods"
+                    base.WindowDuration = struct('label', 'Window Duration (periods)', ...
+                        'format', '%.1f periods', 'limits', [0 1e4], 'group', 'Timing', 'order', 30);
+            end
+
+            m = stimgen.StimType.merge_prop_meta(m, base);
         end
 
         function on_gui_changed(obj, propName, ~)
-            % Update WindowDuration format label when WindowMethod changes.
-            if strcmp(propName, 'WindowMethod')
-                switch obj.WindowMethod
-                    case 'Proportional', fmt = '%.2f%%';
-                    case 'Duration',     fmt = '%.4f s';
-                    case '#Periods',     fmt = '%.1f periods';
-                end
-                if isfield(obj.GUIHandles, 'WindowDuration') && isvalid(obj.GUIHandles.WindowDuration)
-                    obj.GUIHandles.WindowDuration.ValueDisplayFormat = fmt;
-                end
+            % Re-render the WindowDuration widget when WindowMethod changes,
+            % since the method changes both its units and its display scale.
+            if ~strcmp(propName, 'WindowMethod')
+                return
+            end
+            if ~isstruct(obj.GUIHandles) || ~isfield(obj.GUIHandles, 'WindowDuration') ...
+                    || ~isvalid(obj.GUIHandles.WindowDuration)
+                return
+            end
+            x  = obj.GUIHandles.WindowDuration;
+            pm = obj.propMeta().WindowDuration;
+            if isprop(x, 'ValueDisplayFormat')
+                x.ValueDisplayFormat = pm.format;
+                x.Value = obj.WindowDuration * stimgen.StimType.display_scale(pm);
+            else
+                x.UserData = struct('isNumericExpression', true, 'propMeta', pm);
+                x.Value = stimgen.StimType.localFormatPropertyValue_( ...
+                    obj.WindowDuration * stimgen.StimType.display_scale(pm));
             end
         end
     end

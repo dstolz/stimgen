@@ -49,6 +49,12 @@ for k = 1:numel(propNames)
         label = propName;
     end
 
+    % Report in the same units the GUI shows (e.g. ms for time properties);
+    % the unit itself is carried by the label.
+    if isnumeric(value)
+        value = value * stimgen.StimType.display_scale(meta, propName);
+    end
+
     parts(end+1) = label + "=" + stimgen.StimType.format_summary_value_(value); %#ok<AGROW>
 end
 

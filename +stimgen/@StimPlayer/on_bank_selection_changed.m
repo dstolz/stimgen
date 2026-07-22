@@ -1,7 +1,11 @@
 function on_bank_selection_changed(obj, src, ~)
 % on_bank_selection_changed(obj, src) - Rebuild the parameter panel when listbox selection changes.
 % Clears existing contents and builds labeled sections (Waveform, Level,
-% Timing, Info) inside a single scrollable grid layout.
+% Timing, Variant) inside a single scrollable grid layout. Section
+% membership and in-section order come from each property's propMeta
+% 'group'/'order' metadata (see stimgen.StimType.group_prop_meta), so a
+% subclass that tags a new property (e.g. Tone.WindowMethod as 'Timing')
+% appears in the right section automatically.
 
 if isempty(src.ItemsData) || isempty(src.Value)
     obj.clear_tabs_;
@@ -24,40 +28,21 @@ obj.handles.RepsField.Value = sp.Reps;
 pnl = obj.handles.ParamPanel;
 delete(pnl.Children);
 
-% --- Gather parameter metadata ---
-meta       = stimObj.get_prop_meta();
-allProps   = fieldnames(meta);
-baseLevelP = obj.LEVEL_PROPS;
-baseTimeP  = obj.TIMING_PROPS;
-baseAll    = [baseLevelP, baseTimeP];
-waveProps  = allProps(~ismember(allProps, baseAll));
-
-% Level meta: base level props + ApplyCalibration
-levelMeta = struct();
-for k = 1:numel(baseLevelP)
-    p = baseLevelP{k};
-    if isfield(meta, p), levelMeta.(p) = meta.(p); end
-end
-levelMeta.ApplyCalibration = struct('label', 'Apply Calibration');
-
-% Timing meta: base timing props present in meta
-timeMeta = struct();
-for k = 1:numel(baseTimeP)
-    p = baseTimeP{k};
-    if isfield(meta, p), timeMeta.(p) = meta.(p); end
-end
-
+% --- Gather parameter metadata, grouped into logical sections ---
 % Section definitions: {title, metaStruct, propNames}
-sections = {};
-if ~isempty(waveProps)
-    waveMeta = struct();
-    for k = 1:numel(waveProps)
-        waveMeta.(waveProps{k}) = meta.(waveProps{k});
+meta         = stimObj.get_prop_meta();
+metaSections = stimgen.StimType.group_prop_meta(meta);
+
+sections = cell(1, numel(metaSections));
+for s = 1:numel(metaSections)
+    sTitle    = metaSections{s}{1};
+    sPropList = metaSections{s}{2};
+    sMeta     = struct();
+    for k = 1:numel(sPropList)
+        sMeta.(sPropList{k}) = meta.(sPropList{k});
     end
-    sections{end+1} = {'Waveform', waveMeta, waveProps};
+    sections{s} = {sTitle, sMeta, sPropList};
 end
-sections{end+1} = {'Level',   levelMeta, fieldnames(levelMeta)};
-sections{end+1} = {'Timing',  timeMeta,  fieldnames(timeMeta)};
 
 % --- Compute row heights ---
 ROW_TOP  = 28;   % top bank label row
@@ -121,16 +106,19 @@ for s = 1:numel(sections)
         lbl.Layout.Column = 1;
 
         wt = resolve_wt_(propName, pm, pl);
+        sc = stimgen.StimType.display_scale(pm);
         switch wt
             case 'numeric'
+                % Widgets carry display units (ms for time properties);
+                % pm.format and pm.limits are already in those units.
                 if is_non_vectorizable_prop_(propName)
                     x = uieditfield(g, 'numeric', 'Tag', propName);
-                    x.Value = stimObj.(propName);
+                    x.Value = stimObj.(propName) * sc;
                     if isfield(pm, 'format'), x.ValueDisplayFormat = pm.format; end
                     if isfield(pm, 'limits'), x.Limits = pm.limits; end
                 else
                     x = uieditfield(g, 'Tag', propName);
-                    x.Value = localFormatPropValue_(stimObj.(propName));
+                    x.Value = localFormatPropValue_(stimObj.(propName) * sc);
                     x.UserData = struct('isNumericExpression', true);
                 end
             case 'checkbox'
@@ -166,24 +154,29 @@ function set_prop_(obj, stimObj, src, event)
 % set_prop_(obj, stimObj, src, event) - Set a property on stimObj then refresh the plot.
 % For vectorizable numeric fields (UserData.isNumericExpression == true), parses
 % value as a MATLAB expression via evalPropertyExpression before assignment.
+% Widget values are in display units (ms for time properties) and are divided
+% by the propMeta display scale before being written to the property.
 isNumExpr = isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
+sc = stimgen.StimType.display_scale(stimObj.get_prop_meta(), src.Tag);
 try
     value = event.Value;
     if isNumExpr
-        value = stimObj.evalPropertyExpression(src.Tag, char(string(value)));
+        value = stimObj.evalPropertyExpression(src.Tag, char(string(value))) / sc;
+    elseif isnumeric(value)
+        value = value / sc;
     end
     stimObj.(src.Tag) = value;
     stimObj.update_signal();
     obj.update_signal_plot();
 catch ME
     if isNumExpr
-        src.Value = localFormatPropValue_(stimObj.(src.Tag));
+        src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
     elseif isprop(stimObj, src.Tag)
         currentValue = stimObj.(src.Tag);
         if islogical(currentValue)
             src.Value = logical(currentValue);
         elseif isnumeric(currentValue)
-            src.Value = currentValue;
+            src.Value = currentValue * sc;
         elseif isstring(currentValue)
             src.Value = char(currentValue);
         else
@@ -197,7 +190,7 @@ catch ME
     return
 end
 if isNumExpr
-    src.Value = localFormatPropValue_(stimObj.(src.Tag));
+    src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
 end
 obj.refresh_combo_controls_();
 end

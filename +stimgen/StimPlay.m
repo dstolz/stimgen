@@ -101,12 +101,12 @@ classdef (Hidden) StimPlay < handle & matlab.mixin.SetGet
         
         function n = get.DisplayName(obj)
             if isempty(obj.DisplayName) || obj.DisplayName == ""
-                isi = obj.ISI;
+                isi = obj.ISI * 1e3; % stored in seconds, displayed in ms
                 if all(isi==isi(1))
                     isi(2) = [];
                 end
                 isistr = mat2str(isi);
-                n = string(sprintf('%s (%s) x%d, isi = %s sec', ...
+                n = string(sprintf('%s (%s) x%d, isi = %s ms', ...
                     obj.Name,obj.Type,obj.Reps,isistr));
             else
                 n = obj.DisplayName;

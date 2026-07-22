@@ -17,6 +17,32 @@ end
 parent = obj.handles.parent;
 movegui(parent, 'onscreen');
 
+% --- Toolbar ---
+% Tool handles pick up the same Enable on/off sweep that calibration_state
+% applies to the rest of the GUI (findobj(..., '-property', 'Enable')), so
+% no separate enable/disable wiring is needed here.
+tb = uitoolbar(parent);
+
+h = uipushtool(tb, 'Tooltip', 'Load (.esgc)', ...
+    'Icon', stimgen.util.toolbar_icon('open'), ...
+    'ClickedCallback', @(~,~) obj.load_calibration());
+obj.handles.MenuLoadCalibrationTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Save (.esgc)', ...
+    'Icon', stimgen.util.toolbar_icon('save'), ...
+    'ClickedCallback', @(~,~) obj.save_calibration());
+obj.handles.MenuSaveCalibrationTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Measure Reference', 'Separator', 'on', ...
+    'Icon', stimgen.util.toolbar_icon('calibration'), ...
+    'ClickedCallback', @obj.measure_ref);
+obj.handles.RefMeasureTool = h;
+
+h = uipushtool(tb, 'Tooltip', 'Run Calibration', ...
+    'Icon', stimgen.util.toolbar_icon('play'), ...
+    'ClickedCallback', @obj.run_calibration);
+obj.handles.RunCalibrationTool = h;
+
 % Build grid layout.
 sg               = uigridlayout(parent);
 sg.ColumnWidth   = {'1x','1x'};

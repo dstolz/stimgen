@@ -73,6 +73,58 @@ These are used by editing workflows that support computed property values.
 
 Recent UI sync behavior includes `update_handle_value`, which keeps control state aligned after property updates and variant changes.
 
+### Display units
+
+Time properties are stored in **seconds** but shown in **milliseconds**. The
+conversion is declared per property in `propMeta` and applied only at the GUI
+boundary:
+
+```matlab
+m.Duration = struct('label','Duration (ms)','format','%.1f ms', ...
+                    'limits',[1 10000],'scale',1000);
+```
+
+`stimgen.StimType.display_scale(pm)` returns that factor (1 when absent), and
+the relation is always:
+
+```text
+displayValue = propertyValue * scale
+```
+
+Rules that follow from this:
+
+- `label`, `format` and `limits` are all in **display** units. Vectorizable
+  properties render as expression text fields, which ignore `format` entirely,
+  so the unit must appear in `label` to be visible.
+- `build_expression_context_` also returns display units, so an expression
+  typed into a millisecond field (`Duration/20`) stays in milliseconds
+  end-to-end. `evalPropertyExpression` therefore returns display units and its
+  callers divide by the scale before assigning.
+- Nothing downstream of assignment changes: `Duration`, `WindowDuration`,
+  `ClickDuration` and `OnsetDelay` remain seconds in the object, in
+  `toStruct`/`fromStruct`, and in every signal computation.
+- Time axes on `plot` and `plot_spectrogram` are drawn in ms to match.
+
+A property whose meaning depends on another property can vary its own scale.
+`Tone.WindowMethod` does this: `WindowDuration` is ms under `"Duration"`, but a
+percentage or a period count under `"Proportional"` / `"#Periods"`, so
+`Tone.propMeta` overrides the entry (dropping `scale`) for those modes.
+
+### Parameter grouping
+
+Each `propMeta` entry may also declare `group` (`'Waveform'` | `'Level'` |
+`'Timing'` | `'Variant'`, default `'Waveform'`) and `order` (a numeric sort
+key within that group, default last-and-by-declaration-order).
+`stimgen.StimType.group_prop_meta(meta)` buckets a `propMeta()` struct into
+`{groupName, propNames}` sections in that fixed group order; `create_gui`
+flattens the sections into row order, and `StimPlayer`'s bank editor
+(`on_bank_selection_changed`) uses them directly as visual sections with
+headers. This is how a subclass keeps related controls adjacent even when
+one lives in the subclass's own properties and the others are inherited —
+`Tone.WindowMethod` tags itself `'group','Timing','order',20` so it renders
+between the base class's `Duration` (order 10) and `WindowDuration`
+(order 30) instead of drifting off into the `Waveform` section.
+
 ## Common Public Methods
 
 - `plot`, `plot_spectrogram`, `play`
