@@ -21,6 +21,13 @@ mc = metaclass(obj);
 mcPropList = mc.PropertyList;
 mcNames = string({mcPropList.Name});
 
+% Report the already-active combination without re-triggering selection:
+% selected_value() on a vectorized property auto-advances/reselects when
+% called outside a locked update_signal cycle (VariantReselectOnUpdate),
+% which would silently override a manual step_combination()/step_variant().
+cycleWasActive = obj.variantCycleActive_;
+obj.variantCycleActive_ = true;
+
 parts = strings(1, 0);
 for k = 1:numel(propNames)
     propName = propNames(k);
@@ -57,5 +64,7 @@ for k = 1:numel(propNames)
 
     parts(end+1) = label + "=" + stimgen.StimType.format_summary_value_(value); %#ok<AGROW>
 end
+
+obj.variantCycleActive_ = cycleWasActive;
 
 text = strjoin(parts, ", ");
