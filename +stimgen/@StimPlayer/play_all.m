@@ -1,12 +1,26 @@
 function play_all(obj, src, ~)
 % play_all(obj)
 % play_all(obj, src)
-% Play all variant combinations for the selected bank stimulus through speakers.
+% Play all variant combinations for the selected bank stimulus through
+% speakers. While a cycle is running, the same button (relabeled "Stop")
+% interrupts it: it kills the currently-playing sound and stops the loop
+% before the next combination.
 %
 % Parameters:
 %   src - Optional button handle used to flash active playback state
 
 h = obj.handles;
+
+if obj.PlayAllActive_
+    % Reentrant call from clicking "Stop" while the loop below is running
+    % (reached via the drawnow/pause calls in that loop). Signal the
+    % running cycle to stop and cut off whatever is currently playing.
+    obj.PlayAllActive_ = false;
+    if ~isempty(obj.PlayAllStimObj_) && isvalid(obj.PlayAllStimObj_)
+        obj.PlayAllStimObj_.stop_playback();
+    end
+    return
+end
 
 % Use the listbox-selected item, not the playback cursor.
 sp = [];
@@ -49,6 +63,8 @@ if ~isempty(activeBtn)
     activeBtn.BackgroundColor = [0.2 1.0 0.2];
 end
 
+obj.PlayAllActive_  = true;
+obj.PlayAllStimObj_ = stimObj;
 restoreObj = onCleanup(@() restore_play_all_ui_(obj, activeBtn, prevColor));
 
 try
@@ -56,10 +72,14 @@ try
         h.PlayBtn.Enable = 'off';
     end
     if isfield(h, 'PlayAllBtn') && ~isempty(h.PlayAllBtn) && isvalid(h.PlayAllBtn)
-        h.PlayAllBtn.Enable = 'off';
+        h.PlayAllBtn.Text = 'Stop';
     end
 
     for comboIdx = 1:numCombos
+        if ~obj.PlayAllActive_
+            break
+        end
+
         stimObj.set_variant_index(comboIdx);
         obj.refresh_combo_controls_;
         obj.update_signal_plot;
@@ -79,18 +99,28 @@ try
             sp.Name, comboIdx, numCombos);
         stimObj.play;
 
+        if ~obj.PlayAllActive_
+            break
+        end
+
         if comboIdx < numCombos
             obj.get_isi_;
             pause(obj.currentISI);
         end
     end
 
-    obj.set_status_(sprintf('Finished Play All (%d combinations).', numCombos));
+    if obj.PlayAllActive_
+        obj.set_status_(sprintf('Finished Play All (%d combinations).', numCombos));
+    else
+        obj.set_status_('Play All stopped.');
+    end
 catch ME
     obj.report_gui_error_(ME, "Play All Error", ...
         "StimPlayer could not preview all combinations for the selected stimulus.");
 end
 
+obj.PlayAllActive_  = false;
+obj.PlayAllStimObj_ = [];
 clear restoreObj;
 end
 
@@ -101,7 +131,7 @@ if isfield(h, 'PlayBtn') && ~isempty(h.PlayBtn) && isvalid(h.PlayBtn)
     h.PlayBtn.Enable = 'on';
 end
 if isfield(h, 'PlayAllBtn') && ~isempty(h.PlayAllBtn) && isvalid(h.PlayAllBtn)
-    h.PlayAllBtn.Enable = 'on';
+    h.PlayAllBtn.Text = 'Play All';
 end
 if ~isempty(activeBtn) && isvalid(activeBtn) && ~isempty(prevColor)
     activeBtn.BackgroundColor = prevColor;

@@ -63,6 +63,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         calibrationWarningIssued (1,1) logical = false;
         plotLineHandle matlab.graphics.chart.primitive.Line = matlab.graphics.chart.primitive.Line.empty
         plotAxHandle   matlab.graphics.axis.Axes = matlab.graphics.axis.Axes.empty
+        activePlayer_  % audioplayer currently running under play(), if any
 
         variantCombinationTable_ (1,:) struct = struct.empty(1,0)
         variantCombinationPropNames_ (1,:) string = string.empty(1,0)
@@ -153,6 +154,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         h = plot(obj, ax)                                                         % Plot Signal vs Time
         h = plot_spectrogram(obj, ax, nfft, overlap, window)                      % Plot power spectrogram
         play(obj)                                                                  % Audition current Signal
+        stop_playback(obj)                                                         % Interrupt in-progress play()
         v = selected_value(obj, propName)                                         % Scalar value for a vectorized property
         value = evalPropertyExpression(obj, propName, expressionText)             % Evaluate a property expression
         info = get_variant_info(obj)                                              % Variant-combination state

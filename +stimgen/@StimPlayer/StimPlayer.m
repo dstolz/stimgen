@@ -101,6 +101,9 @@ classdef StimPlayer < handle
         els                        % Event listeners
         hFig                       % uifigure handle
         handles struct = struct()  % UI component handles
+
+        PlayAllActive_ (1,1) logical = false % True while a Play All cycle is running
+        PlayAllStimObj_                      % stimgen.StimType currently being previewed by Play All
     end
 
     % --- Dependent ---
