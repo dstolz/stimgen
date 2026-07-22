@@ -26,9 +26,11 @@ The base class listens to observable property changes and recomputes waveform da
 Typical subclass update flow:
 
 1. generate raw signal in `update_signal`
-2. apply gating/windowing (`apply_gate`)
-3. normalize (`apply_normalization`)
-4. apply calibration (`apply_calibration`)
+2. normalize (`apply_normalization`)
+3. apply calibration (`apply_calibration`)
+4. apply gating/windowing (`apply_gate`)
+
+All concrete subclasses follow this order. Calibration must precede gating: `apply_calibration` renormalizes the waveform before scaling it to the voltage returned by the calibration lookup, so any onset/offset ramp applied earlier would be undone.
 
 `refresh_plot_if_valid` keeps open plot handles synchronized.
 

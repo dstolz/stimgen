@@ -13,7 +13,7 @@ it through the two abstract interfaces described below.
 
 ## Requirements
 
-- MATLAB R2024b or newer
+- MATLAB R2021a or newer
 - Signal Processing Toolbox (calibration filter design and spectral analysis)
 - Audio Toolbox (only for sound-card playback/preview)
 
