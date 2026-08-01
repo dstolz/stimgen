@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `ContinuousTone`, `ContinuousNoise` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`, and the `IsMultiObj` property that tells wrappers whether the object expands into multiple presentable stimuli.
+Concrete subclasses: `Tone`, `Noise`, `AM`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `ContinuousTone`, `ContinuousNoise` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`, and the `IsMultiObj` property that tells wrappers whether the object expands into multiple presentable stimuli.
 
 The two `Continuous*` classes also mix in `stimgen.continuous.Playable`, which reinterprets `Duration` as a loop-block length and adds self-driven gapless playback — see [stimgen_continuous.md](stimgen_continuous.md).
 

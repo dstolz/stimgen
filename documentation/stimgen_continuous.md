@@ -35,15 +35,14 @@ t.Frequency = 2000;    % crossfades; no click
 t.stop;                % fades out and releases the device
 ```
 
-Continuous AM noise, modulated by the envelope of an `AMnoise` object:
+Continuous AM noise, modulated by the envelope of an `AM` object:
 
 ```matlab
 n = stimgen.ContinuousNoise;
 n.Fs = 48000; n.HighPass = 2000; n.LowPass = 8000;
 
-n.EnvelopeSourceClass = "AMnoise";       % builds a live stimgen.AMnoise
-n.EnvelopeSource.EnvelopeOnly = true;    % edit the modulator like any stimulus
-n.EnvelopeSource.AMRate = 4;
+n.EnvelopeSourceClass = "AM";            % builds a live stimgen.AM
+n.EnvelopeSource.AMRate = 4;             % edit the modulator like any stimulus
 n.EnvelopeMode  = "Loop";
 n.EnvelopeDepth = 1;
 
@@ -131,9 +130,9 @@ to get wrong.
 | `EnvelopeDepth` | `[0 1]`. Applied gain is `1 - depth + depth*envelope`, matching `stimgen.AMnoise`. |
 
 **Extraction methods.** `Direct` clamps negatives to zero and normalizes — correct for the objects
-worth using as modulators (`AMnoise` with `EnvelopeOnly`, `AttackModNoise`, `ClickTrain`), which
-already *are* envelopes. `Hilbert` takes `abs(hilbert(x))`, which works on any waveform including a
-raw tone. `RectifyLowpass` rectifies and zero-phase low-passes, preserving time alignment.
+worth using as modulators (`AM`, `AttackModNoise` with `EnvelopeOnly`, `ClickTrain`), which already
+*are* envelopes. `Hilbert` takes `abs(hilbert(x))`, which works on any waveform including a raw tone.
+`RectifyLowpass` rectifies and zero-phase low-passes, preserving time alignment.
 
 **Timing.** In `"Loop"` mode the envelope wraps on its **own read pointer**, independent of the
 carrier's. The envelope period therefore does not have to divide the carrier block length, and either

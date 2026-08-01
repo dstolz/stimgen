@@ -48,6 +48,7 @@ sp.ISI = [0.8 1.2];
 
 - `stimgen.Tone` — pure tone; `Frequency` and `OnsetPhase` may be vectorized to define variants
 - `stimgen.Noise` — band-limited Gaussian noise
+- `stimgen.AM` — sinusoidal amplitude-modulation envelope, carrier-free
 - `stimgen.AMnoise` — sinusoidally amplitude-modulated noise
 - `stimgen.AttackModNoise` — attack-shaped modulated noise
 - `stimgen.ClickTrain` — periodic click train

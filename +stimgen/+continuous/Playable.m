@@ -273,11 +273,11 @@ classdef Playable < handle
 
             switch obj.EnvelopeMethod
                 case "Direct"
-                    % The objects worth using as modulators (AMnoise with
-                    % EnvelopeOnly, AttackModNoise, ClickTrain) already ARE
-                    % envelopes, so take the waveform as-is. Negative excursions
-                    % are clamped rather than rectified, which would double the
-                    % rate of anything oscillating about zero.
+                    % The objects worth using as modulators (AM, AttackModNoise
+                    % with EnvelopeOnly, ClickTrain) already ARE envelopes, so
+                    % take the waveform as-is. Negative excursions are clamped
+                    % rather than rectified, which would double the rate of
+                    % anything oscillating about zero.
                     e = max(x, 0);
                 case "Hilbert"
                     e = abs(hilbert(x));
