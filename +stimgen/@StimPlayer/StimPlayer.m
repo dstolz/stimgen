@@ -224,6 +224,16 @@ classdef StimPlayer < handle
 
             candidates = find(remaining > 0);
 
+            % Continuous stimuli are not trials -- they run as their own
+            % stream and must never be triggered as a one-shot.
+            isCont = arrayfun(@(sp) stimgen.StimPlayer.is_continuous(sp.CurrentStimObj), ...
+                obj.StimPlayObjs(candidates));
+            candidates(isCont) = [];
+            if isempty(candidates)
+                idx = -1;
+                return
+            end
+
             switch obj.SelectionType
                 case "Serial"
                     idx = candidates(1);
@@ -673,6 +683,18 @@ classdef StimPlayer < handle
                     messageText = "The selected variant combination mode is not recognized.";
                 case "stimgen:StimType:InvalidSelectionMode"
                     messageText = "The selected variant selection mode is not recognized.";
+                case "stimgen:continuous:Stream:UnsupportedSampleRate"
+                    messageText = "The sound card cannot run at this stimulus Fs. Set Fs to a sound-card rate such as 44100, 48000, 88200 or 96000 Hz. The stimgen default of 97656.25 Hz is a TDT rate and will not open.";
+                case "stimgen:continuous:Stream:NoCarrier"
+                    messageText = "The continuous stimulus has no waveform yet. Edit a parameter, or reselect it in the bank, to generate one.";
+                case "stimgen:continuous:Stream:InvalidCarrier"
+                    messageText = "The generated waveform contained no finite samples, so it cannot be streamed. Check the stimulus parameters.";
+                case "stimgen:continuous:Playable:BadEnvelopeSource"
+                    messageText = "The selected envelope source class could not be created. Choose a different stimulus type as the modulator.";
+                case "stimgen:ContinuousNoise:EmptyBand"
+                    messageText = "The requested noise band is narrower than the loop's frequency resolution. Increase Duration (the loop-block length) or widen the band.";
+                case "stimgen:ContinuousNoise:InvalidBand"
+                    messageText = "Low Pass Fc must be greater than High Pass Fc.";
                 otherwise
                     rawMessage = string(ME.message);
                     if contains(rawMessage, "Expression cannot be empty.")
@@ -690,5 +712,18 @@ classdef StimPlayer < handle
         end
 
     end % methods (public)
+
+    % =====================================================================
+    methods (Static)
+
+        function tf = is_continuous(stimObj)
+            % tf = stimgen.StimPlayer.is_continuous(stimObj)
+            % True for stimuli that own their own gapless playback stream
+            % (see stimgen.continuous.Playable) rather than being triggered
+            % one shot at a time by the trial timer.
+            tf = ~isempty(stimObj) && isa(stimObj, 'stimgen.continuous.Playable');
+        end
+
+    end % methods (Static)
 
 end

@@ -58,6 +58,11 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
 
     properties (Hidden,Access = protected)
         temporarilyDisableSignalMods (1,1) logical = false;
+        % Suppresses only the time-domain filter branch of apply_calibration,
+        % leaving the LUT level scaling intact. Set by subclasses that must
+        % keep a waveform circularly continuous (see stimgen.ContinuousNoise,
+        % which applies the calibration magnitude response spectrally instead).
+        suppressCalFilter_ (1,1) logical = false;
         els
         GUIHandles
         calibrationWarningIssued (1,1) logical = false;

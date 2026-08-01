@@ -15,6 +15,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_StimType.md](stimgen_StimType.md): base stimulus contract, built-in stimulus classes, and extension points (developer reference)
 - [stimgen_StimPlay.md](stimgen_StimPlay.md): repetition and selection wrapper used by playback tools (developer reference)
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
+- [stimgen_continuous.md](stimgen_continuous.md): continuously playing stimuli, gapless streaming, and envelope modulation
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference
 - [stimgen_SweptSineCalibration.md](stimgen_SweptSineCalibration.md): swept-sine calibration method
@@ -52,6 +53,13 @@ sp.ISI = [0.8 1.2];
 - `stimgen.ClickTrain` — periodic click train
 - `stimgen.FMtone` — frequency-modulated tone
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
+- `stimgen.ContinuousTone` — continuously playing tone; self-driven, gapless
+- `stimgen.ContinuousNoise` — continuously playing band-limited noise; self-driven, gapless
+
+The two continuous classes behave differently from the rest: they loop a seamless block and own their
+own playback (`start()`/`stop()`) rather than being triggered as finite one-shot bursts, and they can
+be amplitude-modulated by the envelope of any other stimulus object. See
+[stimgen_continuous.md](stimgen_continuous.md).
 
 To present a family of related stimuli (e.g., a frequency × level grid), assign vector values to the relevant properties and use the variant-selection controls on `stimgen.StimType` (`VariantSelectionMode`, `VariantCombinationMode`, and related methods). This replaced the older `multiTone` class, which has been removed.
 

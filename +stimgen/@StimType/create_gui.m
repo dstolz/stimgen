@@ -65,6 +65,18 @@ for i = 1:nRows
                 x.ItemsData = pm.itemsData;
             end
             x.Value = obj.(propName);
+        case 'button'
+            % Action row rather than a value editor: propName is a
+            % pseudo-name that need not exist as a property. pm.callback is
+            % invoked with the button handle so the callback can relabel
+            % itself without reaching into the protected GUIHandles struct.
+            x = uibutton(g, 'Tag', propName);
+            if isfield(pm, 'buttonText')
+                x.Text = char(pm.buttonText);
+            else
+                x.Text = char(pm.label);
+            end
+            x.ButtonPushedFcn = @(s,~) pm.callback(s);
         otherwise % 'text'
             x = uieditfield(g, 'Tag', propName);
             x.Value = char(obj.(propName));
@@ -75,5 +87,14 @@ for i = 1:nRows
     h.(propName)    = x;
 end
 
-structfun(@(a) set(a, 'ValueChangedFcn', @obj.interpret_gui), h);
+% Buttons are already wired to ButtonPushedFcn above and have no
+% ValueChangedFcn, so they are skipped here.
+widgetNames = fieldnames(h);
+for i = 1:numel(widgetNames)
+    w = h.(widgetNames{i});
+    if isa(w, 'matlab.ui.control.Button')
+        continue
+    end
+    w.ValueChangedFcn = @obj.interpret_gui;
+end
 obj.GUIHandles = h;

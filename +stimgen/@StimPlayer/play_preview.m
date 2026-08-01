@@ -24,6 +24,31 @@ if isempty(sp)
 end
 
 stimObj = sp.CurrentStimObj;
+
+% Continuous stimuli have no end, so they cannot be auditioned by the
+% blocking play() path below. Toggle their own stream instead.
+if stimgen.StimPlayer.is_continuous(stimObj)
+    try
+        stimObj.toggle();
+        if stimObj.IsRunning
+            obj.set_status_("Streaming: " + string(sp.Name));
+        else
+            obj.set_status_("Stopped: " + string(sp.Name));
+        end
+        if nargin >= 2 && ~isempty(src) && isvalid(src) && isprop(src, 'Text')
+            if stimObj.IsRunning
+                src.Text = 'Stop';
+            else
+                src.Text = 'Play';
+            end
+        end
+    catch ME
+        obj.report_gui_error_(ME, "Continuous Playback Error", ...
+            "StimPlayer could not start the continuous stimulus.");
+    end
+    return
+end
+
 btn = [];
 if nargin >= 2 && ~isempty(src) && isvalid(src) && isprop(src, 'BackgroundColor')
     btn = src;

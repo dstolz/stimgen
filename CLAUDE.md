@@ -41,6 +41,11 @@ serialization, and GUI generation; subclasses only synthesize a waveform.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
 into hardware, and triggers from its own MATLAB timer.
 
+**Continuous playback** — `stimgen.ContinuousTone`/`ContinuousNoise` mix `stimgen.continuous.Playable`
+into their carrier superclass. They loop a seamless block and own their own sound-card stream via
+`stimgen.continuous.Stream`. See `documentation/stimgen_continuous.md`; the rules that will bite you
+are below.
+
 **Calibration** — `stimgen.calibration.Engine` (in `+calibration/@Engine/`) does all measurement
 math and owns `.esgc` save/load. `stimgen.StimCalibration` is a thin GUI-state wrapper that
 delegates every property to an Engine; it exists so `StimType` sees stable property names.
@@ -116,7 +121,35 @@ metadata appears in `StimPlayer` with no player-side changes.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
-automatically offered in GUI dropdowns.
+automatically offered in GUI dropdowns. Helper classes must live in a subpackage (that is why
+`+stimgen/+continuous/` exists) or they will be offered as stimuli.
+
+**Continuous classes invert three base-class assumptions.** For anything mixing
+`stimgen.continuous.Playable`:
+
+- `Duration` is the *loop-block length*, not the stimulus length. It sets frequency resolution:
+  `ContinuousTone` snaps `Frequency` to integer cycles per block (reported by `RealizedFrequency`),
+  and `ContinuousNoise` bins are spaced `Fs/N`, so a narrow band needs a long block.
+- **Never call `apply_gate`.** A ramp inside a looping block fires once per lap. `ApplyWindow` is
+  forced false in the constructor and the window properties are stripped from `propMeta`; the fade
+  lives on the stream as `RampDuration`.
+- `update_signal` must end with `refresh_stream_()`, which crossfades a running stream to the new
+  block.
+
+`ContinuousNoise` synthesizes in the frequency domain rather than reusing `Noise`'s `randn`+`filter`,
+which is not loop-safe. It also sets the protected `suppressCalFilter_` flag (the one seam added to
+`@StimType/apply_calibration.m`) and folds the calibration filter in as a magnitude response, because
+time-domain filtering would reintroduce the transient.
+
+**The mixin is not in `StimType`'s hierarchy.** `stimgen.continuous.Playable` derives from `handle`
+only, so it cannot touch anything `protected` in `StimType` — not `GUIHandles`, not
+`merge_prop_meta`. Both were access errors during development. Reach protected state through the host
+class or duplicate the helper locally; the file has a local `merge_` for exactly this reason.
+
+**`Stream` is not reentrant.** `audioDeviceWriter` blocks when its queue is full, and blocking lets
+MATLAB's event queue dispatch the timer callback on top of an in-progress frame write. That corrupts
+the read pointers or releases the device mid-`step`, which crashes MATLAB with an access violation.
+Keep the `inFrame_` guard, and keep `halt_()`/`stop()` retiring the timer *before* the device.
 
 **Calibration coupling.** A subclass's `CalibrationType` constant (`"tone"`, `"click"`,
 `"filter"`, `"swept_sine"`) selects which LUT `apply_calibration` interpolates and which property

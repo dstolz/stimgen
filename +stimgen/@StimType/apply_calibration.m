@@ -42,7 +42,7 @@ end
 y = obj.Signal;
 
 % --- Filter-based calibration: equalize spectrum + apply level gain ---
-if type == "filter" && isfield(C.CalibrationData,'filter')
+if type == "filter" && isfield(C.CalibrationData,'filter') && ~obj.suppressCalFilter_
 
     Hd = C.CalibrationData.filter;
 

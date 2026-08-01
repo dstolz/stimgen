@@ -67,10 +67,18 @@ stimgen.calibration.CalibrationGui
 | `stimgen.FMtone` | Frequency-modulated tone |
 | `stimgen.SweptSine` | Swept sine (chirp) |
 | `stimgen.ClickTrain` | Click train |
+| `stimgen.ContinuousTone` | Continuously playing tone (gapless, self-driven) |
+| `stimgen.ContinuousNoise` | Continuously playing band-limited noise |
 
 All derive from `stimgen.StimType`, which handles gating, normalization,
 calibration, and variant expansion. To add a stimulus type, subclass
 `stimgen.StimType` and implement `update_signal`.
+
+The two `Continuous*` classes additionally mix in `stimgen.continuous.Playable`.
+Rather than producing a finite gated burst, they loop a seamless block and own
+their own sound-card playback (`start()`/`stop()`), and can be amplitude-modulated
+by the envelope of any other stimulus object. See
+[documentation/stimgen_continuous.md](documentation/stimgen_continuous.md).
 
 ## Calibration
 

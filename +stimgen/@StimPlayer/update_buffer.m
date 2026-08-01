@@ -12,6 +12,12 @@ if isempty(sp)
     return
 end
 
+% Continuous stimuli drive their own sound-card stream and have no
+% one-shot buffer semantics; the trial scheduler skips them too.
+if stimgen.StimPlayer.is_continuous(sp.CurrentStimObj)
+    return
+end
+
 obj.TrigBufferID = mod(obj.trialCount_, 2);
 bid = obj.TrigBufferID;
 

@@ -129,11 +129,24 @@ for s = 1:numel(sections)
                 x.Items = pm.items;
                 if isfield(pm, 'itemsData'), x.ItemsData = pm.itemsData; end
                 x.Value = stimObj.(propName);
+            case 'button'
+                % Action row, not a value editor: propName is a pseudo-name
+                % with no backing property (see stimgen.continuous.Playable,
+                % which uses these for Start/Stop and the envelope editor).
+                x = uibutton(g, 'Tag', propName);
+                if isfield(pm, 'buttonText')
+                    x.Text = char(pm.buttonText);
+                else
+                    x.Text = char(pm.label);
+                end
+                x.ButtonPushedFcn = @(s,~) pm.callback(s);
             otherwise
                 x = uieditfield(g, 'Tag', propName);
                 x.Value = char(stimObj.(propName));
         end
-        x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
+        if ~isa(x, 'matlab.ui.control.Button')
+            x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
+        end
 
         x.Layout.Row    = row;
         x.Layout.Column = 2;
