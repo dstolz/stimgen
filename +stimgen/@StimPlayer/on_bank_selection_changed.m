@@ -129,11 +129,17 @@ for s = 1:numel(sections)
                 x.Items = pm.items;
                 if isfield(pm, 'itemsData'), x.ItemsData = pm.itemsData; end
                 x.Value = stimObj.(propName);
+            case 'button'
+                % Action widget: pm.callback names a public method on stimObj.
+                x = uibutton(g, 'Tag', propName, 'Text', pm.text);
+                x.ButtonPushedFcn = @(~,~) run_action_(obj, stimObj, pm.callback);
             otherwise
                 x = uieditfield(g, 'Tag', propName);
                 x.Value = char(stimObj.(propName));
         end
-        x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
+        if ~isa(x, 'matlab.ui.control.Button')
+            x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
+        end
 
         x.Layout.Row    = row;
         x.Layout.Column = 2;
@@ -193,6 +199,27 @@ if isNumExpr
     src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
 end
 obj.refresh_combo_controls_();
+end
+
+
+function run_action_(obj, stimObj, callbackName)
+% run_action_(obj, stimObj, callbackName) - Invoke a propMeta 'button' action.
+% Action callbacks (e.g. SoundFile.browse_files) can change the parameter set
+% and the number of variant combinations, so the panel is rebuilt afterwards.
+try
+    stimObj.(char(callbackName))();
+catch ME
+    obj.report_gui_error_(ME, "Parameter Action Failed", ...
+        "StimPlayer could not complete that action.");
+    return
+end
+
+if isfield(obj.handles, 'BankList') && isvalid(obj.handles.BankList)
+    obj.on_bank_selection_changed(obj.handles.BankList, []);
+else
+    obj.update_signal_plot;
+    obj.refresh_combo_controls_;
+end
 end
 
 

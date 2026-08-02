@@ -41,15 +41,15 @@ If no adapter is attached at construction time, live calibration buttons are dis
 
 ## Creating An Engine
 
-An `Engine` requires an `HwAdapter` for live measurement. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; host applications supply their own for lab hardware (EPsych provides `stimbridge.InterfaceAdapter` for `hw.Interface` devices):
+An `Engine` requires an `HwAdapter` for live measurement. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; host applications supply their own `HwAdapter` implementation for lab hardware:
 
 ```matlab
 % Built-in sound card adapter:
 adapter = stimgen.calibration.WindowsSoundCardAdapter();
 eng = stimgen.calibration.Engine(adapter);
 
-% Or a host-supplied adapter, e.g. under EPsych:
-adapter = stimbridge.InterfaceAdapter(iface);
+% Or a host-supplied adapter:
+adapter = host.calibrationAdapter();
 eng = stimgen.calibration.Engine(adapter);
 ```
 
@@ -70,18 +70,18 @@ Once an engine exists, pass it to `CalibrationGui` or let the GUI create its own
 
 ## Exact Protocol Requirements For CalibrationGui Compatibility
 
-This section defines the exact requirements for a protocol to be usable with File > Initialize Runtime From Protocol... in CalibrationGui.
+This section defines the exact requirements for a protocol to be usable with File > Initialize Runtime From Protocol... in CalibrationGui. These requirements are expressed against the abstract `stimgen.HardwareHost` contract; a host application is responsible for satisfying them with its own protocol and interface model.
 
 ### Required protocol-level conditions
 
-1. The protocol must load successfully through epsych.Protocol.load(path).
-2. protocol.Interfaces must contain at least one interface object.
-3. At least one interface must be connectable (iface.connect() results in iface.IsConnected == true).
-4. At least one connected interface must be compatible with stimbridge.InterfaceAdapter.
+1. The protocol must load successfully through `host.loadProtocol(path)`.
+2. The host must expose at least one hardware interface after loading.
+3. At least one interface must be connectable via `host.connect()`.
+4. At least one connected interface must be able to produce a working `HwAdapter` through `host.calibrationAdapter()`.
 
 ### Required interface capabilities
 
-A compatible interface must expose the following hw.Parameter names:
+A compatible interface must expose parameters equivalent to:
 
 1. BufferSize (write)
 2. BufferOut (write)
@@ -89,16 +89,11 @@ A compatible interface must expose the following hw.Parameter names:
 4. BufferIndex (read)
 5. BufferIn (read)
 
-If any required parameter is missing, InterfaceAdapter construction fails for that interface.
+If any required parameter is missing, `host.calibrationAdapter()` fails to build a working adapter for that interface.
 
 ### Required sample-rate availability
 
-A compatible interface must provide a usable sample rate by one of these paths:
-
-1. One interface module has Fs > 0.
-2. An explicit Fs override is supplied to InterfaceAdapter (not currently used by CalibrationGui runtime attach path).
-
-If neither is true, adapter attachment fails with InterfaceAdapter no-sample-rate errors.
+A compatible interface must provide a usable sample rate, surfaced through `HwAdapter.sample_rate()`. If no interface can report a nonzero sample rate, adapter attachment fails with a no-sample-rate error.
 
 ### Runtime integration behavior
 
@@ -109,11 +104,11 @@ When initialization is requested, CalibrationGui delegates every hardware step t
 3. `host.setMode("Preview")` — put devices in preview mode.
 4. `host.calibrationAdapter()` — obtain an `HwAdapter` for the calibration-capable device.
 
-Choosing *which* device can drive calibration is the host's decision, not the GUI's. Under EPsych, `stimbridge.RuntimeHost` scans interfaces in order and returns the first that can build a `stimbridge.InterfaceAdapter`.
+Choosing *which* device can drive calibration is the host's decision, not the GUI's — `calibrationAdapter()` is free to scan available interfaces in whatever order it chooses and return the first that can build a working adapter.
 
 Practical implication:
 
-- If multiple interfaces exist, ordering matters. Put the calibration-capable interface earlier in protocol.Interfaces to ensure deterministic selection.
+- If multiple interfaces exist, ordering matters if the host's `calibrationAdapter()` selects by interface order. Consult the host's documentation for how it picks the calibration-capable interface.
 
 ## Non-Compatible Protocol Patterns
 
@@ -182,13 +177,13 @@ Raised by the GUI itself:
 
 1. `stimgen:calibration:CalibrationGui:noHost` — a runtime menu action was used with no host attached.
 
-Raised by the host (identifiers below are EPsych's `stimbridge`; other hosts will differ):
+Raised by the host (identifiers are host-specific; the ones below are representative):
 
-2. `stimbridge:RuntimeHost:noRuntimeInterfaces`
-3. `stimbridge:RuntimeHost:attachAdapterFailed`
-4. `stimbridge:InterfaceAdapter:missingParameter`
-5. `stimbridge:InterfaceAdapter:noSampleRate`
-6. `stimbridge:RuntimeHost:connectFailed`
+2. `<host>:noRuntimeInterfaces` — no interfaces available on the loaded protocol.
+3. `<host>:attachAdapterFailed` — no interface could build a working `HwAdapter`.
+4. `<host>:missingParameter` — a required buffer/trigger parameter was not found.
+5. `<host>:noSampleRate` — no interface reported a usable sample rate.
+6. `<host>:connectFailed` — the interface failed to connect.
 
 These are surfaced in the status label and a uialert dialog.
 
@@ -217,5 +212,4 @@ When editing protocol hardware circuits for calibration support:
 
 1. [stimgen_calibration.md](stimgen_calibration.md)
 2. [stimgen_StimCalibration.md](stimgen_StimCalibration.md)
-3. epsych2: obj/+stimbridge/InterfaceAdapter.m
-4. +stimgen/+calibration/Engine.m
+3. +stimgen/+calibration/Engine.m

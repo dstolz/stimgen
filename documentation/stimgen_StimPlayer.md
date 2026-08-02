@@ -44,10 +44,10 @@ and trigger hardware playback:
 sp = stimgen.StimPlayer(HOST);   % a stimgen.HardwareHost implementation
 ```
 
-Under EPsych, that host is `stimbridge.RuntimeHost`, which wraps a protocol:
+A host application's `HardwareHost` implementation typically wraps a protocol, e.g.:
 
 ```matlab
-sp = stimgen.StimPlayer(stimbridge.RuntimeHost('C:\path\to\my.eprot'));
+sp = stimgen.StimPlayer(host);   % host already has a protocol loaded/connected
 ```
 
 A protocol can also be loaded later from the GUI's **File** menu, which

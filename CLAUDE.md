@@ -5,9 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A MATLAB toolbox (R2021a+) for auditory stimulus generation, playback, and speaker/microphone
-calibration. Extracted from [EPsych v2](https://github.com/dstolz/epsych2) and deliberately kept
-free of any dependency on it. Requires Signal Processing Toolbox; Audio Toolbox only for
-sound-card playback/preview.
+calibration, deliberately kept free of any dependency on a host application. Requires Signal
+Processing Toolbox; Audio Toolbox only for sound-card playback/preview.
 
 ## Working in this repo
 
@@ -34,8 +33,10 @@ Three subsystems, plus two abstract seams that keep the package standalone.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain`. The base class owns level/duration/gating/Fs, the variant system,
-serialization, and GUI generation; subclasses only synthesize a waveform.
+`SweptSine`, `ClickTrain`, `SoundFile`. The base class owns level/duration/gating/Fs, the variant
+system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile` is the
+exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
+`FileIndex` as its variant axis, and derives `Duration` from the selected file.
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
@@ -57,7 +58,7 @@ delegates every property to an Engine; it exists so `StimType` sees stable prope
 
 Both are optional at construction; omitting them puts the GUIs in offline mode where speaker
 preview still works. New hardware support means a new `HwAdapter` subclass, never an edit inside
-`Engine`. Reference host implementation: the `stimbridge` package in EPsych v2.
+`Engine`.
 
 ## Conventions that will bite you
 
@@ -107,12 +108,25 @@ declared per property in `propMeta` as `'scale', 1000` and read back via
   is shared with frequency in Hz.
 - A property whose units depend on another property overrides its own `propMeta` entry — see
   `Tone.WindowMethod`, where `WindowDuration` is ms/percent/periods depending on the mode.
+- A derived time property should be removed from `propMeta` rather than shown read-only (there is no
+  read-only widget). `SoundFile` does `base = rmfield(base,'Duration')` because `Duration` is slaved
+  to the selected file, and writes it from inside `update_signal` behind a guard flag that
+  suppresses the `SetObservable` listener for that one write.
 
 **GUIs are generated, not hand-built.** `create_gui` reads `propMeta()` and builds a label+widget
 grid; widget type is inferred from the property's class unless overridden. Subclass `propMeta`
 defines its own fields then calls
 `stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj))`. A subclass with clean
 metadata appears in `StimPlayer` with no player-side changes.
+
+Widget types are `numeric`, `text`, `checkbox`, `dropdown`, and `button`. A `button` entry is an
+*action*, not a property: its field name is only a widget `Tag` (it need not name a real property),
+and it declares `text` (caption) and `callback` (a public no-argument method on the stimulus
+object) — see `SoundFile.BrowseFiles`. Two near-duplicate generators must both learn any new widget
+type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (which re-implements
+`resolve_widget_type` as a local function because the static is protected). Both wire
+`ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
+has to be excluded there.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
@@ -146,7 +160,8 @@ stack. Deliberately standalone, but shares the `GVerbosity` global with the host
 
 `StimPlayer` resolves these names from the host at Run time and disables hardware playback if any
 are missing (falling back to speaker preview): `BufferData_0/1`, `BufferSize_0/1`,
-`x_Trigger_0/1`. These match the `StimGenCircuit.rcx` RPvds circuit shipped with EPsych.
+`x_Trigger_0/1`. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
+application's hardware circuit must expose to support hardware-triggered playback.
 
 ## Documentation
 

@@ -106,7 +106,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             v = obj.Engine.MicSensitivity;
         end
         function set.MicSensitivity(obj, r)
-            obj.Engine.MicSensitivity = r;
+            obj.Engine.set_configuration(MicSensitivity=r);
             obj.sync_gui_field_('MicSensitivity', r);
         end
 
@@ -114,7 +114,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             v = obj.Engine.ReferenceLevel;
         end
         function set.ReferenceLevel(obj, r)
-            obj.Engine.ReferenceLevel = r;
+            obj.Engine.set_configuration(ReferenceLevel=r);
             obj.sync_gui_field_('ReferenceLevel', r);
         end
 
@@ -122,7 +122,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             v = obj.Engine.ReferenceFrequency;
         end
         function set.ReferenceFrequency(obj, r)
-            obj.Engine.ReferenceFrequency = r;
+            obj.Engine.set_configuration(ReferenceFrequency=r);
             obj.sync_gui_field_('ReferenceFrequency', r);
         end
 
@@ -130,7 +130,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             v = obj.Engine.NormativeValue;
         end
         function set.NormativeValue(obj, r)
-            obj.Engine.NormativeValue = r;
+            obj.Engine.set_configuration(NormativeValue=r);
             obj.sync_gui_field_('NormativeValue', r);
         end
 
@@ -138,7 +138,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             v = obj.Engine.ExcitationVoltage;
         end
         function set.ExcitationSignalVoltage(obj, r)
-            obj.Engine.ExcitationVoltage = r;
+            obj.Engine.set_configuration(ExcitationVoltage=r);
             obj.sync_gui_field_('ExcitationSignalVoltage', r);
         end
 
@@ -154,12 +154,23 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         function set_prop(obj, src, ~)
             % Callback from GUI numeric fields: src.Tag names the Engine property.
             % ExcitationSignalVoltage is a special case (maps to Engine.ExcitationVoltage).
+            %
+            % Engine parameters are SetAccess = protected, so the write has to
+            % go through set_configuration -- that is also what runs the
+            % property validators. A rejected value is rolled back in the
+            % widget so the GUI cannot drift out of sync with the Engine.
             tag = src.Tag;
-            val = src.Value;
             if strcmp(tag, 'ExcitationSignalVoltage')
-                obj.Engine.ExcitationVoltage = val;
+                name = 'ExcitationVoltage';
             else
-                obj.Engine.(tag) = val;
+                name = tag;
+            end
+
+            try
+                obj.Engine.set_configuration(name, src.Value);
+            catch ME
+                src.Value = obj.Engine.(name);
+                stimgen.util.vprintf(0, 2, ME);
             end
         end
 
@@ -207,7 +218,9 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
                     drawnow;
 
                     try
-                        obj.Engine.CalibrationTimestamp = datetime("now");
+                        % No timestamp write here: CalibrationTimestamp is
+                        % SetAccess = protected, and calibrate_clicks/
+                        % calibrate_tones each stamp it on success anyway.
                         obj.Engine.calibrate_clicks();
                         obj.Engine.calibrate_tones();
                         h.MenuSaveCalibration.Enable = 'on';
@@ -320,16 +333,10 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             % Restore from a MATLAB session save struct.
             obj = stimgen.StimCalibration();  % offline, no adapter
             if isstruct(s)
-                eng = obj.Engine;
-                if isstruct(s.CalibrationData)
-                    eng.CalibrationData = s.CalibrationData;
-                end
-                eng.MicSensitivity      = s.MicSensitivity;
-                eng.NormativeValue      = s.NormativeValue;
-                eng.ReferenceLevel      = s.ReferenceLevel;
-                eng.ReferenceFrequency  = s.ReferenceFrequency;
-                eng.ExcitationVoltage   = s.ExcitationSignalVoltage;
-                eng.CalibrationTimestamp = s.CalibrationTimestamp;
+                % Engine measurement properties are SetAccess = protected, so
+                % they cannot be assigned from here; restore() is the
+                % supported entry point and tolerates a partial struct.
+                obj.Engine.restore(s);
             end
         end
     end

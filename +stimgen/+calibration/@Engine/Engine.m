@@ -22,7 +22,8 @@ classdef Engine < handle
     % Usage:
     %   adapter = stimgen.calibration.WindowsSoundCardAdapter();
     %   eng = stimgen.calibration.Engine(adapter);
-    %   eng.ReferenceFrequency = 1000;
+    %   eng.set_configuration(ReferenceFrequency=1000);  % parameters are
+    %                                    % SetAccess = protected; use this
     %   eng.calibrate_reference();
     %   eng.calibrate_tones([], 3);     % 3 averages per frequency
     %   eng.calibrate_clicks([], 3);
@@ -86,6 +87,7 @@ classdef Engine < handle
         end
 
         set_configuration(obj, options) % Update engine calibration parameters.
+        set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
         calibrate_reference(obj) % Measure microphone sensitivity from reference tone.
         calibrate_tones(obj, freqs, repeatCount) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
@@ -93,6 +95,7 @@ classdef Engine < handle
         design_filter(obj) % Design equalization filter from tone LUT.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         save(obj, ffn) % Save calibration to .esgc file.
+        restore(obj, s) % Restore engine state from a serialized struct.
 
         function Fs = get.Fs(obj)
             % Return adapter sample rate or 0 when no adapter is attached.

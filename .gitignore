@@ -7,3 +7,7 @@ slprj/
 
 # Calibration output written during local testing
 *.esgc
+
+# Sound files used with stimgen.SoundFile during local testing
+*.wav
+*.flac

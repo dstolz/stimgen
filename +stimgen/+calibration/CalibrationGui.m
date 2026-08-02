@@ -111,7 +111,7 @@ classdef CalibrationGui < handle
                 obj
                 adapter (1,1) stimgen.calibration.HwAdapter
             end
-            obj.Engine.Adapter = adapter;
+            obj.Engine.set_adapter(adapter);
             obj.update_runtime_state_();
             obj.set_status_('Adapter attached. Ready for live calibration.', false);
         end
@@ -440,7 +440,7 @@ classdef CalibrationGui < handle
                 return
             end
             if ~isempty(prevAdapter)
-                eng.Adapter = prevAdapter;
+                eng.set_adapter(prevAdapter);
             end
             obj.Engine = eng;
             obj.sync_controls_();
@@ -497,7 +497,7 @@ classdef CalibrationGui < handle
                 obj.Host.release();
             end
 
-            obj.Engine.Adapter = [];
+            obj.Engine.set_adapter([]);
             obj.update_runtime_state_();
             obj.set_status_('Calibration runtime disconnected.', false);
         end

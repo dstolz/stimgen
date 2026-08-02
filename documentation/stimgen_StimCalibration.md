@@ -25,7 +25,7 @@ Without arguments the object holds an offline `Engine`. Load a saved `.esgc` fil
 cal = stimgen.StimCalibration(adapter);
 ```
 
-Pass a `stimgen.calibration.HwAdapter` connected to your hardware and the constructor builds an `Engine` around it and launches the calibration GUI so a new calibration can be measured. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; under EPsych, use `stimbridge.InterfaceAdapter(RUNTIME.HW)`.
+Pass a `stimgen.calibration.HwAdapter` connected to your hardware and the constructor builds an `Engine` around it and launches the calibration GUI so a new calibration can be measured. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; for lab hardware, use a host-supplied `HwAdapter`, e.g. `host.calibrationAdapter()`.
 
 ## Delegated properties
 
@@ -44,6 +44,11 @@ These proxy directly to the underlying `Engine`:
 - `gui()` — launch the calibration GUI (`stimgen.calibration.CalibrationGui`).
 - `compute_adjusted_voltage(...)` — proxy to the Engine; called by `stimgen.StimType.apply_calibration()` to convert a requested dB SPL level into an output voltage.
 - `load_calibration(filename)` / `save_calibration(filename)` — read/write `.esgc` files (legacy `.sgc` files can still be loaded).
+- `toStruct()` / `saveobj()` / `loadobj(s)` — serialization. `loadobj` rebuilds an offline instance and repopulates it through `Engine.restore(s)`.
+
+### Restoring engine state
+
+The `Engine` measurement properties are `SetAccess = protected`, so `StimCalibration` cannot assign them directly. `stimgen.calibration.Engine.restore(s)` is the supported entry point, used by `loadobj` whenever a calibration is rebuilt from a serialized `StimType` or a `.spl` bank. It accepts either field naming in circulation — `ExcitationVoltage` (`.esgc` / `Engine.save`) or `ExcitationSignalVoltage` (`StimCalibration.toStruct`) — and leaves any missing field at its current value, so partial structs from older files are safe.
 
 ## Attaching calibration to stimuli
 

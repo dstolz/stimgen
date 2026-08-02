@@ -16,7 +16,7 @@ The result of a calibration session is a `.esgc` file. When your experiment load
 
 ### Software
 
-- If using TDT or similar hardware: an epsych **protocol file** (`.eprot`) that includes the calibration-capable hardware interface. See [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md) for exact interface requirements.
+- If using TDT or similar hardware: a host application **protocol file** (`.eprot`) that includes the calibration-capable hardware interface. See [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md) for exact interface requirements.
 - If using a Windows sound card: no protocol file is needed — use `WindowsSoundCardAdapter` directly.
 
 ---
@@ -98,7 +98,7 @@ Use this path when you want to script calibration, run it headlessly, or use a W
 
 Choose the adapter that matches your hardware:
 
-**Windows sound card** (simplest — no epsych hardware interface needed):
+**Windows sound card** (simplest — no host-provided hardware interface needed):
 
 ```matlab
 adapter = stimgen.calibration.WindowsSoundCardAdapter( ...
@@ -107,12 +107,12 @@ adapter = stimgen.calibration.WindowsSoundCardAdapter( ...
     InputChannel=1);        % microphone input channel index
 ```
 
-**Lab hardware via a host application.** stimgen ships no hardware-specific adapter; the host provides one implementing `HwAdapter`. Under EPsych, that is `stimbridge.InterfaceAdapter`, which wraps an `hw.Interface`:
+**Lab hardware via a host application.** stimgen ships no hardware-specific adapter; the host provides one implementing `HwAdapter`. A typical pattern:
 
 ```matlab
-protocol = epsych.Protocol.load('MyProtocol.eprot');
-protocol.Interfaces(1).connect();
-adapter = stimbridge.InterfaceAdapter(protocol.Interfaces(1));
+protocol = host.loadProtocol('MyProtocol.eprot');
+host.connect();
+adapter = host.calibrationAdapter();
 ```
 
 To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`.
@@ -208,6 +208,14 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `ShowLivePlots` | false | Show waveform and spectrum plots during sweeps |
 
+These are all `SetAccess = protected` — they are readable from anywhere but can only
+be written through `eng.set_configuration(Name=value)`, which is what runs their
+validators. Direct assignment (`eng.MicSensitivity = 0.05`) raises
+`MATLAB:class:SetProhibited`. The same applies to `eng.Adapter`, which is attached or
+detached with `eng.set_adapter(adapter)` / `eng.set_adapter([])`, and to
+`CalibrationData`/`CalibrationTimestamp`, which are restored with `eng.restore(s)` and
+otherwise written only by the calibration runs themselves.
+
 ---
 
 ## Reference: CalibrationData Structure
@@ -233,10 +241,10 @@ Source: `+stimgen/+calibration/`
 - `Engine.m` — calibration orchestration, result storage, save/load, and voltage lookup.
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
-
-Host-supplied adapters live outside this package; EPsych provides
-`stimbridge.InterfaceAdapter` for `hw.Interface` devices (TDT and similar).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
+
+Host-supplied adapters for lab hardware (TDT and similar) live outside this package; a host
+application implements its own `HwAdapter` subclass to wrap its device interfaces.
 
 ---
 

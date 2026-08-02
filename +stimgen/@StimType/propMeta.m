@@ -10,9 +10,12 @@ function m = propMeta(~)
 %   scale     (optional) - display = property * scale (default 1). Time
 %                          properties are stored in seconds and displayed
 %                          in milliseconds, so they use scale = 1000.
-%   widget    (optional) - 'numeric'|'text'|'checkbox'|'dropdown'
+%   widget    (optional) - 'numeric'|'text'|'checkbox'|'dropdown'|'button'
 %   items     (optional) - dropdown display items
 %   itemsData (optional) - dropdown underlying values
+%   text      (button)   - button caption
+%   callback  (button)   - name of a public no-argument method on the
+%                          stimulus object to invoke when pressed
 %   group     (optional) - 'Waveform'|'Level'|'Timing'|'Variant', used by
 %                          stimgen.StimType.group_prop_meta to lay out the
 %                          GUI in logically related sections. Defaults to
@@ -27,6 +30,10 @@ function m = propMeta(~)
 % write, using stimgen.StimType.display_scale. Vectorizable properties
 % render as expression text fields, which ignore 'format' entirely -- so
 % the unit has to live in 'label' to be visible.
+%
+% NOTE: a 'button' entry is an action, not a property. Its field name is
+% only a widget Tag, so it need not name a real property, and no value is
+% read from or written to the object. See stimgen.SoundFile.BrowseFiles.
 m = struct();
 m.SoundLevel     = struct('label', 'Sound Level',          'format', '%.1f dB SPL', 'group', 'Level', 'order', 10);
 m.ApplyCalibration = struct('label', 'Apply Calibration', 'group', 'Level', 'order', 20);

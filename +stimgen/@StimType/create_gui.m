@@ -65,6 +65,11 @@ for i = 1:nRows
                 x.ItemsData = pm.itemsData;
             end
             x.Value = obj.(propName);
+        case 'button'
+            % Action widget: pm.callback names a public method on obj.
+            % Backed by no property, so nothing is read from obj here.
+            x = uibutton(g, 'Tag', propName, 'Text', pm.text);
+            x.ButtonPushedFcn = @(~,~) obj.(pm.callback)();
         otherwise % 'text'
             x = uieditfield(g, 'Tag', propName);
             x.Value = char(obj.(propName));
@@ -75,5 +80,11 @@ for i = 1:nRows
     h.(propName)    = x;
 end
 
-structfun(@(a) set(a, 'ValueChangedFcn', @obj.interpret_gui), h);
+% Buttons carry ButtonPushedFcn, not ValueChangedFcn, and would error here.
+hNames = fieldnames(h);
+for i = 1:numel(hNames)
+    if ~isa(h.(hNames{i}), 'matlab.ui.control.Button')
+        h.(hNames{i}).ValueChangedFcn = @obj.interpret_gui;
+    end
+end
 obj.GUIHandles = h;

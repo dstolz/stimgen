@@ -1,6 +1,6 @@
 # Stimulus Generation Package
 
-`stimgen` is a standalone stimulus authoring, calibration, and playback toolbox. It originated as a layer inside EPsych and is now its own package with no dependency on it; host applications integrate through the abstract `stimgen.HardwareHost` and `stimgen.calibration.HwAdapter` classes.
+`stimgen` is a standalone stimulus authoring, calibration, and playback toolbox with no dependency on any host application; host applications integrate through the abstract `stimgen.HardwareHost` and `stimgen.calibration.HwAdapter` classes.
 
 At a high level, the package lets you:
 
@@ -12,13 +12,16 @@ This overview is the entry point for the subsystem. The first half is for users 
 
 ## Documentation map
 
-- [stimgen_StimType.md](stimgen_StimType.md): base stimulus contract, built-in stimulus classes, and extension points (developer reference)
+- [stimgen_StimType.md](stimgen_StimType.md): base stimulus contract and extension points (developer reference)
+- [stimgen_StimTypes.md](stimgen_StimTypes.md): catalog of built-in stimulus classes and their properties
 - [stimgen_StimPlay.md](stimgen_StimPlay.md): repetition and selection wrapper used by playback tools (developer reference)
+- [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference
 - [stimgen_SweptSineCalibration.md](stimgen_SweptSineCalibration.md): swept-sine calibration method
 - [stimgen_StimCalibration.md](stimgen_StimCalibration.md): the `StimCalibration` wrapper used by stimulus objects
+- [stimgen_TDT_RPvds.md](stimgen_TDT_RPvds.md): TDT/RPvds hardware circuit contract and legacy file types
 
 ## Core workflow
 
@@ -52,6 +55,9 @@ sp.ISI = [0.8 1.2];
 - `stimgen.ClickTrain` — periodic click train
 - `stimgen.FMtone` — frequency-modulated tone
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
+- `stimgen.SoundFile` — playback of pregenerated sound files (vocalizations, phonemes); see [stimgen_SoundFile.md](stimgen_SoundFile.md)
+
+See [stimgen_StimTypes.md](stimgen_StimTypes.md) for the full property reference of each class.
 
 To present a family of related stimuli (e.g., a frequency × level grid), assign vector values to the relevant properties and use the variant-selection controls on `stimgen.StimType` (`VariantSelectionMode`, `VariantCombinationMode`, and related methods). This replaced the older `multiTone` class, which has been removed.
 
@@ -75,23 +81,16 @@ See [stimgen_calibration.md](stimgen_calibration.md) for the full walkthrough.
 
 ## Runtime and hardware expectations
 
-Hardware playback assumes the host exposes the parameter names expected by the stimgen RPvds circuit (`StimGenCircuit.rcx`, shipped with EPsych under `examples/stimgen/`):
-
-- `BufferData_0`, `BufferData_1` — audio data buffers
-- `BufferSize_0`, `BufferSize_1` — buffer length in samples
-- `x_Trigger_0`, `x_Trigger_1` — playback trigger pulses
-
-If the protocol is missing or the expected parameters are unavailable, the GUIs still open, but only speaker preview is available; hardware-triggered playback is disabled.
+Hardware playback requires the host to expose a specific set of RPvds circuit parameters; if the
+protocol is missing or those parameters are unavailable, the GUIs still open, but only speaker
+preview is available. See [stimgen_TDT_RPvds.md](stimgen_TDT_RPvds.md) for the exact parameter
+contract and TDT-specific legacy file types.
 
 ## Saved file types
 
 - `.esgc`: calibration files from the `stimgen.calibration` package (legacy `.sgc` files can still be loaded)
 - `.spl`: stimulus-bank files from `StimPlayer`
-- `.eprot`: EPsych protocols, which a host can load to reach hardware
-
-The `StimGen.prot`/`StimGen.ecfg` assets from earlier tooling generations now
-live with EPsych under `examples/stimgen/`, since they deserialize into EPsych
-objects; current save/load paths revolve around `.esgc` and `.spl`.
+- `.eprot`: host protocol files, which a host can load to reach hardware (via `HardwareHost.loadProtocol`); see [stimgen_TDT_RPvds.md](stimgen_TDT_RPvds.md)
 
 ## Developer notes
 

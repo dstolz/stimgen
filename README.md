@@ -7,9 +7,8 @@ calibration.
 swept sines, click trains), manages banks of them for playback, and converts
 requested sound levels into hardware voltages via a measured calibration.
 
-It was extracted from [EPsych v2](https://github.com/dstolz/epsych2) and has no
-dependency on it — `stimgen` runs standalone, and any host application can drive
-it through the two abstract interfaces described below.
+`stimgen` runs standalone, with no dependency on any host application — any host
+application can drive it through the two abstract interfaces described below.
 
 ## Requirements
 
@@ -105,8 +104,7 @@ Two abstract classes are the only integration points; implement them to drive
 - **`stimgen.calibration.HwAdapter`** — play/record for `Engine`.
 
 `stimgen` never references host types directly, which is what keeps this package
-independent. For a worked example of both, see the `stimbridge` package in
-[EPsych v2](https://github.com/dstolz/epsych2).
+independent.
 
 ## Logging
 

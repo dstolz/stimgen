@@ -22,8 +22,14 @@ try
     for k = 1:bank.NItems
         S = bank.Items{k};
 
-        % Reconstruct the StimType object from its serialized struct
+        % Reconstruct the StimType object from its serialized struct.
+        % toStruct writes the fully-qualified name ("stimgen.Tone"), so strip
+        % any package prefix before the dynamic package-scoped call.
         stimClass = char(S.StimObj.Class);
+        dotIdx = find(stimClass == '.', 1, 'last');
+        if ~isempty(dotIdx)
+            stimClass = stimClass(dotIdx+1:end);
+        end
         stimObj   = stimgen.(stimClass)();
 
         % Restore base StimType properties
