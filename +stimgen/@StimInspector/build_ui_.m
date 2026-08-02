@@ -164,11 +164,11 @@ end
 
 
 function build_spectrogram_tab_(obj, tg)
-% Spectrogram tab with a selectable FFT length.
+% Spectrogram tab with a selectable FFT length and window function.
 tab = uitab(tg, 'Title', 'Spectrogram');
 
 tgrid = uigridlayout(tab);
-tgrid.ColumnWidth = {90, 110, '1x'};
+tgrid.ColumnWidth = {90, 110, 80, 130, '1x'};
 tgrid.RowHeight   = {24, '1x'};
 tgrid.Padding     = [6 6 6 6];
 
@@ -185,9 +185,22 @@ d.Layout.Column = 2;
 d.ValueChangedFcn = @(~,~) obj.update_plots_(obj.Metrics);
 obj.handles.SpecNfftDD = d;
 
+lbl = uilabel(tgrid, 'Text', 'Window:', 'HorizontalAlignment', 'right');
+lbl.Layout.Row    = 1;
+lbl.Layout.Column = 3;
+
+d = uidropdown(tgrid);
+d.Items     = {'Hann', 'Rectangular', 'Hamming', 'Blackman', 'Blackman-Harris', 'Flat Top', 'Triangular', 'Bartlett'};
+d.ItemsData = {'hann', 'rectwin', 'hamming', 'blackman', 'blackmanharris', 'flattopwin', 'triang', 'bartlett'};
+d.Value     = 'hann';
+d.Layout.Row    = 1;
+d.Layout.Column = 4;
+d.ValueChangedFcn = @(~,~) obj.update_plots_(obj.Metrics);
+obj.handles.SpecWindowDD = d;
+
 ax = uiaxes(tgrid);
 ax.Layout.Row    = 2;
-ax.Layout.Column = [1 3];
+ax.Layout.Column = [1 5];
 box(ax, 'on');
 title(ax, 'Spectrogram');
 xlabel(ax, 'time (ms)');

@@ -179,8 +179,11 @@ if numel(y) < nfft || nfft < 16
     return
 end
 
+winFcn = str2func(obj.handles.SpecWindowDD.Value);
+win    = winFcn(nfft);
+
 try
-    [~, freqVec, timeVec, ps] = spectrogram(y, hamming(nfft), round(nfft*0.75), nfft, fs, 'power');
+    [~, freqVec, timeVec, ps] = spectrogram(y, win, round(nfft*0.75), nfft, fs, 'power');
 catch ME
     title(ax, 'Spectrogram — unavailable');
     stimgen.util.vprintf(2, 1, 'StimInspector: spectrogram failed: %s', ME.message);
@@ -202,7 +205,9 @@ end
 
 cb = colorbar(ax);
 cb.Label.String = 'power (dB)';
-title(ax, sprintf('Spectrogram  (%d-point FFT, %.1f Hz resolution)', nfft, fs/nfft));
+d = obj.handles.SpecWindowDD;
+winName = d.Items{strcmp(d.ItemsData, d.Value)};
+title(ax, sprintf('Spectrogram  (%d-point FFT, %s window, %.1f Hz resolution)', nfft, winName, fs/nfft));
 end
 
 
