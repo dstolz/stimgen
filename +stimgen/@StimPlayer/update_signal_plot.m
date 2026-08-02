@@ -2,6 +2,9 @@ function update_signal_plot(obj)
 % update_signal_plot(obj) - Refresh the signal plot with the current bank item.
 % Developer guide: documentation/stimgen_StimPlayer.md
 % Uses the listbox selection when idle; falls back to CurrentSPObj during playback.
+%
+% This is the single funnel for "the selection changed" in the GUI, so it also
+% refreshes the stimulus inspector window when one is open.
 
 h = obj.handles;
 if ~isfield(h, 'SignalLine') || ~isvalid(h.SignalLine)
@@ -9,21 +12,12 @@ if ~isfield(h, 'SignalLine') || ~isvalid(h.SignalLine)
 end
 ax = obj.handles.SignalAx;
 
-% Prefer the GUI-selected item; fall back to playback cursor
-sp = [];
-if isfield(h, 'BankList') && isvalid(h.BankList) && ~isempty(h.BankList.Value)
-    idx = h.BankList.Value;
-    if idx >= 1 && idx <= numel(obj.StimPlayObjs)
-        sp = obj.StimPlayObjs(idx);
-    end
-end
-if isempty(sp)
-    sp = obj.CurrentSPObj;
-end
+sp = obj.selected_or_current_spobj_();
 
 if isempty(sp)
     set(h.SignalLine, 'XData', nan, 'YData', nan);
     title(ax, '');
+    obj.refresh_inspector_;
     return
 end
 
@@ -45,4 +39,6 @@ else
     set(h.SignalLine, 'XData', nan, 'YData', nan);
     title(ax, char(sp.Name));
 end
+
+obj.refresh_inspector_;
 end

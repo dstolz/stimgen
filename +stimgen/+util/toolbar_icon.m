@@ -8,14 +8,16 @@ function icon = toolbar_icon(name)
 %
 % Parameters:
 %   name - one of "open", "save", "protocol", "calibration", "connect",
-%          "disconnect", "help", "add", "remove", "play"
+%          "disconnect", "help", "add", "remove", "play", "inspect",
+%          "refresh"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
 
 arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
-        "calibration","connect","disconnect","help","add","remove","play"])}
+        "calibration","connect","disconnect","help","add","remove","play", ...
+        "inspect","refresh"])}
 end
 
 N = 24;
@@ -95,6 +97,30 @@ switch name
         frac = max(0, 1 - abs(row - midRow) ./ (midRow - topRow));
         rightBound = baseCol + frac .* (apexCol - baseCol);
         mask = row>=topRow & row<=botRow & col>=baseCol & col<=rightBound;
+
+    case "inspect" % magnifier over a waveform trace
+        cx = 11; cy = 11;
+        d = sqrt((row-cy).^2 + (col-cx).^2);
+        lens   = d>=6 & d<=7.5;
+        stem   = abs(row-col)<=1 & row>=15 & row<=21 & col>=15 & col<=21;
+        % A half-cycle of a sine inside the lens marks it as a signal view.
+        trace = false(N);
+        for c = 6:16
+            r = round(cy - 3.2*sin((c-6)/10 * 2*pi));
+            if r>=1 && r<=N
+                trace(r,c) = true;
+            end
+        end
+        mask = lens | stem | (trace & d<=5.5);
+
+    case "refresh" % circular arrow
+        cx = 12; cy = 13;
+        d = sqrt((row-cy).^2 + (col-cx).^2);
+        ring = d>=6 & d<=8;
+        gap  = col>=cx & row<=cy-4;                       % opening, upper right
+        head = row>=3 & row<=10 & col>=13 & col<=21 & ... % arrowhead in the gap
+               ((row-3) + (21-col) <= 7);
+        mask = (ring & ~gap) | head;
 end
 
 accent = [0.16 0.38 0.58];

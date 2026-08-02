@@ -1,5 +1,7 @@
 function clear_tabs_(obj)
 % clear_tabs_(obj) - Remove all children from the param panel and restore placeholder.
+% Also re-runs the signal plot so the waveform and the stimulus inspector do
+% not keep showing a bank item that has just been removed or deselected.
 pnl = obj.handles.ParamPanel;
 delete(pnl.Children);
 uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
@@ -7,4 +9,5 @@ uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
     'VerticalAlignment', 'center', ...
     'Position', [10 10 380 40]);
 obj.refresh_combo_controls_;
+obj.update_signal_plot;
 end

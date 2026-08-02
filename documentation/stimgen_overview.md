@@ -17,6 +17,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_StimPlay.md](stimgen_StimPlay.md): repetition and selection wrapper used by playback tools (developer reference)
 - [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
+- [stimgen_StimInspector.md](stimgen_StimInspector.md): detail window for one stimulus — waveform, spectrum, spectrogram, THD and signal metrics
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference
 - [stimgen_SweptSineCalibration.md](stimgen_SweptSineCalibration.md): swept-sine calibration method

@@ -52,6 +52,7 @@ classdef StimPlayer < handle
         play_all(obj, src, event)
         step_combination(obj, step)
         open_calibration_gui(obj)
+        open_stim_inspector(obj)
         save_bank(obj, ffn)
         load_bank(obj, ffn)
         set_control_visibility(obj, options)
@@ -104,6 +105,8 @@ classdef StimPlayer < handle
 
         PlayAllActive_ (1,1) logical = false % True while a Play All cycle is running
         PlayAllStimObj_                      % stimgen.StimType currently being previewed by Play All
+
+        Inspector                            % stimgen.StimInspector | [] (detail window)
     end
 
     % --- Dependent ---
@@ -138,8 +141,11 @@ classdef StimPlayer < handle
 
         % -----------------------------------------------------------------
         function delete(obj)
-            % Destructor: stop and clean up timer and listeners.
+            % Destructor: stop and clean up timer, listeners and child windows.
             obj.disconnect_interfaces_;
+            if ~isempty(obj.Inspector) && isvalid(obj.Inspector)
+                delete(obj.Inspector);
+            end
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
                 stop(obj.Timer);
                 delete(obj.Timer);
@@ -229,6 +235,66 @@ classdef StimPlayer < handle
                     idx = candidates(1);
                 case "Shuffle"
                     idx = candidates(randperm(numel(candidates), 1));
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function sp = selected_or_current_spobj_(obj)
+            % sp = selected_or_current_spobj_() - Bank item the GUI is showing.
+            % Prefers the listbox selection when idle and falls back to the
+            % playback cursor, so every view of "the current stimulus" (signal
+            % plot, inspector) agrees.
+            %
+            % Returns:
+            %   sp - stimgen.StimPlay, or [] when the bank is empty
+
+            sp = [];
+            h  = obj.handles;
+            if isfield(h, 'BankList') && ~isempty(h.BankList) && isvalid(h.BankList) && ...
+                    ~isempty(h.BankList.Value)
+                idx = h.BankList.Value;
+                if idx >= 1 && idx <= numel(obj.StimPlayObjs)
+                    sp = obj.StimPlayObjs(idx);
+                end
+            end
+            if isempty(sp)
+                sp = obj.CurrentSPObj;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function [stimObj, label] = inspector_source_(obj)
+            % [stimObj, label] = inspector_source_() - Source provider for StimInspector.
+            % Handed to stimgen.StimInspector.set_source_provider so the
+            % inspector re-resolves the selection on every refresh instead of
+            % holding a stale stimulus handle.
+
+            stimObj = [];
+            label   = "";
+
+            sp = obj.selected_or_current_spobj_();
+            if isempty(sp)
+                return
+            end
+
+            stimObj = sp.CurrentStimObj;
+            label   = sp.Name;
+        end
+
+        % -----------------------------------------------------------------
+        function refresh_inspector_(obj)
+            % refresh_inspector_() - Push the current selection to the inspector.
+            % No-op when the inspector window is closed. Failures are logged
+            % rather than raised: an inspector problem must not break editing.
+
+            if isempty(obj.Inspector) || ~isvalid(obj.Inspector) || ~obj.Inspector.is_open()
+                return
+            end
+            try
+                obj.Inspector.refresh();
+            catch ME
+                stimgen.util.vprintf(1, 1, ...
+                    'StimPlayer: stimulus inspector refresh failed: %s', ME.message);
             end
         end
 

@@ -73,6 +73,29 @@ The top panel shows the waveform for the currently selected bank entry.
 
 If no valid bank entry is available, the plot is cleared to `NaN` data.
 
+`update_signal_plot()` is the single funnel for "the displayed stimulus
+changed" — bank selection, parameter edits, combination stepping and
+`Play All` all pass through it — so it is also where the stimulus inspector
+is refreshed. A new code path that changes what should be on screen should
+call it rather than updating the plot itself.
+
+### Stimulus inspector
+
+The **Inspect Stimulus** toolbar button (also **File > Inspect Stimulus**,
+`Ctrl+I`) opens [`stimgen.StimInspector`](stimgen_StimInspector.md) on the
+selected bank item, or raises the existing window if one is already open —
+there is only ever one inspector per player.
+
+It is a read-only detail view: waveform and envelope, magnitude spectrum,
+spectrogram, harmonic distortion, and a table of measured signal properties.
+It stays in sync with the bank because `open_stim_inspector()` attaches it
+with a *source provider* (`inspector_source_`) rather than a stimulus handle,
+so every refresh re-resolves the current selection instead of holding an
+object that may since have been removed.
+
+The inspector is deliberately left enabled during playback — it does not
+write to the stimulus — and is closed with the player.
+
 ### Stimulus bank panel
 
 The left panel manages the bank itself.
@@ -134,10 +157,11 @@ the editor panel can usually handle it without any `StimPlayer` changes.
 A toolbar above the signal plot gives one-click access to the most common
 actions, each a duplicate of an existing menu item or button: Load Protocol,
 Load Bank, Save Bank, Open Calibration GUI, Add Stimulus, Remove Stimulus,
-and Play Selected. Toolbar buttons that edit the bank (Load/Save
-Bank/Protocol, Open Calibration GUI, Add/Remove Stimulus) are disabled
-during playback by `lock_bank_controls_`, the same as their menu/button
-counterparts.
+Inspect Stimulus and Play Selected. Toolbar buttons that edit the bank
+(Load/Save Bank/Protocol, Open Calibration GUI, Add/Remove Stimulus) are
+disabled during playback by `lock_bank_controls_`, the same as their
+menu/button counterparts. Inspect Stimulus and Play Selected are not, since
+neither edits the bank.
 
 ## Hiding session controls (host takeover)
 
@@ -283,5 +307,6 @@ before changing `StimPlayer` itself.
 ## Related documentation
 
 - [stimgen_overview.md](stimgen_overview.md) — package orientation
+- [stimgen_StimInspector.md](stimgen_StimInspector.md) — the stimulus detail window
 - [stimgen_StimPlay.md](stimgen_StimPlay.md) — the per-item scheduling wrapper
 - [stimgen_calibration.md](stimgen_calibration.md) — calibrating output levels
