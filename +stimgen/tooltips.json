@@ -122,6 +122,7 @@
     "RunBtn": "Start the session: connect the loaded protocol, reset the counters and present the bank on the internal timer. Press again (Stop) to end it.",
     "PauseBtn": "Hold the run without resetting it; press again (Resume) to carry on from the same counts.",
     "ProtocolStatusLabel": "Loaded protocol and hardware connection state. Without a protocol, or with parameters missing, playback falls back to sound-card preview.",
+    "ComputingLamp": "Lit while a stimulus signal is being generated. The GUI is briefly unresponsive during this time.",
     "StatusLabel": "Most recent player action or error.",
     "Counter": "Stimuli presented so far out of the total for this run, summed over the bank (each item contributes its own Reps).",
     "LoadProtocolTool": "Load Protocol",

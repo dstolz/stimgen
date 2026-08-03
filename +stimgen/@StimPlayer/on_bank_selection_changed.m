@@ -202,7 +202,10 @@ try
     % Tone re-rendering the Window Duration widget when Window Method
     % changes the units it is expressed in.
     stimObj.notify_gui_changed(src.Tag, event.Value);
+    obj.set_computing_(true);
+    computingCleanup = onCleanup(@() obj.set_computing_(false));
     stimObj.update_signal();
+    clear computingCleanup;
     obj.update_signal_plot();
 catch ME
     if isNumExpr

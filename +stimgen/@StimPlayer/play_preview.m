@@ -40,7 +40,10 @@ end
 
 try
     if isempty(stimObj.Signal)
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         stimObj.update_signal;
+        clear computingCleanup;
     end
 
     if ~isempty(btn)

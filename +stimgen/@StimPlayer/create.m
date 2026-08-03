@@ -214,7 +214,7 @@ uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
 ctrlG = uigridlayout(g);
 ctrlG.Layout.Row    = 3;
 ctrlG.Layout.Column = 1;
-ctrlG.ColumnWidth   = {100, 100, 280, 240, 160};
+ctrlG.ColumnWidth   = {100, 100, 280, 20, 220, 160};
 ctrlG.RowHeight     = {'1x'};
 ctrlG.Padding       = [0 0 0 0];
 ctrlG.ColumnSpacing = 6;
@@ -252,16 +252,23 @@ h.Layout.Row    = 1;
 h.Tooltip       = tip('ProtocolStatusLabel');
 obj.handles.ProtocolStatusLabel = h;
 
+h = uilamp(ctrlG);
+h.Layout.Column = 4;
+h.Layout.Row    = 1;
+h.Color         = [0.75 0.75 0.75];
+h.Tooltip       = tip('ComputingLamp');
+obj.handles.ComputingLamp = h;
+
 h = uilabel(ctrlG, 'Text', 'Ready.', 'HorizontalAlignment', 'left', ...
     'FontColor', [0.35 0.35 0.35]);
-h.Layout.Column = 4;
+h.Layout.Column = 5;
 h.Layout.Row    = 1;
 h.Tooltip       = tip('StatusLabel');
 obj.handles.StatusLabel = h;
 
 h = uilabel(ctrlG, 'Text', '0 / 0', 'FontSize', 16, 'FontWeight', 'bold', ...
     'HorizontalAlignment', 'right');
-h.Layout.Column = 5;
+h.Layout.Column = 6;
 h.Layout.Row    = 1;
 h.Tooltip       = tip('Counter');
 obj.handles.Counter = h;
@@ -484,7 +491,10 @@ try
     sp = obj.StimPlayObjs(idx);
     stimObj = sp.CurrentStimObj;
     if isempty(stimObj.Signal)
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         stimObj.update_signal;
+        clear computingCleanup;
     end
     if isempty(stimObj.Signal)
         obj.show_gui_message_("The selected stimulus does not currently have a signal to export.", ...
@@ -541,6 +551,8 @@ try
         fsVal  = stimObj.Fs;
         entry  = repmat(struct('Fs', fsVal, 'signal', [], 'parameters', struct()), nCombo, 1);
 
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         for c = 1:nCombo
             stimObj.set_variant_index(c);
             if isempty(stimObj.Signal)
@@ -559,6 +571,7 @@ try
                 end
             end
         end
+        clear computingCleanup;
 
         % Restore the original combination
         stimObj.set_variant_index(savedIdx);
@@ -614,6 +627,8 @@ try
 
         % Collect one deep copy per combination
         objs = cell(nCombo, 1);
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         for c = 1:nCombo
             stimObj.set_variant_index(c);
             if isempty(stimObj.Signal)
@@ -621,6 +636,7 @@ try
             end
             objs{c} = copy(stimObj);
         end
+        clear computingCleanup;
 
         % Restore original combination
         stimObj.set_variant_index(savedIdx);
