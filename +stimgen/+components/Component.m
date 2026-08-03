@@ -177,8 +177,33 @@ classdef Component < handle & matlab.mixin.Heterogeneous & matlab.mixin.Copyable
 
             if ~isempty(r.format),    d.format    = char(r.format); end
             if ~isempty(r.limits),    d.limits    = r.limits;       end
-            if ~isempty(r.items),     d.items     = r.items;        end
-            if ~isempty(r.itemsData), d.itemsData = r.itemsData;    end
+
+            if ~isempty(r.items)
+                % uidropdown accepts only a string array or a cell of char
+                % vectors. Checked here because the failure would otherwise
+                % surface much later, as an error deep inside whichever GUI
+                % first happened to build this particular widget. Note that
+                % pdef parses with inputParser, which -- unlike the struct()
+                % constructor used by the monolithic classes' propMeta -- does
+                % NOT unwrap a cell, so items needs single braces here.
+                if ~(isstring(r.items) || (iscell(r.items) && ...
+                        all(cellfun(@(x) ischar(x) || isStringScalar(x), r.items))))
+                    error('stimgen:components:Component:InvalidItems', ...
+                        ['''items'' for "%s" must be a string array or a cell array of ' ...
+                         'character vectors. Use single braces: ''items'', {''a'',''b''}.'], ...
+                        d.label);
+                end
+                d.items = r.items;
+            end
+
+            if ~isempty(r.itemsData)
+                if numel(r.itemsData) ~= numel(r.items)
+                    error('stimgen:components:Component:InvalidItems', ...
+                        '''itemsData'' for "%s" has %d entries but ''items'' has %d.', ...
+                        d.label, numel(r.itemsData), numel(r.items));
+                end
+                d.itemsData = r.itemsData;
+            end
         end
 
     end % methods (Static)

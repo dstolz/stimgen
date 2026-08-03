@@ -179,6 +179,18 @@ function set_prop_(obj, stimObj, src, event)
 % by the propMeta display scale before being written to the property.
 isNumExpr = isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
 sc = stimgen.StimType.display_scale(stimObj.get_prop_meta(), src.Tag);
+
+% Remember the value so it can be rolled back. A property validator rejects a
+% bad value at assignment, leaving nothing to undo, but a constraint that can
+% only be checked while generating the signal (a click longer than its period,
+% a noise band above Nyquist, a pulse wider than its own gap) fails AFTER the
+% assignment has already been committed. Without this the stimulus would keep
+% the value that cannot be rendered.
+hadOldValue = isprop(stimObj, src.Tag);
+if hadOldValue
+    oldValue = stimObj.(src.Tag);
+end
+
 try
     value = event.Value;
     if isNumExpr
@@ -194,6 +206,13 @@ try
     stimObj.update_signal();
     obj.update_signal_plot();
 catch ME
+    if hadOldValue
+        % Restoring re-fires the property listener, which regenerates the
+        % signal from the value that did work.
+        try %#ok<TRYNC>
+            stimObj.(src.Tag) = oldValue;
+        end
+    end
     if isNumExpr
         src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
     elseif isprop(stimObj, src.Tag)

@@ -79,6 +79,16 @@ classdef PatchEditor < handle
 
             obj.snapshot = obj.capture_();
             obj.build_ui_();
+
+            % Start with the output node selected, so the inspector and the
+            % preview show something useful rather than an empty pane.
+            if ~isempty(obj.Patch.Graph.Nodes)
+                i = find(obj.Patch.node_labels() == obj.Patch.OutputNode, 1);
+                if isempty(i), i = 1; end
+                obj.selKind = "node";
+                obj.selIdx  = i;
+            end
+
             obj.refresh_all_();
 
             if modal
@@ -94,6 +104,19 @@ classdef PatchEditor < handle
         function close(obj)
             % close(obj) - Close the editor programmatically.
             obj.close_request_();
+        end
+
+        function select_node(obj, label)
+            % select_node(obj, label)
+            % Select a node, showing it in the inspector and the preview.
+            i = find(obj.Patch.node_labels() == string(label), 1);
+            if isempty(i)
+                error('stimgen:PatchEditor:UnknownNode', ...
+                    'No node labelled "%s" in this patch.', string(label));
+            end
+            obj.selKind = "node";
+            obj.selIdx  = i;
+            obj.refresh_all_();
         end
 
     end % methods
