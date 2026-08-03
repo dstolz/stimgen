@@ -58,6 +58,7 @@ sp.ISI = [0.8 1.2];
 - `stimgen.ClickTrain` — periodic click train
 - `stimgen.FMtone` — frequency-modulated tone
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
+- `stimgen.TORC` — temporally orthogonal ripple combination, for STRF estimation by spectrotemporal reverse correlation
 - `stimgen.SoundFile` — playback of pregenerated sound files (vocalizations, phonemes); see [stimgen_SoundFile.md](stimgen_SoundFile.md)
 - `stimgen.Patch` — a stimulus whose signal chain is a graph you build from reusable components, where a component's output drives another component's *parameter*; one mechanism covers AM, FM, pulsed and mixed stimuli. See [stimgen_Patch.md](stimgen_Patch.md)
 

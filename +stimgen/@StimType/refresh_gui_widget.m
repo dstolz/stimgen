@@ -1,8 +1,8 @@
 function refresh_gui_widget(obj, propName)
 % refresh_gui_widget(obj, propName)
 % Re-apply the current propMeta entry for propName to its live GUI widget:
-% label caption, numeric format/limits, and displayed value (in display
-% units).
+% label caption, tooltip, numeric format/limits, and displayed value (in
+% display units).
 %
 % Call this from on_gui_changed when one property redefines another's
 % metadata, e.g. stimgen.Tone.WindowMethod switching WindowDuration between
@@ -43,6 +43,15 @@ if isfield(ud, 'labelHandle') && ~isempty(ud.labelHandle) && isvalid(ud.labelHan
         labelFormat = ud.labelFormat;
     end
     ud.labelHandle.Text = sprintf(labelFormat, pm.label);
+end
+
+% Hover help follows the label: a property whose units are redefined by
+% another (Tone.WindowDuration) also redefines what its tooltip says.
+if isfield(pm, 'tooltip')
+    x.Tooltip = pm.tooltip;
+    if isfield(ud, 'labelHandle') && ~isempty(ud.labelHandle) && isvalid(ud.labelHandle)
+        ud.labelHandle.Tooltip = pm.tooltip;
+    end
 end
 
 if ~isprop(x, 'Value')

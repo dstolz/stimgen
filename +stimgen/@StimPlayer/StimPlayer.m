@@ -739,6 +739,18 @@ classdef StimPlayer < handle
                     messageText = "The selected variant combination mode is not recognized.";
                 case "stimgen:StimType:InvalidSelectionMode"
                     messageText = "The selected variant selection mode is not recognized.";
+                case "stimgen:TORC:TemporalOrthogonality"
+                    messageText = "Two ripple components landed on the same modulation rate, which is what a TORC exists to avoid. Spread the rates apart, or lengthen Duration to make the rate grid finer.";
+                case "stimgen:TORC:RateBelowFundamental"
+                    messageText = "Ripple rates cannot be slower than one cycle per ripple period. Raise the rate, lengthen Duration, or reduce Ripple Periods.";
+                case "stimgen:TORC:BandwidthExceedsNyquist"
+                    messageText = "The highest carrier would exceed half the sample rate. Lower Low Frequency or Bandwidth, or raise Fs.";
+                case {"stimgen:TORC:InvalidComponentList", "stimgen:TORC:EmptyComponentList"}
+                    messageText = "Enter the ripple components as a list of numbers, such as 4 8 12 16 or 4:4:24.";
+                case "stimgen:TORC:InvalidRate"
+                    messageText = "Component rates must all be positive. Set the direction of travel with the sign of the ripple density instead.";
+                case "stimgen:TORC:InvalidRateRange"
+                    messageText = "Highest Rate must be greater than or equal to Lowest Rate.";
                 case "stimgen:SoundFile:EmptyCatalog"
                     messageText = "This sound file stimulus has no files yet. Use the Browse... button to add one or more sound files.";
                 case {"stimgen:SoundFile:FileNotFound", "stimgen:SoundFile:FileNotReadable"}

@@ -75,6 +75,13 @@ for i = 1:nRows
             x.Value = char(obj.(propName));
     end
 
+    % Hover help, applied to both halves of the row so it appears wherever
+    % the pointer lands.
+    if isfield(pm, 'tooltip')
+        lbl.Tooltip = pm.tooltip;
+        x.Tooltip   = pm.tooltip;
+    end
+
     % Keep the label reachable so refresh_gui_widget can retitle a property
     % whose units depend on another property (e.g. Tone.WindowDuration).
     ud = x.UserData;

@@ -36,6 +36,7 @@ Three subsystems, plus two abstract seams that keep the package standalone.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
+<<<<<<< HEAD
 `SweptSine`, `ClickTrain`, `SoundFile`. The base class owns level/duration/gating/Fs, the variant
 system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile` is the
 exception that reads rather than synthesizes: it owns a catalog of sound files,
@@ -46,6 +47,12 @@ of `stimgen.components` nodes, where a connection routes one node's output into 
 *parameter*. That covers AM, FM, pulsed, gated and mixed stimuli without a class per combination.
 `stimgen.PatchEditor` (in `@PatchEditor/`) is the drag-and-drop graph editor. See
 `documentation/stimgen_Patch.md`. Its one structural trick is described under **Flattening** below.
+=======
+`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
+variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
+`SoundFile` is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
+`FileIndex` as its variant axis, and derives `Duration` from the selected file.
+>>>>>>> f00466c3542ec2430c99f17adc3ce5f42505a92f
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
@@ -144,6 +151,11 @@ type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (wh
 `resolve_widget_type` as a local function because the static is protected). Both wire
 `ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
 has to be excluded there.
+
+Every `propMeta` entry also declares a `tooltip`: one line of plain text applied to both the label
+and the widget by both generators, and re-applied by `refresh_gui_widget` (so a property whose
+metadata varies, like `Tone.WindowDuration`, swaps tooltip along with label). A new property needs
+one. `StimPlayer`'s own controls set `Tooltip` directly in `@StimPlayer/create.m`.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
