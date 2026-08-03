@@ -36,23 +36,16 @@ Three subsystems, plus two abstract seams that keep the package standalone.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-<<<<<<< HEAD
-`SweptSine`, `ClickTrain`, `SoundFile`. The base class owns level/duration/gating/Fs, the variant
-system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile` is the
-exception that reads rather than synthesizes: it owns a catalog of sound files,
-uses a vectorizable `FileIndex` as its variant axis, and derives `Duration` from the selected file.
+`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
+variant system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile`
+is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a
+vectorizable `FileIndex` as its variant axis, and derives `Duration` from the selected file.
 
 **Composable stimuli** — `stimgen.Patch` (in `@Patch/`) is a StimType whose signal chain is a graph
 of `stimgen.components` nodes, where a connection routes one node's output into another node's
 *parameter*. That covers AM, FM, pulsed, gated and mixed stimuli without a class per combination.
 `stimgen.PatchEditor` (in `@PatchEditor/`) is the drag-and-drop graph editor. See
 `documentation/stimgen_Patch.md`. Its one structural trick is described under **Flattening** below.
-=======
-`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
-variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
-`SoundFile` is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
-`FileIndex` as its variant axis, and derives `Duration` from the selected file.
->>>>>>> f00466c3542ec2430c99f17adc3ce5f42505a92f
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
@@ -207,6 +200,7 @@ stack. Deliberately standalone, but shares the `GVerbosity` global with the host
 
 - `.esgc` — calibration data (`Engine.save`/`Engine.load`). Legacy `.sgc` is not supported.
 - `.spl` — stimulus banks (`StimPlayer.save_bank`/`load_bank`).
+- `.spatch` — a single `stimgen.Patch` (`PatchEditor`'s File menu; `save_patch_`/`load_patch_`).
 - `.eprot` — host protocol files; loaded only through `HardwareHost.loadProtocol`.
 
 ## Hardware parameter contract

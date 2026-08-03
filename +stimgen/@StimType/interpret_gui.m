@@ -15,8 +15,15 @@ try
         value = obj.evaluate_property_expression_(src.Tag, char(string(event.Value))) / scaleValue;
     elseif isnumeric(event.Value)
         value = event.Value / scaleValue;
-    else
+    elseif islogical(event.Value)
         value = event.Value;
+    else
+        % A dropdown/text widget's Value is always char, even when the
+        % property it backs is a string scalar (e.g. Oscillator.Shape).
+        % Assigning char directly would flip numel() from 1 to the string's
+        % length, which get_selected_property_value_ would then
+        % misinterpret as a vectorized/variant property.
+        value = string(event.Value);
     end
     obj.(src.Tag) = value;
 catch ME

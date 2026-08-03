@@ -17,4 +17,5 @@ obj.geom = stimgen.PatchEditor.node_geometry_for_(obj.Patch);
 obj.redraw_canvas_();
 obj.build_inspector_();
 obj.update_preview_();
+obj.update_output_();
 end

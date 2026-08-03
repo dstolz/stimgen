@@ -201,6 +201,11 @@ the source refer to that paper.
 
 - [+stimgen/TORC.m](../+stimgen/TORC.m)
 
+There is also a `TORC` **patch component**, which puts the same synthesis on a
+`stimgen.Patch` node so it can be gated, mixed or amplitude-modulated against other
+sources — see [stimgen_Patch.md](stimgen_Patch.md#torc-nodes) for the three ways it
+differs from this class.
+
 | Property | Vectorizable | Meaning |
 | --- | --- | --- |
 | `LowFrequency` | yes | Hz, f0 — the bottom of the tonotopic axis `x = log2(f/f0)` |

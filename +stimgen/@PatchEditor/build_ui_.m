@@ -3,11 +3,13 @@ function build_ui_(obj)
 % Construct the editor window: palette, canvas, inspector, preview.
 
 obj.fig = uifigure('Name', 'Patch Editor', ...
-    'Position', [100 100 1180 720], ...
+    'Position', [100 100 1180 740], ...
     'CloseRequestFcn', @(~,~) obj.close_request_());
 
+obj.build_menu_();
+
 g = uigridlayout(obj.fig, [3 3]);
-g.RowHeight   = {'1x', 165, 24};
+g.RowHeight   = {'1x', 185, 24};
 g.ColumnWidth = {170, '1x', 260};
 g.Padding     = [8 8 8 8];
 
@@ -67,13 +69,57 @@ insp.Layout.Row = [1 2];
 insp.Layout.Column = 3;
 obj.h.InspectorPanel = insp;
 
-% ---------------- Preview ----------------
-prev = uipanel(g, 'Title', 'Preview');
-prev.Layout.Row = 2;
-prev.Layout.Column = 2;
+% ---------------- Preview / Output ----------------
+lower = uigridlayout(g, [1 2]);
+lower.Layout.Row = 2;
+lower.Layout.Column = 2;
+lower.ColumnWidth = {'1x', '1x'};
+lower.ColumnSpacing = 8;
+lower.Padding = [0 0 0 0];
+
+prev = uipanel(lower, 'Title', 'Preview');
 obj.h.PreviewAx = uiaxes(prev, 'Units', 'normalized', 'Position', [0 0 1 1]);
 disableDefaultInteractivity(obj.h.PreviewAx);
 obj.h.PreviewAx.Toolbar.Visible = 'off';
+
+% Unlike Preview, Output never follows the selection: it is always the
+% finished stimulus, so the effect of an edit is visible without deselecting.
+outp = uipanel(lower, 'Title', 'Output');
+og = uigridlayout(outp, [2 1]);
+og.RowHeight = {'1x', 26};
+og.Padding = [4 4 4 4];
+
+obj.h.OutputAx = uiaxes(og);
+obj.h.OutputAx.Layout.Row = 1;
+disableDefaultInteractivity(obj.h.OutputAx);
+obj.h.OutputAx.Toolbar.Visible = 'off';
+
+% Duration belongs to the stimulus, not to any one node, so it sits under the
+% Output plot rather than in the inspector, which follows the selection. Label,
+% tooltip and display scale all come from propMeta -- the same source
+% StimPlayer's panel reads -- so the seconds/ms convention stays declared once.
+meta    = obj.Patch.get_prop_meta();
+durMeta = meta.Duration;
+
+ctl = uigridlayout(og, [1 3]);
+ctl.Layout.Row    = 2;
+ctl.ColumnWidth   = {100, '1x', 70};
+ctl.ColumnSpacing = 4;
+ctl.Padding       = [0 0 0 0];
+
+durLbl = uilabel(ctl, 'Text', [durMeta.label ':'], 'HorizontalAlignment', 'right');
+durLbl.Tooltip = durMeta.tooltip;
+
+% A text field rather than a numeric one, for the same reason the inspector's
+% numeric parameters are: Duration is vectorizable, so an expression or a
+% vector typed here becomes a variant axis.
+obj.h.DurationField = uieditfield(ctl, ...
+    'Tooltip', [durMeta.tooltip ' Accepts an expression or a vector literal, e.g. [50 100 200]; a vector creates variants.'], ...
+    'ValueChangedFcn', @(s,e) obj.set_duration_(s, e));
+
+obj.h.PlayBtn = uibutton(ctl, 'Text', 'Play', ...
+    'Tooltip', 'Play the finished stimulus output through the computer speakers.', ...
+    'ButtonPushedFcn', @(~,~) obj.play_output_());
 
 % ---------------- Status bar ----------------
 bar = uigridlayout(g, [1 4]);

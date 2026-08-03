@@ -77,9 +77,10 @@ for nm = names
         case 'numeric'
             % A plain text field, not a numeric one: these accept expressions
             % and vectors, which is how a graph parameter becomes a variant
-            % axis (e.g. typing "1000 2000 4000" or "Osc1_Frequency/400").
+            % axis. The text is eval'd, so a vector literal needs its brackets
+            % ("[1000 2000 4000]", "1000:1000:4000", "Osc1_Frequency/400").
             w = uieditfield(g, 'Value', local_fmt(obj.Patch.(fn) * sc));
-            w.Tooltip = 'Accepts an expression or a vector; a vector creates variants.';
+            w.Tooltip = 'Accepts an expression or a vector literal, e.g. [1000 2000 4000]; a vector creates variants.';
         otherwise
             w = uieditfield(g, 'Value', char(string(obj.Patch.(fn))));
     end
@@ -136,8 +137,15 @@ try
             % display units, then divide by the scale exactly once.
             obj.Patch.(fn) = obj.Patch.evalPropertyExpression(fn, char(string(event.Value))) / sc;
             src.Value = local_fmt(obj.Patch.(fn) * sc);
-        otherwise
+        case 'checkbox'
             obj.Patch.(fn) = event.Value;
+        otherwise
+            % A dropdown/text widget's Value is always char, even when the
+            % property it backs is a string scalar (e.g. Oscillator.Shape).
+            % Assigning char directly would flip numel() from 1 to the
+            % string's length, which get_selected_property_value_ would then
+            % misinterpret as a vectorized/variant property.
+            obj.Patch.(fn) = string(event.Value);
     end
     obj.set_status_(string(fn) + " updated.", "info");
 catch ME
@@ -228,9 +236,6 @@ obj.refresh_all_();
 end
 
 function s = local_fmt(v)
-if isscalar(v)
-    s = num2str(double(v), '%g');
-else
-    s = mat2str(double(v));
-end
+% Shared with the Output panel's Duration field, so both format the same way.
+s = stimgen.PatchEditor.format_field_value_(v);
 end

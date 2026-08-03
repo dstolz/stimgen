@@ -10,6 +10,10 @@ classdef PatchEditor < handle
 % the stimulus. Select a node or a wire to edit it in the inspector on the
 % right, and watch the result in the preview underneath.
 %
+% The inspector is scoped to the selection, so the one stimulus-level property
+% that has to be reachable here -- Duration, which sets the timebase every node
+% renders onto -- sits under the Output plot instead.
+%
 % Edits apply to the patch immediately. "Revert" restores the graph and every
 % parameter value captured when the window opened.
 %
@@ -17,7 +21,12 @@ classdef PatchEditor < handle
 % propMeta button action (@StimPlayer/on_bank_selection_changed.m,
 % run_action_), and the new node set has to exist by the time it does.
 %
+% Called with no patch (or []), the editor opens on a fresh stimgen.Patch --
+% a single default oscillator node, the same "audible and plottable"
+% starting point stimgen.Patch's own constructor gives any other caller.
+%
 % Example:
+%   stimgen.PatchEditor();                  % blank editor, default patch
 %   p = stimgen.Patch.preset("AMTone");
 %   stimgen.PatchEditor(p);       % or press "Edit Graph..." in StimPlayer
 
@@ -45,6 +54,8 @@ classdef PatchEditor < handle
 
         snapshot = struct();   % graph + values captured at open, for Revert
         closing (1,1) logical = false;
+
+        CurrentFile (1,1) string = "";  % .spatch path from the last Save/Load, if any
     end
 
     properties (Constant)
@@ -60,14 +71,20 @@ classdef PatchEditor < handle
     methods
 
         function obj = PatchEditor(patchObj, modal)
+            % obj = stimgen.PatchEditor()
             % obj = stimgen.PatchEditor(patchObj)
             % obj = stimgen.PatchEditor(patchObj, false)
+            %
+            % With no patchObj, or [], a new stimgen.Patch is created so the
+            % editor never opens on nothing to show.
             %
             % modal defaults to true. Patch.edit_graph needs the modal form,
             % because StimPlayer rebuilds its parameter panel as soon as the
             % button action returns. Pass false to keep the editor open
             % alongside other windows, or to drive it from a script.
-            if nargin < 1 || ~isa(patchObj, 'stimgen.Patch')
+            if nargin < 1 || isempty(patchObj)
+                patchObj = stimgen.Patch;
+            elseif ~isa(patchObj, 'stimgen.Patch')
                 error('stimgen:PatchEditor:InvalidInput', ...
                     'stimgen.PatchEditor requires a stimgen.Patch object.');
             end
@@ -134,6 +151,9 @@ classdef PatchEditor < handle
         close_request_(obj)                     % Close and release the modal wait
         build_inspector_(obj)                   % Parameter editor for the selection
         update_preview_(obj)                    % Plot the selected node's output
+        update_output_(obj)                     % Plot the finished stimulus output
+        play_output_(obj)                       % Play the finished stimulus output
+        set_duration_(obj, src, event)          % Commit an edit to the stimulus Duration
         add_node_ui_(obj)                       % Palette "Add" button
         delete_selection_(obj)                  % Remove selected node or wire
         auto_layout_(obj)                       % Arrange nodes by graph depth
@@ -143,6 +163,11 @@ classdef PatchEditor < handle
         restore_(obj, s)                        % Apply a snapshot
         set_status_(obj, msg, kind)             % Status line at the bottom
         p = canvas_point_(obj)                  % Current pointer position in canvas units
+        build_menu_(obj)                        % Construct the File menu
+        save_patch_(obj, forcePrompt)           % Save the patch to a .spatch file
+        load_patch_(obj, ffn)                   % Load a .spatch file into the live patch
+        refresh_recents_menu_(obj)              % Rebuild the Recents submenu
+        d = default_dir_(obj)                   % Starting folder for Save/Load dialogs
     end
 
     % --- Pure layout helpers ---
@@ -152,6 +177,20 @@ classdef PatchEditor < handle
         g = node_geometry_for_(patchObj, dragIdx, dragPos) % Box and port positions
         hit = hit_test_at_(geom, graph, pt)                % What is under a canvas point
         [x, y] = wire_path_(p1, p2)                        % Connection wire polyline
+
+        % Public so that the local functions in build_inspector_.m can reach
+        % it: every expression text field in this editor formats its value
+        % the same way, and one copy of that rule is enough.
+        s = format_field_value_(v)                         % Value -> expression field text
+    end
+
+    % --- Recent-files bookkeeping ---
+    % Static and backed by MATLAB preferences rather than an instance property,
+    % so the Recents list is shared by every open editor and survives across
+    % MATLAB sessions.
+    methods (Static)
+        record_recent_file_(ffn)                           % Note a path as most-recently-used
+        paths = list_recent_files_(n)                       % n most recently MODIFIED files on record
     end
 
 end

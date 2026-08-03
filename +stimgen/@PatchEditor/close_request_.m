@@ -8,6 +8,7 @@ function close_request_(obj)
 % node set.
 
 obj.closing = true;
+obj.Patch.stop_playback();
 
 if ~isempty(obj.fig) && isvalid(obj.fig)
     obj.fig.WindowButtonDownFcn   = [];

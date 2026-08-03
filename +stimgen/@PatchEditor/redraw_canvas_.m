@@ -138,6 +138,7 @@ switch kind
     case "Mixer",       c = [0.95 0.87 0.95];
     case "Constant",    c = [0.93 0.93 0.85];
     case "FileSource",  c = [0.85 0.94 0.96];
+    case "TORC",        c = [0.99 0.86 0.88];
     otherwise,          c = [0.90 0.90 0.90];
 end
 end

@@ -12,6 +12,7 @@ classdef Oscillator < stimgen.components.Component
 %   Frequency  - Hz (modulatable)
 %   Amplitude  - linear gain (modulatable)
 %   Phase      - starting phase in degrees (modulatable)
+%   Offset     - DC offset added after scaling by Amplitude (modulatable)
 %   Shape      - sine | square | triangle | sawtooth
 
     properties (Constant)
@@ -33,6 +34,9 @@ classdef Oscillator < stimgen.components.Component
             d.Phase = pd('Phase (deg)', 0, 'format','%.1f deg', ...
                 'modulatable',true, 'order',30, ...
                 'doc','Starting phase in degrees.');
+            d.Offset = pd('Offset', 0, 'format','%.3f', ...
+                'modulatable',true, 'order',35, ...
+                'doc','DC offset added to the waveform after scaling by Amplitude.');
             d.Shape = pd('Shape', "sine", ...
                 'items',["sine" "square" "triangle" "sawtooth"], 'order',40);
         end
@@ -81,7 +85,8 @@ classdef Oscillator < stimgen.components.Component
                         'Unknown oscillator shape "%s".', string(p.Shape));
             end
 
-            y = obj.fit(y .* a, N);
+            o = obj.expand(p.Offset, N);
+            y = obj.fit(y .* a, N) + o;
         end
 
     end % methods

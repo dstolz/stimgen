@@ -208,6 +208,13 @@ try
         value = stimObj.evalPropertyExpression(src.Tag, char(string(value))) / sc;
     elseif isnumeric(value)
         value = value / sc;
+    elseif ~islogical(value)
+        % A dropdown/text widget's Value is always char, even when the
+        % property it backs is a string scalar. Assigning char directly
+        % would flip numel() from 1 to the string's length, which
+        % get_selected_property_value_ would then misinterpret as a
+        % vectorized/variant property (see stimgen.components.Oscillator.Shape).
+        value = string(value);
     end
     stimObj.(src.Tag) = value;
     % Lets a stimulus react to the edit before the signal is rebuilt, e.g.

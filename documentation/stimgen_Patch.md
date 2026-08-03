@@ -87,13 +87,14 @@ these property names. `rename_node` carries values and connections across.
 
 | Kind | Generates | Modulatable parameters |
 | --- | --- | --- |
-| `Oscillator` | sine / square / triangle / sawtooth | `Frequency`, `Amplitude`, `Phase` |
+| `Oscillator` | sine / square / triangle / sawtooth | `Frequency`, `Amplitude`, `Phase`, `Offset` |
 | `NoiseSource` | band-limited Gaussian noise | `Amplitude` |
 | `PulseTrain` | rect / cos² / ramped pulse train, or a one-shot envelope | `Amplitude` |
 | `Sweep` | log-sine or linear chirp | `Amplitude` |
 | `Mixer` | weighted sum of up to four inputs | `In1`…`In4` |
 | `Constant` | DC | `Value` |
 | `FileSource` | a waveform read from an audio file | `Amplitude` |
+| `TORC` | temporally orthogonal ripple combination, for STRF estimation | `Amplitude` |
 
 Notes:
 
@@ -110,6 +111,65 @@ Notes:
 - **`FileSource` does not slave `Duration` to the file** the way `stimgen.SoundFile`
   does. A patch has one timebase, so the file is truncated or zero-padded to it — which
   is what lets a recording be mixed with, or gated by, synthesized sources.
+- **`TORC` is the composable form of `stimgen.TORC`** — see [below](#torc-nodes).
+
+---
+
+## TORC nodes
+
+`TORC` synthesizes a temporally orthogonal ripple combination: a broadband sound whose
+dynamic spectrum is the sum of moving ripples with pairwise-distinct modulation rates,
+from which an STRF is recovered by spectrotemporal reverse correlation. The parameters,
+the equation numbers and the two component modes are documented on
+[`stimgen.TORC`](stimgen_StimTypes.md#torc); as a node it can additionally be gated,
+mixed or amplitude-modulated against other sources.
+
+Reverse correlation needs the dynamic spectrum that drove the waveform, so the realized
+ripple set is recorded after every render and `dynamic_spectrum` rebuilds `S(t,x)` from
+it at whatever resolution the analysis needs — typically the PSTH bin rate, not `Fs`:
+
+```matlab
+p = stimgen.Patch;
+p.add_node("Torc1", "TORC");
+p.OutputNode     = "Torc1";
+p.LevelReference = "rms";       % broadband: normalize on rms, not absmax
+p.ApplyWindow    = false;       % gating breaks the periodicity the method relies on
+p.update_signal;
+
+c = p.component("Torc1");
+[S, t, x] = c.dynamic_spectrum(500);
+a = c.LastRipples.Amplitude;    % the scalar a of Eq. (28); STRF = C / a²
+```
+
+Vectorize `p.Torc1_Seed = 1:25` for the phase-averaging ensemble, or
+`p.Torc1_RippleDensity` for the method I ensemble — they are ordinary patch parameters.
+
+Four things differ from `stimgen.TORC`:
+
+- **There is no `Duration` parameter.** The ripple period is `T = (N/Fs)/NumPeriods`,
+  taken from the patch's global timebase. Rates live on the `1/T` grid, so `Duration` and
+  `NumPeriods` decide which ripples are available at all. The defaults (10–40 Hz) are
+  picked to render at the default patch `Duration` of 100 ms, whose 10 Hz fundamental
+  rules out the paper's slow ripples; for the canonical configuration set
+  `p.Duration = 0.25` and the band to 4–24 Hz, which lands exactly on 4, 8, 12, 16, 20,
+  24 Hz.
+- **A `LowestRate` below the fundamental is clamped up to it** in `Range` mode, with a
+  note through `vprintf`, rather than erroring — a node does not own the `Duration` that
+  sets its ripple period, so an edit elsewhere in the patch must not break it.
+  `Explicit` mode still errors, because there each entry is a specific requested ripple
+  rather than the edge of a band. A band lying *entirely* below the fundamental errors
+  either way.
+- **The waveform is divided by `sqrt(nCarriers)`.** Carriers add incoherently, so a raw
+  sum grows with `ComponentsPerOctave` and a resolution knob would double as a level
+  knob. `stimgen.TORC` does not need this because `StimType` renormalizes the finished
+  waveform; a node is mixed against its siblings before any normalization happens. An
+  overall gain leaves the dynamic spectrum — defined in dB about the mean level —
+  untouched.
+- **`Seed = 0` draws fresh phases**, matching `NoiseSource`. `stimgen.TORC` instead
+  reseeds on a *negative* `Seed`, so `0` means different things in the two.
+
+Keep `CalibrationMode` on `"Filtered"`. A TORC node carries no single carrier frequency,
+so mode `"Tone"` falls through to the spectral centroid.
 
 ---
 
@@ -200,7 +260,7 @@ frequency-bearing node.
 ## Relationship to the monolithic classes
 
 `Patch` is purely additive. `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain` and `SoundFile` are unchanged, and existing `.spl`
+`SweptSine`, `ClickTrain`, `TORC` and `SoundFile` are unchanged, and existing `.spl`
 banks are unaffected.
 
 Two deliberate numerical differences, where the component was made to follow its
