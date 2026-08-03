@@ -1,5 +1,11 @@
 function create(obj)
 % create(obj) - Build the StimPlayer uifigure and all UI components.
+%
+% Hover help for the player's own controls comes from the StimPlayer section
+% of the shared tooltip catalog (+stimgen/tooltips.json), the same file the
+% stimulus classes read their parameter tooltips from. Parameter rows are
+% built separately, in on_bank_selection_changed.
+tip = @(key) stimgen.util.tooltip('StimPlayer', key);
 
 f = uifigure('Name', 'StimPlayer', 'Position', [100 100 900 760]);
 f.DeleteFcn = @(~,~) delete(obj);
@@ -58,7 +64,7 @@ h.Layout.Column = [1 2];
 stTypes = stimgen.StimType.list;
 h.Items     = stTypes;
 h.ItemsData = stTypes;
-h.Tooltip   = 'Stimulus class that Add Stim will create. The list is every stimulus class found in the stimgen package.';
+h.Tooltip   = tip('StimTypeDD');
 obj.handles.TypeDropdown = h;
 
 R = R + 1;
@@ -69,14 +75,14 @@ h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.FontWeight          = 'bold';
 h.ButtonPushedFcn     = @obj.add_stim;
-h.Tooltip             = 'Add a stimulus of the type above to the bank.';
+h.Tooltip             = tip('AddBtn');
 obj.handles.AddBtn    = h;
 
 h = uibutton(bg, 'Text', 'Remove');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @obj.remove_stim;
-h.Tooltip             = 'Delete the selected stimulus from the bank.';
+h.Tooltip             = tip('RemoveBtn');
 obj.handles.RemoveBtn = h;
 
 R = R + 1;
@@ -88,16 +94,16 @@ h.Layout.Column          = [1 2];
 h.Items                  = {};
 h.ItemsData              = {};
 h.ValueChangedFcn        = @obj.on_bank_selection_changed;
-h.Tooltip                = 'Stimuli in the bank. Select one to edit its parameters, preview it, or step its variants. A run presents every item.';
+h.Tooltip                = tip('BankList');
 obj.handles.BankList     = h;
 
 R = R + 1;
 
-% Reps field
-REPS_TIP = 'Presentations of the selected bank item per run. Applies to that item only; other items keep their own count.';
-ISI_TIP  = ['Time between presentations, in ms, for the whole bank. ' ...
-            'Enter one value for a fixed interval or [min max] to draw each interval uniformly from that range.'];
-ORDER_TIP = 'Order in which bank items are drawn during a run: Shuffle picks at random among items with reps left, Serial works down the list.';
+% Reps field. The label and its field share one entry, so the same text
+% appears wherever the pointer lands on the row.
+REPS_TIP  = tip('Reps');
+ISI_TIP   = tip('ISI');
+ORDER_TIP = tip('Order');
 
 lbl = uilabel(bg, 'Text', 'Reps:', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = R;
@@ -156,14 +162,14 @@ h = uibutton(bg, 'Text', '<');
 h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.ButtonPushedFcn     = @(~,~) obj.step_combination(-1);
-h.Tooltip             = 'Show the previous variant combination of the selected stimulus (also the left arrow key).';
+h.Tooltip             = tip('ComboPrevBtn');
 obj.handles.ComboPrevBtn = h;
 
 h = uibutton(bg, 'Text', '>');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @(~,~) obj.step_combination(1);
-h.Tooltip             = 'Show the next variant combination of the selected stimulus (also the right arrow key).';
+h.Tooltip             = tip('ComboNextBtn');
 obj.handles.ComboNextBtn = h;
 
 R = R + 1;
@@ -172,7 +178,7 @@ R = R + 1;
 h = uilabel(bg, 'Text', 'Combo: - / -', 'HorizontalAlignment', 'center');
 h.Layout.Row    = R;
 h.Layout.Column = [1 2];
-h.Tooltip       = 'Variant combination now displayed, out of the total produced by this stimulus''s vector-valued parameters.';
+h.Tooltip       = tip('ComboStatusLbl');
 obj.handles.ComboStatusLbl = h;
 
 R = R + 1;
@@ -182,14 +188,14 @@ h = uibutton(bg, 'Text', 'Play');
 h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.ButtonPushedFcn     = @obj.play_preview;
-h.Tooltip             = 'Preview the displayed combination of the selected stimulus through the sound card. Preview only: it does not use the hardware or the run counter.';
+h.Tooltip             = tip('PlayBtn');
 obj.handles.PlayBtn   = h;
 
 h = uibutton(bg, 'Text', 'Play All');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @obj.play_all;
-h.Tooltip             = 'Preview every variant combination of the selected stimulus in turn. Press again (Stop) to interrupt the cycle.';
+h.Tooltip             = tip('PlayAllBtn');
 obj.handles.PlayAllBtn = h;
 
 % --- Right: scrollable param panel (rebuilt on listbox selection) ---
@@ -208,7 +214,7 @@ uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
 ctrlG = uigridlayout(g);
 ctrlG.Layout.Row    = 3;
 ctrlG.Layout.Column = 1;
-ctrlG.ColumnWidth   = {100, 100, 280, 240, 160};
+ctrlG.ColumnWidth   = {100, 100, 280, 20, 220, 160};
 ctrlG.RowHeight     = {'1x'};
 ctrlG.Padding       = [0 0 0 0];
 ctrlG.ColumnSpacing = 6;
@@ -224,7 +230,7 @@ h.Layout.Row      = 1;
 h.FontSize        = 14;
 h.FontWeight      = 'bold';
 h.ButtonPushedFcn = @obj.playback_control;
-h.Tooltip         = 'Start the session: connect the loaded protocol, reset the counters and present the bank on the internal timer. Press again (Stop) to end it.';
+h.Tooltip         = tip('RunBtn');
 obj.handles.RunBtn = h;
 obj.handles.RunCol = 1;
 
@@ -235,7 +241,7 @@ h.FontSize        = 14;
 h.FontWeight      = 'bold';
 h.Enable          = 'off';
 h.ButtonPushedFcn = @obj.playback_control;
-h.Tooltip         = 'Hold the run without resetting it; press again (Resume) to carry on from the same counts.';
+h.Tooltip         = tip('PauseBtn');
 obj.handles.PauseBtn = h;
 obj.handles.PauseCol = 2;
 
@@ -243,21 +249,28 @@ h = uilabel(ctrlG, 'Text', 'Protocol: none | HW: speaker preview only', ...
     'HorizontalAlignment', 'left', 'FontColor', [0.35 0.35 0.35]);
 h.Layout.Column = 3;
 h.Layout.Row    = 1;
-h.Tooltip       = 'Loaded protocol and hardware connection state. Without a protocol, or with parameters missing, playback falls back to sound-card preview.';
+h.Tooltip       = tip('ProtocolStatusLabel');
 obj.handles.ProtocolStatusLabel = h;
+
+h = uilamp(ctrlG);
+h.Layout.Column = 4;
+h.Layout.Row    = 1;
+h.Color         = [0.75 0.75 0.75];
+h.Tooltip       = tip('ComputingLamp');
+obj.handles.ComputingLamp = h;
 
 h = uilabel(ctrlG, 'Text', 'Ready.', 'HorizontalAlignment', 'left', ...
     'FontColor', [0.35 0.35 0.35]);
-h.Layout.Column = 4;
+h.Layout.Column = 5;
 h.Layout.Row    = 1;
-h.Tooltip       = 'Most recent player action or error.';
+h.Tooltip       = tip('StatusLabel');
 obj.handles.StatusLabel = h;
 
 h = uilabel(ctrlG, 'Text', '0 / 0', 'FontSize', 16, 'FontWeight', 'bold', ...
     'HorizontalAlignment', 'right');
-h.Layout.Column = 5;
+h.Layout.Column = 6;
 h.Layout.Row    = 1;
-h.Tooltip       = 'Stimuli presented so far out of the total for this run, summed over the bank (each item contributes its own Reps).';
+h.Tooltip       = tip('Counter');
 obj.handles.Counter = h;
 
 % ---- Menu ----
@@ -286,43 +299,43 @@ mExportObjs = uimenu(mFile, 'Text', 'Export Bank as &StimType Objects', ...
 % ---- Toolbar ----
 tb = uitoolbar(f);
 
-h = uipushtool(tb, 'Tooltip', 'Load Protocol', ...
+h = uipushtool(tb, 'Tooltip', tip('LoadProtocolTool'), ...
     'Icon', stimgen.util.toolbar_icon('protocol'), ...
     'ClickedCallback', @(~,~) obj.load_protocol_());
 obj.handles.LoadProtocolTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Load Bank', 'Separator', 'on', ...
+h = uipushtool(tb, 'Tooltip', tip('LoadBankTool'), 'Separator', 'on', ...
     'Icon', stimgen.util.toolbar_icon('open'), ...
     'ClickedCallback', @(~,~) obj.load_bank());
 obj.handles.LoadBankTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Save Bank', ...
+h = uipushtool(tb, 'Tooltip', tip('SaveBankTool'), ...
     'Icon', stimgen.util.toolbar_icon('save'), ...
     'ClickedCallback', @(~,~) obj.save_bank());
 obj.handles.SaveBankTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Open Calibration GUI', 'Separator', 'on', ...
+h = uipushtool(tb, 'Tooltip', tip('CalibrationGuiTool'), 'Separator', 'on', ...
     'Icon', stimgen.util.toolbar_icon('calibration'), ...
     'ClickedCallback', @(~,~) obj.open_calibration_gui());
 obj.handles.CalibrationGuiTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Add Stimulus', 'Separator', 'on', ...
+h = uipushtool(tb, 'Tooltip', tip('AddStimTool'), 'Separator', 'on', ...
     'Icon', stimgen.util.toolbar_icon('add'), ...
     'ClickedCallback', @obj.add_stim);
 obj.handles.AddStimTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Remove Stimulus', ...
+h = uipushtool(tb, 'Tooltip', tip('RemoveStimTool'), ...
     'Icon', stimgen.util.toolbar_icon('remove'), ...
     'ClickedCallback', @obj.remove_stim);
 obj.handles.RemoveStimTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Inspect Stimulus (detailed plots and metrics)', ...
+h = uipushtool(tb, 'Tooltip', tip('InspectStimTool'), ...
     'Separator', 'on', ...
     'Icon', stimgen.util.toolbar_icon('inspect'), ...
     'ClickedCallback', @(~,~) obj.open_stim_inspector());
 obj.handles.InspectStimTool = h;
 
-h = uipushtool(tb, 'Tooltip', 'Play Selected', ...
+h = uipushtool(tb, 'Tooltip', tip('PlayTool'), ...
     'Icon', stimgen.util.toolbar_icon('play'), ...
     'ClickedCallback', @obj.play_preview);
 obj.handles.PlayTool = h;
@@ -478,7 +491,10 @@ try
     sp = obj.StimPlayObjs(idx);
     stimObj = sp.CurrentStimObj;
     if isempty(stimObj.Signal)
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         stimObj.update_signal;
+        clear computingCleanup;
     end
     if isempty(stimObj.Signal)
         obj.show_gui_message_("The selected stimulus does not currently have a signal to export.", ...
@@ -535,6 +551,8 @@ try
         fsVal  = stimObj.Fs;
         entry  = repmat(struct('Fs', fsVal, 'signal', [], 'parameters', struct()), nCombo, 1);
 
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         for c = 1:nCombo
             stimObj.set_variant_index(c);
             if isempty(stimObj.Signal)
@@ -553,6 +571,7 @@ try
                 end
             end
         end
+        clear computingCleanup;
 
         % Restore the original combination
         stimObj.set_variant_index(savedIdx);
@@ -608,6 +627,8 @@ try
 
         % Collect one deep copy per combination
         objs = cell(nCombo, 1);
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
         for c = 1:nCombo
             stimObj.set_variant_index(c);
             if isempty(stimObj.Signal)
@@ -615,6 +636,7 @@ try
             end
             objs{c} = copy(stimObj);
         end
+        clear computingCleanup;
 
         % Restore original combination
         stimObj.set_variant_index(savedIdx);

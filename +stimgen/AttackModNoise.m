@@ -106,15 +106,15 @@ classdef AttackModNoise < stimgen.Noise
             % propMeta() - Display metadata for AttackModNoise GUI properties.
             m = struct();
             m.Z          = struct('label', 'Z (Ramp/Damp)',         'format', '%.3f',    'limits', [-1 1], ...
-                'tooltip', 'Envelope asymmetry: positive = damped (abrupt onset, gradual decay), negative = ramped (gradual onset, abrupt offset), 0 = symmetric. Larger magnitude = sharper.');
+                'tooltip', stimgen.util.tooltip(obj, 'Z'));
             m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',    'limits', [0 1], ...
-                'tooltip', 'Modulation depth, 0-1. The envelope shape itself comes from Z; depth here only feeds the Viemeister power correction.');
+                'tooltip', stimgen.util.tooltip(obj, 'AMDepth'));
             m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz', 'limits', [0.1 500], ...
-                'tooltip', 'Repetition rate of the attack envelope in Hz; one envelope per 1/rate seconds. Vectorizable.');
+                'tooltip', stimgen.util.tooltip(obj, 'AMRate'));
             m.EnvelopeOnly              = struct('label', 'Envelope Only', ...
-                'tooltip', 'Output the modulation envelope alone, without the noise carrier. Useful for checking the envelope shape.');
+                'tooltip', stimgen.util.tooltip(obj, 'EnvelopeOnly'));
             m.ApplyViemeisterCorrection = struct('label', 'Viemeister Correction', ...
-                'tooltip', 'Scale the envelope so that RMS power stays constant as AM Depth changes, keeping depth and level independent.');
+                'tooltip', stimgen.util.tooltip(obj, 'ApplyViemeisterCorrection'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.Noise(obj));
         end
     end

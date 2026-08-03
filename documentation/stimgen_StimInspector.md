@@ -37,7 +37,7 @@ stimgen.StimInspector(t, "my tone");
 | --- | --- |
 | `Waveform` | Waveform with its analytic envelope and ±RMS markers, over the envelope in dB re peak — the dB view is where an onset/offset ramp shape is actually readable |
 | `Spectrum` | Single-sided magnitude spectrum, log or linear frequency axis, with markers at the harmonics found by `thd()` |
-| `Spectrogram` | Power spectrogram at a selectable FFT length (128–2048) |
+| `Spectrogram` | Power spectrogram at a selectable FFT length (128–2048) and window, log or linear frequency axis |
 | `Distortion` | Harmonic levels relative to the fundamental, as a bar chart and a table of frequency / dBc / percent |
 
 Only the visible tab is redrawn. A full refresh runs on every parameter edit in
@@ -46,6 +46,12 @@ interactive. The tab group's `SelectionChangedFcn` brings a tab up to date as
 it is selected.
 
 Time axes are in **milliseconds**, matching the rest of the package.
+
+The spectrogram is drawn as an image on a linear frequency axis but as a
+flat-shaded `surface` on a log one. MATLAB transforms an image object by its
+four corners only, so a log axis smears the whole image into a wedge; a surface
+is transformed per face and stays correct. The log view also drops the DC bin,
+whose lower cell edge falls below 0 Hz.
 
 ## Measurements
 

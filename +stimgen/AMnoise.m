@@ -88,15 +88,15 @@ classdef AMnoise < stimgen.Noise
             % propMeta() - Display metadata for AMnoise GUI properties.
             m = struct();
             m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',     'limits', [0 1], ...
-                'tooltip', 'Modulation depth, 0 = unmodulated noise, 1 = envelope reaches zero (100%). Vectorizable.');
+                'tooltip', stimgen.util.tooltip(obj, 'AMDepth'));
             m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz',  'limits', [0.1 500], ...
-                'tooltip', 'Sinusoidal modulation frequency in Hz. Vectorizable.');
+                'tooltip', stimgen.util.tooltip(obj, 'AMRate'));
             m.OnsetPhase = struct('label', 'Onset Phase',           'format', '%.1f deg', ...
-                'tooltip', 'Starting phase of the modulator in degrees. The default 180 starts the envelope at its minimum.');
+                'tooltip', stimgen.util.tooltip(obj, 'OnsetPhase'));
             m.EnvelopeOnly               = struct('label', 'Envelope Only', ...
-                'tooltip', 'Output the modulation envelope alone, without the noise carrier. Useful for checking the envelope shape.');
+                'tooltip', stimgen.util.tooltip(obj, 'EnvelopeOnly'));
             m.ApplyViemeisterCorrection  = struct('label', 'Viemeister Correction', ...
-                'tooltip', 'Scale the envelope so that RMS power stays constant as AM Depth changes, keeping depth and level independent.');
+                'tooltip', stimgen.util.tooltip(obj, 'ApplyViemeisterCorrection'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.Noise(obj));
         end
     end

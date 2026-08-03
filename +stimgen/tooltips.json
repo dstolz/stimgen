@@ -1,0 +1,164 @@
+{
+  "README": [
+    "Hover help for every stimgen parameter and GUI control, in one place.",
+    "Read through stimgen.util.tooltip(source, key) -- see that function for the",
+    "lookup rules. JSON has no comments, hence this key; it is not a section.",
+    "",
+    "Layout: one section per class, named without the package prefix. A lookup",
+    "searches the object's own section first, then each superclass section in",
+    "turn, so a subclass overrides an inherited entry simply by declaring the",
+    "same key (see ClickTrain.Duration). Keys must be valid MATLAB identifiers.",
+    "A property whose text depends on another property gets one key per case,",
+    "named Property_Case (see Tone.WindowDuration_Proportional).",
+    "",
+    "Keep each entry to a single line of plain text: what the parameter does,",
+    "plus any non-obvious consequence -- whether it is vectorizable, what a",
+    "value of 0 means, which other setting overrides it."
+  ],
+
+  "StimType": {
+    "SoundLevel": "Target output level in dB SPL. Only meaningful with a loaded calibration. Enter a vector, e.g. 40:10:80, to make one variant per level.",
+    "ApplyCalibration": "Scale the waveform to the calibrated voltage for the requested level. Off: output is normalized only and Sound Level is nominal.",
+    "Duration": "Total waveform length in ms. The onset/offset gate is applied inside this duration, not added to it.",
+    "WindowDuration": "Combined onset + offset gate length in ms; each ramp is half this value. Ignored when Apply Window is off.",
+    "ApplyWindow": "Gate the waveform on and off to suppress the spectral splatter caused by abrupt transitions.",
+    "VariantSelectionMode": "Order in which variant combinations are presented: Serial = table order; ShuffleUniform = random; ShuffleLeastUsed = random, favoring the least-presented; CustomSelector = defer to Variant Selector Class.",
+    "VariantCombinationMode": "How vector-valued parameters combine: Cartesian = every combination; PairwiseStrict = element-wise, all vectors must be the same length; PairwiseScalarExpand = element-wise with scalars repeated.",
+    "VariantSelectorClass": "Class name of a custom variant selector, used only when Variant Selection is CustomSelector. Leave empty otherwise.",
+    "VariantReselectOnUpdate": "Pick the next variant every time the signal is regenerated. Off: the active variant stays put until you step it with < / >."
+  },
+
+  "Tone": {
+    "Frequency": "Tone frequency in Hz. Also the key used to look up the calibrated level. Enter a vector, e.g. 2000:1000:8000, to make one variant per frequency.",
+    "OnsetPhase": "Starting phase of the carrier in degrees. 0 starts at zero crossing, 90 at the positive peak.",
+    "WindowMethod": "Units for Window Duration: Duration = milliseconds; Proportional = percent of Duration; #Periods = carrier periods per ramp. Changing this resets Window Duration.",
+    "WindowDuration_Proportional": "Combined onset + offset gate length as a percent of Duration; each ramp is half this value. Ignored when Apply Window is off.",
+    "WindowDuration_Periods": "Length of each onset and offset ramp in carrier periods, so the ramp scales with Frequency. Ignored when Apply Window is off."
+  },
+
+  "Noise": {
+    "HighPass": "Lower edge of the noise band in Hz. Must be below Low Pass Fc. Vectorizable.",
+    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable."
+  },
+
+  "AMnoise": {
+    "AMDepth": "Modulation depth, 0 = unmodulated noise, 1 = envelope reaches zero (100%). Vectorizable.",
+    "AMRate": "Sinusoidal modulation frequency in Hz. Vectorizable.",
+    "OnsetPhase": "Starting phase of the modulator in degrees. The default 180 starts the envelope at its minimum.",
+    "EnvelopeOnly": "Output the modulation envelope alone, without the noise carrier. Useful for checking the envelope shape.",
+    "ApplyViemeisterCorrection": "Scale the envelope so that RMS power stays constant as AM Depth changes, keeping depth and level independent."
+  },
+
+  "AttackModNoise": {
+    "Z": "Envelope asymmetry: positive = damped (abrupt onset, gradual decay), negative = ramped (gradual onset, abrupt offset), 0 = symmetric. Larger magnitude = sharper.",
+    "AMDepth": "Modulation depth, 0-1. The envelope shape itself comes from Z; depth here only feeds the Viemeister power correction.",
+    "AMRate": "Repetition rate of the attack envelope in Hz; one envelope per 1/rate seconds. Vectorizable.",
+    "EnvelopeOnly": "Output the modulation envelope alone, without the noise carrier. Useful for checking the envelope shape.",
+    "ApplyViemeisterCorrection": "Scale the envelope so that RMS power stays constant as AM Depth changes, keeping depth and level independent."
+  },
+
+  "FMtone": {
+    "CarrierFrequency": "Center frequency of the carrier in Hz; the modulation sweeps around it. Vectorizable.",
+    "ModulationFrequency": "How fast the frequency sweeps back and forth, in Hz. 0 gives an unmodulated tone at the carrier. Vectorizable.",
+    "ModulationDepth": "Peak frequency deviation in Hz, so the tone spans Carrier +/- this value. 0 gives an unmodulated tone. Vectorizable.",
+    "OnsetPhase": "Starting phase of the carrier in radians (not degrees, unlike Tone and AM Noise)."
+  },
+
+  "SweptSine": {
+    "StartFrequency": "Frequency at the start of the sweep, in Hz. Must be below Stop Freq. Scalar only.",
+    "StopFrequency": "Frequency at the end of the sweep, in Hz. Must be above Start Freq and below Fs/2. Scalar only.",
+    "ChirpType": "Sweep law: log-sine spends equal time per octave and gives a pink spectrum (preferred for calibration); linear sweeps at a constant Hz/s and emphasizes high frequencies."
+  },
+
+  "ClickTrain": {
+    "Rate": "Clicks per second. The click interval 1/Rate must be at least Click Duration. Vectorizable.",
+    "ClickDuration": "Width of a single click in ms; also the key used to look up the calibrated level. Must be at least one sample at the current Fs.",
+    "Polarity": "Sign of each click. Alternate flips polarity click by click, which cancels stimulus artifact when responses are averaged.",
+    "OnsetDelay": "Silence inserted in ms before the first click. The train shifts later within Train Duration rather than extending it.",
+    "Truncate": "Cut the train at Train Duration instead of zero-padding to it, so a train that does not fit a whole number of clicks ends early.",
+    "Duration": "Total length of the click train in ms. Clicks that do not fit a whole interval are dropped; the remainder is zero-padded unless Truncate is on."
+  },
+
+  "TORC": {
+    "LowFrequency": "Center frequency for the tonotopic axis, in Hz",
+    "Bandwidth": "Frequency range in octaves above the low frequency",
+    "ComponentsPerOctave": "Number of component carriers per octave",
+    "ComponentMode": "Range: single density across rate scan; Explicit: custom rate/density pairs",
+    "RippleDensity": "Ripple spectral density (cycles/octave); sign sets direction of spectral movement",
+    "LowestRate": "Lowest temporal modulation rate for Range mode",
+    "HighestRate": "Highest temporal modulation rate for Range mode",
+    "ComponentRates": "Space-separated list of temporal modulation rates for Explicit mode",
+    "ComponentDensities": "Space-separated list of ripple densities for Explicit mode; recycled if shorter than rates",
+    "RandomizeRipplePhase": "Randomize ripple phases to reduce spectral peakiness",
+    "Seed": "Random seed for carrier and ripple phases; negative value reseeds randomly each update",
+    "ModulationDepth": "Peak-to-peak level excursion of the dynamic spectrum",
+    "NumPeriods": "Number of ripple periods to include in the stimulus duration"
+  },
+
+  "SoundFile": {
+    "BrowseFiles": "Add sound files to this object's catalog. Files are added, not replaced, and each becomes one entry addressable by File Index.",
+    "UseAllFiles": "Set File Index to every file in the catalog, making one variant per file.",
+    "FileIndex": "Which catalog entries to play, by position. This is the variant axis: 1:8 makes eight variants. Duration follows the selected file.",
+    "Channel": "Channel to take from a multichannel file. 0 mixes all channels to mono.",
+    "CalibrationMode": "Filtered = equalize the whole spectrum with the calibration filter, best for broadband material; Direct = no equalization, level taken at Anchor Freq, preserves the native spectrum; None = normalize only.",
+    "AnchorFrequency": "Frequency whose calibration value sets the level in Direct mode. 0 uses the waveform's spectral centroid. Ignored in the other modes.",
+    "LevelReference": "Waveform statistic that Sound Level refers to: rms suits continuous material, peak suits transients with a high crest factor."
+  },
+
+  "StimPlayer": {
+    "StimTypeDD": "Stimulus class that Add Stim will create. The list is every stimulus class found in the stimgen package.",
+    "AddBtn": "Add a stimulus of the type above to the bank.",
+    "RemoveBtn": "Delete the selected stimulus from the bank.",
+    "BankList": "Stimuli in the bank. Select one to edit its parameters, preview it, or step its variants. A run presents every item.",
+    "BankLabel": "Name for this bank item, shown in the list and used as its field name when the bank is exported to the workspace.",
+    "Reps": "Presentations of the selected bank item per run. Applies to that item only; other items keep their own count.",
+    "ISI": "Time between presentations, in ms, for the whole bank. Enter one value for a fixed interval or [min max] to draw each interval uniformly from that range.",
+    "Order": "Order in which bank items are drawn during a run: Shuffle picks at random among items with reps left, Serial works down the list.",
+    "ComboPrevBtn": "Show the previous variant combination of the selected stimulus (also the left arrow key).",
+    "ComboNextBtn": "Show the next variant combination of the selected stimulus (also the right arrow key).",
+    "ComboStatusLbl": "Variant combination now displayed, out of the total produced by this stimulus's vector-valued parameters.",
+    "PlayBtn": "Preview the displayed combination of the selected stimulus through the sound card. Preview only: it does not use the hardware or the run counter.",
+    "PlayAllBtn": "Preview every variant combination of the selected stimulus in turn. Press again (Stop) to interrupt the cycle.",
+    "RunBtn": "Start the session: connect the loaded protocol, reset the counters and present the bank on the internal timer. Press again (Stop) to end it.",
+    "PauseBtn": "Hold the run without resetting it; press again (Resume) to carry on from the same counts.",
+    "ProtocolStatusLabel": "Loaded protocol and hardware connection state. Without a protocol, or with parameters missing, playback falls back to sound-card preview.",
+    "ComputingLamp": "Lit while a stimulus signal is being generated. The GUI is briefly unresponsive during this time.",
+    "StatusLabel": "Most recent player action or error.",
+    "Counter": "Stimuli presented so far out of the total for this run, summed over the bank (each item contributes its own Reps).",
+    "LoadProtocolTool": "Load Protocol",
+    "LoadBankTool": "Load Bank",
+    "SaveBankTool": "Save Bank",
+    "CalibrationGuiTool": "Open Calibration GUI",
+    "AddStimTool": "Add Stimulus",
+    "RemoveStimTool": "Remove Stimulus",
+    "InspectStimTool": "Inspect Stimulus (detailed plots and metrics)",
+    "PlayTool": "Play Selected"
+  },
+
+  "StimCalibration": {
+    "LoadTool": "Load (.esgc)",
+    "SaveTool": "Save (.esgc)",
+    "MeasureReferenceTool": "Measure Reference",
+    "RunCalibrationTool": "Run Calibration"
+  },
+
+  "CalibrationGui": {
+    "InitializeRuntimeTool": "Initialize Runtime From Protocol...",
+    "AttachAdapterTool": "Attach Adapter",
+    "DisconnectTool": "Disconnect Runtime/Adapter",
+    "LoadTool": "Load .esgc",
+    "SaveTool": "Save .esgc",
+    "QuickStartTool": "Calibration Quick Start",
+    "BtnReference": "Step 1: Measure reference tone to update microphone sensitivity.",
+    "BtnTones": "Step 2: Run tone frequency sweep to build tone calibration table.",
+    "BtnClicks": "Optional: Build click-duration calibration table.",
+    "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp.",
+    "BtnFilter": "Step 3 (optional): Design equalization filter after tone calibration."
+  },
+
+  "StimInspector": {
+    "RefreshTool": "Recompute From Stimulus",
+    "PlayTool": "Play Displayed Signal",
+    "ExportTool": "Export Signal and Metrics to Workspace"
+  }
+}

@@ -74,7 +74,7 @@ paramHandles = struct(); % registered with stimObj so on_gui_changed can reach t
 row = 1;
 
 % Top row: editable bank label
-BANK_LABEL_TIP = 'Name for this bank item, shown in the list and used as its field name when the bank is exported to the workspace.';
+BANK_LABEL_TIP = stimgen.util.tooltip('StimPlayer', 'BankLabel');
 
 lbl = uilabel(g, 'Text', 'Bank Label:', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = row;
@@ -202,7 +202,10 @@ try
     % Tone re-rendering the Window Duration widget when Window Method
     % changes the units it is expressed in.
     stimObj.notify_gui_changed(src.Tag, event.Value);
+    obj.set_computing_(true);
+    computingCleanup = onCleanup(@() obj.set_computing_(false));
     stimObj.update_signal();
+    clear computingCleanup;
     obj.update_signal_plot();
 catch ME
     if isNumExpr

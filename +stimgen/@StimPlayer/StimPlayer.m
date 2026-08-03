@@ -56,6 +56,7 @@ classdef StimPlayer < handle
         save_bank(obj, ffn)
         load_bank(obj, ffn)
         set_control_visibility(obj, options)
+        set_computing_(obj, tf)
     end
 
     % --- Public properties ---
