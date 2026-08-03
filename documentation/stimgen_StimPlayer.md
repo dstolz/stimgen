@@ -147,6 +147,15 @@ Timing fields are entered and displayed in **milliseconds**, and the signal
 plot's time axis is in ms; the underlying `StimType` properties stay in
 seconds. The conversion comes from the `scale` field in `propMeta`.
 
+The panel registers its widgets with `stimObj.set_gui_handles()` and calls
+`stimObj.notify_gui_changed()` after each successful edit, so a stimulus can
+repair fields that the edit invalidated — selecting `Tone.WindowMethod`
+retitles `Window Duration` and resets it to the new method's default, because
+`Tone.on_gui_changed` calls `refresh_gui_widget`. See
+[GUI change hooks](stimgen_StimType.md#gui-change-hooks). A subclass writes
+that hook once and gets the same behavior here and in the standalone
+`create_gui` panel.
+
 This means `StimPlayer` stays aligned with the underlying stimulus classes.
 If a new `StimType` subclass exposes good `propMeta()` metadata — including
 `group`/`order` where a property belongs somewhere other than `Waveform` —

@@ -9,6 +9,22 @@ if ~applyWindowValue || obj.temporarilyDisableSignalMods, return; end
 g = obj.Window;
 
 n = length(g);
+
+% A gate longer than the signal cannot be applied. This is reachable
+% transiently whenever a property that reinterprets WindowDuration is
+% assigned before WindowDuration itself catches up -- switching
+% Tone.WindowMethod, or fromStruct restoring the two in either order --
+% so shrink the window to fit rather than failing on the index.
+nSignal = numel(obj.Signal);
+if n > nSignal
+    if n < 2 || nSignal < 2
+        return
+    end
+    nFit = nSignal - rem(nSignal, 2);
+    g = interp1(linspace(0, 1, n), g, linspace(0, 1, nFit));
+    n = nFit;
+end
+
 ga = g(1:n/2);
 gb = g(n/2+1:end);
 

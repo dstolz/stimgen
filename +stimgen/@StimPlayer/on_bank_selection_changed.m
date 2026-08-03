@@ -69,6 +69,8 @@ g.RowSpacing  = 2;
 mc = metaclass(stimObj);
 pl = mc.PropertyList;
 
+paramHandles = struct(); % registered with stimObj so on_gui_changed can reach the widgets
+
 row = 1;
 
 % Top row: editable bank label
@@ -141,13 +143,26 @@ for s = 1:numel(sections)
             x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
         end
 
+        % Keep the label reachable so refresh_gui_widget can retitle a
+        % property whose units depend on another (e.g. Tone.WindowDuration).
+        ud = x.UserData;
+        if ~isstruct(ud)
+            ud = struct();
+        end
+        ud.labelHandle = lbl;
+        ud.labelFormat = '%s:';
+        x.UserData     = ud;
+
         x.Layout.Row    = row;
         x.Layout.Column = 2;
+        paramHandles.(propName) = x;
         row = row + 1;
     end
 
     row = row + 1; % skip separator row
 end
+
+stimObj.set_gui_handles(paramHandles);
 
 obj.update_signal_plot;
 obj.refresh_combo_controls_;
@@ -172,6 +187,10 @@ try
         value = value / sc;
     end
     stimObj.(src.Tag) = value;
+    % Lets a stimulus react to the edit before the signal is rebuilt, e.g.
+    % Tone re-rendering the Window Duration widget when Window Method
+    % changes the units it is expressed in.
+    stimObj.notify_gui_changed(src.Tag, event.Value);
     stimObj.update_signal();
     obj.update_signal_plot();
 catch ME

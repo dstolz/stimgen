@@ -42,9 +42,22 @@ Pure sine tone at `Frequency` for `Duration` seconds.
 | `WindowMethod` | no | `"Duration"` \| `"Proportional"` \| `"#Periods"` — reinterprets `WindowDuration` |
 
 `WindowMethod` changes both the meaning and display scale of the inherited
-`WindowDuration`: a fixed time, a percentage of total duration, or a count of carrier
-periods. `Tone.propMeta` overrides the `WindowDuration` entry per mode; see
-[Display units](stimgen_StimType.md#display-units) for how `scale` drives that.
+`WindowDuration`: a fixed time (ms), a percentage of total duration, or a count of
+carrier periods per ramp. `Tone.propMeta` overrides the `WindowDuration` entry per
+mode; see [Display units](stimgen_StimType.md#display-units) for how `scale` drives
+that.
+
+`WindowDuration` is stored in whichever unit the active method declares. The
+conversion to seconds happens in `Tone.effective_window_duration_`, which the base
+class `Window` getter calls, so the stored value is never rewritten and repeated
+`update_signal` calls are idempotent.
+
+Because the units differ per method, switching `WindowMethod` from a GUI resets
+`WindowDuration` to that method's default (2 ms / 10 % / 5 periods) and re-renders
+the field's label and value — see `Tone.on_gui_changed` and
+[GUI change hooks](stimgen_StimType.md#gui-change-hooks). Setting `WindowMethod`
+programmatically leaves `WindowDuration` alone, so a save/load round-trip keeps
+whatever was stored.
 
 ## Noise
 

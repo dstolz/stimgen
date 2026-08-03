@@ -10,6 +10,11 @@ classdef Tone < stimgen.StimType
         Frequency  (1,:) double {mustBePositive,mustBeFinite} = 1000; % Hz
         OnsetPhase (1,:) double = 0;
         
+        % How WindowDuration is interpreted: as a time in seconds
+        % ("Duration"), as a percentage of Duration ("Proportional"), or as
+        % a number of carrier periods per ramp ("#Periods"). The conversion
+        % to seconds happens in effective_window_duration_, so the stored
+        % WindowDuration always stays in the units the user typed.
         WindowMethod  (1,1) string {mustBeMember(WindowMethod,["Duration" "Proportional" "#Periods"])} = "Duration"
     end
 
@@ -41,18 +46,8 @@ classdef Tone < stimgen.StimType
             onsetPhase = double(obj.selected_value("OnsetPhase"));
             
             obj.Signal = sin(2.*pi.*freq.*t+onsetPhase);
-            
-            
-            switch obj.WindowMethod
-                case 'Duration'
-                    % no conversion needed
-                case 'Proportional'
-                    obj.WindowDuration = obj.WindowDuration/100*t(end);
-                case '#Periods'
-                    obj.WindowDuration = 2*obj.WindowDuration/freq;
-            end
-            
-            
+
+
             obj.apply_normalization;
             
             obj.apply_calibration;
@@ -88,26 +83,45 @@ classdef Tone < stimgen.StimType
             m = stimgen.StimType.merge_prop_meta(m, base);
         end
 
+        function d = effective_window_duration_(obj)
+            % Convert WindowDuration from the units WindowMethod declares
+            % into the total onset+offset gate length in seconds.
+            % apply_gate splits the window in half, so a per-ramp figure
+            % such as "#Periods" is doubled here.
+            d = double(obj.selected_value("WindowDuration"));
+
+            switch obj.WindowMethod
+                case "Proportional"
+                    d = d / 100 * double(obj.selected_value("Duration"));
+                case "#Periods"
+                    d = 2 * d / double(obj.selected_value("Frequency"));
+            end
+        end
+
+        function d = default_window_duration_(obj)
+            % Default WindowDuration for the current WindowMethod, in that
+            % method's units. A value carried over from another method is
+            % meaningless (2 ms is not a sensible 2 %), so switching methods
+            % resets the field rather than reinterpreting the old number.
+            switch obj.WindowMethod
+                case "Proportional"
+                    d = 10;    % percent of Duration, both ramps together
+                case "#Periods"
+                    d = 5;     % carrier periods per ramp
+                otherwise
+                    d = 0.002; % seconds -> 2 ms, the base-class default
+            end
+        end
+
         function on_gui_changed(obj, propName, ~)
-            % Re-render the WindowDuration widget when WindowMethod changes,
-            % since the method changes both its units and its display scale.
+            % Re-render the WindowDuration widget when WindowMethod changes:
+            % the method redefines its units, so its label, display scale
+            % and value all have to follow.
             if ~strcmp(propName, 'WindowMethod')
                 return
             end
-            if ~isstruct(obj.GUIHandles) || ~isfield(obj.GUIHandles, 'WindowDuration') ...
-                    || ~isvalid(obj.GUIHandles.WindowDuration)
-                return
-            end
-            x  = obj.GUIHandles.WindowDuration;
-            pm = obj.propMeta().WindowDuration;
-            if isprop(x, 'ValueDisplayFormat')
-                x.ValueDisplayFormat = pm.format;
-                x.Value = obj.WindowDuration * stimgen.StimType.display_scale(pm);
-            else
-                x.UserData = struct('isNumericExpression', true, 'propMeta', pm);
-                x.Value = stimgen.StimType.localFormatPropertyValue_( ...
-                    obj.WindowDuration * stimgen.StimType.display_scale(pm));
-            end
+            obj.WindowDuration = obj.default_window_duration_();
+            obj.refresh_gui_widget('WindowDuration');
         end
     end
 end

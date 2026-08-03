@@ -129,7 +129,9 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         end
 
         function g = get.Window(obj)
-            windowDurationValue = double(obj.get_selected_property_value_("WindowDuration"));
+            % Subclasses may express WindowDuration in other units, so the
+            % gate length comes from effective_window_duration_ (seconds).
+            windowDurationValue = double(obj.effective_window_duration_());
             fsValue = double(obj.get_selected_property_value_("Fs"));
             n = round(windowDurationValue .* fsValue);
             n = n + rem(n,2);
@@ -163,12 +165,16 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         text = current_parameter_summary(obj)                                     % Non-default parameter summary
         h = create_gui(obj, src, event)                                           % Auto-build parameter GUI
         m = get_prop_meta(obj)                                                    % Public accessor for propMeta()
+        set_gui_handles(obj, handleStruct)                                        % Register widgets built by a host GUI
+        notify_gui_changed(obj, propName, value)                                  % Public entry point to the on_gui_changed hook
+        refresh_gui_widget(obj, propName)                                         % Re-apply propMeta to a live widget and its label
     end % methods (public external)
 
     % --- Protected external method declarations ---
     methods (Access = protected)
         apply_normalization(obj)                                                   % Normalize Signal
         apply_gate(obj)                                                            % Apply onset/offset window to Signal
+        d = effective_window_duration_(obj)                                        % Gate length in seconds (subclass unit conversion seam)
         apply_calibration(obj)                                                     % Apply LUT or filter+gain calibration
         create_listeners(obj)                                                      % Attach PostSet listeners to observable properties
         onPropertyChanged(obj, src, event)                                         % Listener: recompute Signal and refresh plot

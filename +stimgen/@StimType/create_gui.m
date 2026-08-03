@@ -75,6 +75,16 @@ for i = 1:nRows
             x.Value = char(obj.(propName));
     end
 
+    % Keep the label reachable so refresh_gui_widget can retitle a property
+    % whose units depend on another property (e.g. Tone.WindowDuration).
+    ud = x.UserData;
+    if ~isstruct(ud)
+        ud = struct();
+    end
+    ud.labelHandle = lbl;
+    ud.labelFormat = '%s';
+    x.UserData     = ud;
+
     x.Layout.Column = 2;
     x.Layout.Row    = i;
     h.(propName)    = x;

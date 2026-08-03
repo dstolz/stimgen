@@ -108,6 +108,14 @@ declared per property in `propMeta` as `'scale', 1000` and read back via
   is shared with frequency in Hz.
 - A property whose units depend on another property overrides its own `propMeta` entry — see
   `Tone.WindowMethod`, where `WindowDuration` is ms/percent/periods depending on the mode.
+  Widgets already on screen were built from the old metadata, so the subclass also implements
+  the `on_gui_changed` hook and calls `refresh_gui_widget(prop)` to retitle/rescale the affected
+  field. Both generators feed that hook: `create_gui` via `interpret_gui`, `StimPlayer` via
+  `set_gui_handles` + `notify_gui_changed`. The hook fires for GUI edits only, so programmatic
+  assignment and `fromStruct` are unaffected by it.
+- A varying *stored* unit converts in `effective_window_duration_` (called by the `Window`
+  getter), never in `update_signal` — that runs repeatedly and an in-place conversion would
+  compound on every call.
 - A derived time property should be removed from `propMeta` rather than shown read-only (there is no
   read-only widget). `SoundFile` does `base = rmfield(base,'Duration')` because `Duration` is slaved
   to the selected file, and writes it from inside `update_signal` behind a guard flag that

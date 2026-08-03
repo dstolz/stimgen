@@ -110,6 +110,61 @@ A property whose meaning depends on another property can vary its own scale.
 percentage or a period count under `"Proportional"` / `"#Periods"`, so
 `Tone.propMeta` overrides the entry (dropping `scale`) for those modes.
 
+### GUI change hooks
+
+A `propMeta` entry that varies is only half the job: a widget already on screen
+was built from the *previous* metadata. The protected hook
+
+```matlab
+on_gui_changed(obj, propName, value)
+```
+
+runs after a GUI-driven property assignment and before the signal is rebuilt, and
+is where a subclass repairs the widgets that the edit invalidated. Inside it, call
+
+```matlab
+obj.refresh_gui_widget('WindowDuration')
+```
+
+to re-apply the current `propMeta` entry to that property's live widget — label
+caption, numeric format and limits, and the value in display units. It is a no-op
+when no widget exists, so the hook is safe to reach from headless code.
+
+Both GUI builders participate:
+
+- `create_gui` registers its widgets in `GUIHandles` itself and calls the hook
+  from `interpret_gui`.
+- A host GUI that builds its own widgets from `propMeta` registers them with
+  `set_gui_handles(handleStruct)` and calls `notify_gui_changed(propName, value)`
+  after it assigns the property. `stimgen.StimPlayer.on_bank_selection_changed`
+  does both, which is why `Tone`'s hook works identically in the bank editor.
+  Only one panel can be registered at a time; the most recent caller wins.
+
+Each builder stores the property's label handle in the widget's
+`UserData.labelHandle`, along with a `UserData.labelFormat` caption template
+(`'%s'` for `create_gui`, `'%s:'` for the StimPlayer panel), so
+`refresh_gui_widget` can retitle the label in either layout.
+
+Note the hook fires for GUI edits only. Programmatic assignment stays untouched,
+which keeps `fromStruct` from clobbering a loaded value depending on the order in
+which properties happen to be restored.
+
+### Unit seams below the GUI
+
+Display scale only governs presentation. When a property's *stored* unit varies,
+the conversion belongs in a computation seam instead — never in `update_signal`,
+which runs repeatedly and would compound the conversion each time. `Window` calls
+the protected
+
+```matlab
+d = effective_window_duration_(obj)   % total onset+offset gate length, seconds
+```
+
+whose base implementation returns `WindowDuration` unchanged. `Tone` overrides it
+to divide by 100 and multiply by `Duration` (`"Proportional"`), or to convert a
+per-ramp period count into seconds (`"#Periods"`; doubled, since `apply_gate`
+splits the window in half between onset and offset).
+
 ### Parameter grouping
 
 Each `propMeta` entry may also declare `group` (`'Waveform'` | `'Level'` |
