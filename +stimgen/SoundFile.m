@@ -850,26 +850,7 @@ classdef SoundFile < stimgen.StimType
             % Power-weighted mean frequency, used as the Direct-mode LUT anchor
             % when AnchorFrequency is 0. Returns NaN when undefined, which
             % makes Engine fall back to ReferenceFrequency.
-            n = numel(y);
-            if n < 2
-                fc = NaN;
-                return
-            end
-            nfft = 2^nextpow2(n);
-            Y    = abs(fft(y, nfft));
-            half = floor(nfft/2) + 1;
-            p    = reshape(Y(1:half), [], 1).^2;
-            f    = (0:half-1)' .* (fs / nfft);
-
-            total = sum(p);
-            if ~isfinite(total) || total <= 0
-                fc = NaN;
-                return
-            end
-            fc = sum(f .* p) ./ total;
-            if ~isfinite(fc) || fc <= 0
-                fc = NaN;
-            end
+            fc = stimgen.util.spectral_centroid(y, fs);
         end
 
     end % methods (Access = private)
