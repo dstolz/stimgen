@@ -74,13 +74,17 @@ paramHandles = struct(); % registered with stimObj so on_gui_changed can reach t
 row = 1;
 
 % Top row: editable bank label
+BANK_LABEL_TIP = 'Name for this bank item, shown in the list and used as its field name when the bank is exported to the workspace.';
+
 lbl = uilabel(g, 'Text', 'Bank Label:', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = row;
 lbl.Layout.Column = 1;
+lbl.Tooltip       = BANK_LABEL_TIP;
 
 x = uieditfield(g, 'Tag', 'BankLabelField', 'Value', char(sp.Name));
 x.Layout.Row       = row;
 x.Layout.Column    = 2;
+x.Tooltip          = BANK_LABEL_TIP;
 x.ValueChangedFcn  = @(s,~) update_name_(obj, idx, s);
 row = row + 2;
 
@@ -141,6 +145,13 @@ for s = 1:numel(sections)
         end
         if ~isa(x, 'matlab.ui.control.Button')
             x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
+        end
+
+        % Hover help, applied to both halves of the row so it appears
+        % wherever the pointer lands.
+        if isfield(pm, 'tooltip')
+            lbl.Tooltip = pm.tooltip;
+            x.Tooltip   = pm.tooltip;
         end
 
         % Keep the label reachable so refresh_gui_widget can retitle a

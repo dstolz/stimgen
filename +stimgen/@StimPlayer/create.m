@@ -58,6 +58,7 @@ h.Layout.Column = [1 2];
 stTypes = stimgen.StimType.list;
 h.Items     = stTypes;
 h.ItemsData = stTypes;
+h.Tooltip   = 'Stimulus class that Add Stim will create. The list is every stimulus class found in the stimgen package.';
 obj.handles.TypeDropdown = h;
 
 R = R + 1;
@@ -68,12 +69,14 @@ h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.FontWeight          = 'bold';
 h.ButtonPushedFcn     = @obj.add_stim;
+h.Tooltip             = 'Add a stimulus of the type above to the bank.';
 obj.handles.AddBtn    = h;
 
 h = uibutton(bg, 'Text', 'Remove');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @obj.remove_stim;
+h.Tooltip             = 'Delete the selected stimulus from the bank.';
 obj.handles.RemoveBtn = h;
 
 R = R + 1;
@@ -85,14 +88,21 @@ h.Layout.Column          = [1 2];
 h.Items                  = {};
 h.ItemsData              = {};
 h.ValueChangedFcn        = @obj.on_bank_selection_changed;
+h.Tooltip                = 'Stimuli in the bank. Select one to edit its parameters, preview it, or step its variants. A run presents every item.';
 obj.handles.BankList     = h;
 
 R = R + 1;
 
 % Reps field
+REPS_TIP = 'Presentations of the selected bank item per run. Applies to that item only; other items keep their own count.';
+ISI_TIP  = ['Time between presentations, in ms, for the whole bank. ' ...
+            'Enter one value for a fixed interval or [min max] to draw each interval uniformly from that range.'];
+ORDER_TIP = 'Order in which bank items are drawn during a run: Shuffle picks at random among items with reps left, Serial works down the list.';
+
 lbl = uilabel(bg, 'Text', 'Reps:', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = R;
 lbl.Layout.Column = 1;
+lbl.Tooltip       = REPS_TIP;
 obj.handles.RepsLabel = lbl;
 obj.handles.RepsRow   = R;
 
@@ -104,6 +114,7 @@ h.RoundFractionalValues   = 'on';
 h.ValueDisplayFormat      = '%d';
 h.Value                   = 20;
 h.ValueChangedFcn     = @(s,e) on_reps_changed_(obj,s,e);
+h.Tooltip                 = REPS_TIP;
 obj.handles.RepsField     = h;
 
 R = R + 1;
@@ -112,6 +123,7 @@ R = R + 1;
 lbl = uilabel(bg, 'Text', 'ISI (ms):', 'HorizontalAlignment', 'right');
 lbl.Layout.Row    = R;
 lbl.Layout.Column = 1;
+lbl.Tooltip       = ISI_TIP;
 obj.handles.ISILabel = lbl;
 obj.handles.ISIRow   = R;
 
@@ -120,6 +132,7 @@ h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.Value               = mat2str(obj.ISI * 1e3);
 h.ValueChangedFcn     = @(s,e) on_isi_changed_(obj,s,e);
+h.Tooltip             = ISI_TIP;
 obj.handles.ISIField  = h;
 
 R = R + 1;
@@ -132,6 +145,7 @@ h.Items           = {'Shuffle', 'Serial'};
 h.ItemsData       = {"Shuffle", "Serial"};
 h.Value           = "Shuffle";
 h.ValueChangedFcn = @(s,e) on_order_changed_(obj,s,e);
+h.Tooltip         = ORDER_TIP;
 obj.handles.OrderDD  = h;
 obj.handles.OrderRow = R;
 
@@ -142,12 +156,14 @@ h = uibutton(bg, 'Text', '<');
 h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.ButtonPushedFcn     = @(~,~) obj.step_combination(-1);
+h.Tooltip             = 'Show the previous variant combination of the selected stimulus (also the left arrow key).';
 obj.handles.ComboPrevBtn = h;
 
 h = uibutton(bg, 'Text', '>');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @(~,~) obj.step_combination(1);
+h.Tooltip             = 'Show the next variant combination of the selected stimulus (also the right arrow key).';
 obj.handles.ComboNextBtn = h;
 
 R = R + 1;
@@ -156,6 +172,7 @@ R = R + 1;
 h = uilabel(bg, 'Text', 'Combo: - / -', 'HorizontalAlignment', 'center');
 h.Layout.Row    = R;
 h.Layout.Column = [1 2];
+h.Tooltip       = 'Variant combination now displayed, out of the total produced by this stimulus''s vector-valued parameters.';
 obj.handles.ComboStatusLbl = h;
 
 R = R + 1;
@@ -165,12 +182,14 @@ h = uibutton(bg, 'Text', 'Play');
 h.Layout.Row          = R;
 h.Layout.Column       = 1;
 h.ButtonPushedFcn     = @obj.play_preview;
+h.Tooltip             = 'Preview the displayed combination of the selected stimulus through the sound card. Preview only: it does not use the hardware or the run counter.';
 obj.handles.PlayBtn   = h;
 
 h = uibutton(bg, 'Text', 'Play All');
 h.Layout.Row          = R;
 h.Layout.Column       = 2;
 h.ButtonPushedFcn     = @obj.play_all;
+h.Tooltip             = 'Preview every variant combination of the selected stimulus in turn. Press again (Stop) to interrupt the cycle.';
 obj.handles.PlayAllBtn = h;
 
 % --- Right: scrollable param panel (rebuilt on listbox selection) ---
@@ -205,6 +224,7 @@ h.Layout.Row      = 1;
 h.FontSize        = 14;
 h.FontWeight      = 'bold';
 h.ButtonPushedFcn = @obj.playback_control;
+h.Tooltip         = 'Start the session: connect the loaded protocol, reset the counters and present the bank on the internal timer. Press again (Stop) to end it.';
 obj.handles.RunBtn = h;
 obj.handles.RunCol = 1;
 
@@ -215,6 +235,7 @@ h.FontSize        = 14;
 h.FontWeight      = 'bold';
 h.Enable          = 'off';
 h.ButtonPushedFcn = @obj.playback_control;
+h.Tooltip         = 'Hold the run without resetting it; press again (Resume) to carry on from the same counts.';
 obj.handles.PauseBtn = h;
 obj.handles.PauseCol = 2;
 
@@ -222,18 +243,21 @@ h = uilabel(ctrlG, 'Text', 'Protocol: none | HW: speaker preview only', ...
     'HorizontalAlignment', 'left', 'FontColor', [0.35 0.35 0.35]);
 h.Layout.Column = 3;
 h.Layout.Row    = 1;
+h.Tooltip       = 'Loaded protocol and hardware connection state. Without a protocol, or with parameters missing, playback falls back to sound-card preview.';
 obj.handles.ProtocolStatusLabel = h;
 
 h = uilabel(ctrlG, 'Text', 'Ready.', 'HorizontalAlignment', 'left', ...
     'FontColor', [0.35 0.35 0.35]);
 h.Layout.Column = 4;
 h.Layout.Row    = 1;
+h.Tooltip       = 'Most recent player action or error.';
 obj.handles.StatusLabel = h;
 
 h = uilabel(ctrlG, 'Text', '0 / 0', 'FontSize', 16, 'FontWeight', 'bold', ...
     'HorizontalAlignment', 'right');
 h.Layout.Column = 5;
 h.Layout.Row    = 1;
+h.Tooltip       = 'Stimuli presented so far out of the total for this run, summed over the bank (each item contributes its own Reps).';
 obj.handles.Counter = h;
 
 % ---- Menu ----

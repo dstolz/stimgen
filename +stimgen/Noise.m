@@ -85,8 +85,10 @@ classdef Noise < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for Noise GUI properties.
             m = struct();
-            m.HighPass = struct('label', 'High Pass Fc', 'format', '%.1f Hz', 'limits', [100 40000]);
-            m.LowPass  = struct('label', 'Low Pass Fc',  'format', '%.1f Hz', 'limits', [100 40000]);
+            m.HighPass = struct('label', 'High Pass Fc', 'format', '%.1f Hz', 'limits', [100 40000], ...
+                'tooltip', 'Lower edge of the noise band in Hz. Must be below Low Pass Fc. Vectorizable.');
+            m.LowPass  = struct('label', 'Low Pass Fc',  'format', '%.1f Hz', 'limits', [100 40000], ...
+                'tooltip', 'Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable.');
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end
     end

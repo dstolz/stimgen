@@ -136,6 +136,11 @@ type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (wh
 `ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
 has to be excluded there.
 
+Every `propMeta` entry also declares a `tooltip`: one line of plain text applied to both the label
+and the widget by both generators, and re-applied by `refresh_gui_widget` (so a property whose
+metadata varies, like `Tone.WindowDuration`, swaps tooltip along with label). A new property needs
+one. `StimPlayer`'s own controls set `Tooltip` directly in `@StimPlayer/create.m`.
+
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
 automatically offered in GUI dropdowns.

@@ -168,7 +168,7 @@ function build_spectrogram_tab_(obj, tg)
 tab = uitab(tg, 'Title', 'Spectrogram');
 
 tgrid = uigridlayout(tab);
-tgrid.ColumnWidth = {90, 110, 80, 130, '1x'};
+tgrid.ColumnWidth = {90, 110, 80, 130, 150, '1x'};
 tgrid.RowHeight   = {24, '1x'};
 tgrid.Padding     = [6 6 6 6];
 
@@ -198,9 +198,15 @@ d.Layout.Column = 4;
 d.ValueChangedFcn = @(~,~) obj.update_plots_(obj.Metrics);
 obj.handles.SpecWindowDD = d;
 
+c = uicheckbox(tgrid, 'Text', 'Log frequency axis', 'Value', false);
+c.Layout.Row    = 1;
+c.Layout.Column = 5;
+c.ValueChangedFcn = @(~,~) obj.update_plots_(obj.Metrics);
+obj.handles.SpecLogFreqCheck = c;
+
 ax = uiaxes(tgrid);
 ax.Layout.Row    = 2;
-ax.Layout.Column = [1 5];
+ax.Layout.Column = [1 6];
 box(ax, 'on');
 title(ax, 'Spectrogram');
 xlabel(ax, 'time (ms)');

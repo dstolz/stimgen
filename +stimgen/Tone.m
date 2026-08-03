@@ -61,12 +61,15 @@ classdef Tone < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for Tone GUI properties.
             m = struct();
-            m.Frequency    = struct('label', 'Frequency',     'format', '%.1f Hz',  'limits', [100 40000]);
-            m.OnsetPhase   = struct('label', 'Onset Phase',   'format', '%.1f deg');
+            m.Frequency    = struct('label', 'Frequency',     'format', '%.1f Hz',  'limits', [100 40000], ...
+                'tooltip', 'Tone frequency in Hz. Also the key used to look up the calibrated level. Enter a vector, e.g. 2000:1000:8000, to make one variant per frequency.');
+            m.OnsetPhase   = struct('label', 'Onset Phase',   'format', '%.1f deg', ...
+                'tooltip', 'Starting phase of the carrier in degrees. 0 starts at zero crossing, 90 at the positive peak.');
             % Grouped with Timing (order 20) so it sits next to Duration
             % (order 10) and WindowDuration (order 30), which it controls.
             m.WindowMethod = struct('label', 'Window Method', 'widget', 'dropdown', ...
-                'items', ["Duration" "Proportional" "#Periods"], 'group', 'Timing', 'order', 20);
+                'items', ["Duration" "Proportional" "#Periods"], 'group', 'Timing', 'order', 20, ...
+                'tooltip', 'Units for Window Duration: Duration = milliseconds; Proportional = percent of Duration; #Periods = carrier periods per ramp. Changing this resets Window Duration.');
             base = propMeta@stimgen.StimType(obj);
 
             % WindowMethod reinterprets WindowDuration: only the "Duration"
@@ -74,10 +77,12 @@ classdef Tone < stimgen.StimType
             switch obj.WindowMethod
                 case "Proportional"
                     base.WindowDuration = struct('label', 'Window Duration (%)', ...
-                        'format', '%.2f %%', 'limits', [0 100], 'group', 'Timing', 'order', 30);
+                        'format', '%.2f %%', 'limits', [0 100], 'group', 'Timing', 'order', 30, ...
+                        'tooltip', 'Combined onset + offset gate length as a percent of Duration; each ramp is half this value. Ignored when Apply Window is off.');
                 case "#Periods"
                     base.WindowDuration = struct('label', 'Window Duration (periods)', ...
-                        'format', '%.1f periods', 'limits', [0 1e4], 'group', 'Timing', 'order', 30);
+                        'format', '%.1f periods', 'limits', [0 1e4], 'group', 'Timing', 'order', 30, ...
+                        'tooltip', 'Length of each onset and offset ramp in carrier periods, so the ramp scales with Frequency. Ignored when Apply Window is off.');
             end
 
             m = stimgen.StimType.merge_prop_meta(m, base);

@@ -73,6 +73,26 @@ These are used by editing workflows that support computed property values.
 
 Recent UI sync behavior includes `update_handle_value`, which keeps control state aligned after property updates and variant changes.
 
+### Hover help
+
+A `propMeta` entry may declare `tooltip`, a single line of plain text applied to
+both the property's label and its widget:
+
+```matlab
+m.Frequency = struct('label','Frequency','format','%.1f Hz','limits',[100 40000], ...
+                     'tooltip','Tone frequency in Hz. Also the key used to look up the calibrated level.');
+```
+
+Both builders apply it — `create_gui` and
+`stimgen.StimPlayer.on_bank_selection_changed` — so a subclass writes the text
+once and it shows up in the standalone panel and the bank editor alike.
+`refresh_gui_widget` re-applies it along with the label, which matters for a
+property whose metadata varies: `Tone.WindowDuration` swaps in a different
+tooltip under each `WindowMethod`. Every base and subclass property carries one;
+keep new ones to a line, saying what the parameter does plus any non-obvious
+consequence (which properties are vectorizable, what a value of 0 means, which
+other setting overrides it).
+
 ### Display units
 
 Time properties are stored in **seconds** but shown in **milliseconds**. The
@@ -127,8 +147,8 @@ obj.refresh_gui_widget('WindowDuration')
 ```
 
 to re-apply the current `propMeta` entry to that property's live widget — label
-caption, numeric format and limits, and the value in display units. It is a no-op
-when no widget exists, so the hook is safe to reach from headless code.
+caption, tooltip, numeric format and limits, and the value in display units. It is
+a no-op when no widget exists, so the hook is safe to reach from headless code.
 
 Both GUI builders participate:
 

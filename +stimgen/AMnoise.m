@@ -87,11 +87,16 @@ classdef AMnoise < stimgen.Noise
         function m = propMeta(obj)
             % propMeta() - Display metadata for AMnoise GUI properties.
             m = struct();
-            m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',     'limits', [0 1]);
-            m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz',  'limits', [0.1 500]);
-            m.OnsetPhase = struct('label', 'Onset Phase',           'format', '%.1f deg');
-            m.EnvelopeOnly               = struct('label', 'Envelope Only');
-            m.ApplyViemeisterCorrection  = struct('label', 'Viemeister Correction');
+            m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',     'limits', [0 1], ...
+                'tooltip', 'Modulation depth, 0 = unmodulated noise, 1 = envelope reaches zero (100%). Vectorizable.');
+            m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz',  'limits', [0.1 500], ...
+                'tooltip', 'Sinusoidal modulation frequency in Hz. Vectorizable.');
+            m.OnsetPhase = struct('label', 'Onset Phase',           'format', '%.1f deg', ...
+                'tooltip', 'Starting phase of the modulator in degrees. The default 180 starts the envelope at its minimum.');
+            m.EnvelopeOnly               = struct('label', 'Envelope Only', ...
+                'tooltip', 'Output the modulation envelope alone, without the noise carrier. Useful for checking the envelope shape.');
+            m.ApplyViemeisterCorrection  = struct('label', 'Viemeister Correction', ...
+                'tooltip', 'Scale the envelope so that RMS power stays constant as AM Depth changes, keeping depth and level independent.');
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.Noise(obj));
         end
     end

@@ -194,7 +194,16 @@ psDb = 10*log10(ps + eps);
 imagesc(ax, timeVec * 1e3, freqVec, psDb);   % time axis in ms
 axis(ax, 'xy');
 xlim(ax, [timeVec(1) timeVec(end)] * 1e3);   % keep the image tight in the axes
-ylim(ax, [freqVec(1) freqVec(end)]);
+
+useLogFreq = obj.handles.SpecLogFreqCheck.Value;
+if useLogFreq
+    % A log axis cannot show DC; start at the first resolvable bin.
+    set(ax, 'YScale', 'log');
+    ylim(ax, [freqVec(2), fs/2]);
+else
+    set(ax, 'YScale', 'linear');
+    ylim(ax, [0, fs/2]);
+end
 xlabel(ax, 'time (ms)');
 ylabel(ax, 'frequency (Hz)');
 

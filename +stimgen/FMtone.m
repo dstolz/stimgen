@@ -85,10 +85,14 @@ classdef FMtone < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for FMtone GUI properties.
             m = struct();
-            m.CarrierFrequency    = struct('label', 'Carrier Freq',  'format', '%.1f Hz',  'limits', [1 80000]);
-            m.ModulationFrequency = struct('label', 'FM Rate',        'format', '%.2f Hz',  'limits', [0 40000]);
-            m.ModulationDepth     = struct('label', 'FM Depth (Hz)',  'format', '%.1f Hz',  'limits', [0 20000]);
-            m.OnsetPhase          = struct('label', 'Onset Phase',    'format', '%.3f rad');
+            m.CarrierFrequency    = struct('label', 'Carrier Freq',  'format', '%.1f Hz',  'limits', [1 80000], ...
+                'tooltip', 'Center frequency of the carrier in Hz; the modulation sweeps around it. Vectorizable.');
+            m.ModulationFrequency = struct('label', 'FM Rate',        'format', '%.2f Hz',  'limits', [0 40000], ...
+                'tooltip', 'How fast the frequency sweeps back and forth, in Hz. 0 gives an unmodulated tone at the carrier. Vectorizable.');
+            m.ModulationDepth     = struct('label', 'FM Depth (Hz)',  'format', '%.1f Hz',  'limits', [0 20000], ...
+                'tooltip', 'Peak frequency deviation in Hz, so the tone spans Carrier +/- this value. 0 gives an unmodulated tone. Vectorizable.');
+            m.OnsetPhase          = struct('label', 'Onset Phase',    'format', '%.3f rad', ...
+                'tooltip', 'Starting phase of the carrier in radians (not degrees, unlike Tone and AM Noise).');
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end
     end
