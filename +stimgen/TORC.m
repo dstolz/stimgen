@@ -411,23 +411,33 @@ classdef TORC < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for TORC GUI properties.
             m = struct();
-            m.LowFrequency        = struct('label','Low Frequency (f0)','format','%.1f Hz','limits',[1 40000],'order',10);
-            m.Bandwidth           = struct('label','Bandwidth (oct)',   'format','%.2f oct','limits',[0.1 12],  'order',20);
-            m.ComponentsPerOctave = struct('label','Carriers / Octave', 'format','%.0f',    'limits',[1 200],   'order',30);
+            m.LowFrequency        = struct('label','Low Frequency (f0)','format','%.1f Hz','limits',[1 40000], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'LowFrequency'),'order',10);
+            m.Bandwidth           = struct('label','Bandwidth (oct)',   'format','%.2f oct','limits',[0.1 12], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'Bandwidth'),'order',20);
+            m.ComponentsPerOctave = struct('label','Carriers / Octave', 'format','%.0f',    'limits',[1 200], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'ComponentsPerOctave'),'order',30);
             m.ComponentMode       = struct('label','Component Mode','widget','dropdown', ...
-                                           'items',["Range","Explicit"],'order',40);
-            m.RippleDensity       = struct('label','Ripple Density (c/o, signed)','format','%.2f c/o','limits',[-8 8],'order',50);
-            m.LowestRate          = struct('label','Lowest Rate (Hz)', 'format','%.2f Hz','limits',[0.01 2000],'order',60);
-            m.HighestRate         = struct('label','Highest Rate (Hz)','format','%.2f Hz','limits',[0.01 2000],'order',70);
-            m.ComponentRates      = struct('label','Component Rates (Hz)',      'widget','text','order',80);
-            m.ComponentDensities  = struct('label','Component Densities (c/o)', 'widget','text','order',90);
-            m.RandomizeRipplePhase = struct('label','Randomize Ripple Phase','order',100);
-            m.Seed                = struct('label','Phase Seed','format','%.0f','limits',[-1 4294967295],'order',110);
+                                           'items',["Range","Explicit"],'tooltip',stimgen.util.tooltip(obj,'ComponentMode'),'order',40);
+            m.RippleDensity       = struct('label','Ripple Density (c/o, signed)','format','%.2f c/o','limits',[-8 8], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'RippleDensity'),'order',50);
+            m.LowestRate          = struct('label','Lowest Rate (Hz)', 'format','%.2f Hz','limits',[0.01 2000], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'LowestRate'),'order',60);
+            m.HighestRate         = struct('label','Highest Rate (Hz)','format','%.2f Hz','limits',[0.01 2000], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'HighestRate'),'order',70);
+            m.ComponentRates      = struct('label','Component Rates (Hz)',      'widget','text', ...
+                                           'tooltip',stimgen.util.tooltip(obj,'ComponentRates'),'order',80);
+            m.ComponentDensities  = struct('label','Component Densities (c/o)', 'widget','text', ...
+                                           'tooltip',stimgen.util.tooltip(obj,'ComponentDensities'),'order',90);
+            m.RandomizeRipplePhase = struct('label','Randomize Ripple Phase', ...
+                                            'tooltip',stimgen.util.tooltip(obj,'RandomizeRipplePhase'),'order',100);
+            m.Seed                = struct('label','Phase Seed','format','%.0f','limits',[-1 4294967295], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'Seed'),'order',110);
 
             m.ModulationDepth = struct('label','Modulation Depth (dB pk-pk)','format','%.1f dB', ...
-                                       'limits',[0.1 120],'group','Level','order',15);
+                                       'limits',[0.1 120],'tooltip',stimgen.util.tooltip(obj,'ModulationDepth'),'group','Level','order',15);
             m.NumPeriods      = struct('label','Ripple Periods','format','%.0f','limits',[1 1000], ...
-                                       'group','Timing','order',20);
+                                       'tooltip',stimgen.util.tooltip(obj,'NumPeriods'),'group','Timing','order',20);
 
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end

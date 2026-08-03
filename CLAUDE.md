@@ -136,10 +136,21 @@ type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (wh
 `ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
 has to be excluded there.
 
-Every `propMeta` entry also declares a `tooltip`: one line of plain text applied to both the label
-and the widget by both generators, and re-applied by `refresh_gui_widget` (so a property whose
-metadata varies, like `Tone.WindowDuration`, swaps tooltip along with label). A new property needs
-one. `StimPlayer`'s own controls set `Tooltip` directly in `@StimPlayer/create.m`.
+**Tooltip text lives in one JSON file, never in the code.** `+stimgen/tooltips.json` holds every
+hover string in the package, in one section per class; `stimgen.util.tooltip(source, key)` is the
+only way to read it. Every `propMeta` entry declares its `tooltip` as
+`stimgen.util.tooltip(obj, propName)` — one line of plain text applied to both the label and the
+widget by both generators, and re-applied by `refresh_gui_widget` (so a property whose metadata
+varies, like `Tone.WindowDuration`, swaps tooltip along with label; those cases get one key per
+case, e.g. `WindowDuration_Proportional`). A new property needs an entry in the JSON and a lookup
+in `propMeta`. Lookup walks the class section then each superclass section, so a subclass overrides
+an inherited entry just by declaring the same key — that is how `ClickTrain.Duration` retitles the
+base-class text without editing `@StimType/propMeta.m`. GUI code with no stimulus object passes a
+section name instead (`stimgen.util.tooltip('StimPlayer','RunBtn')`); `@StimPlayer/create.m`,
+`@StimInspector/build_ui_.m`, `@StimCalibration/gui.m` and `+calibration/CalibrationGui.m` all do
+this for their own controls and toolbars. An unknown key returns `''` and logs a warning rather
+than erroring, so a missing tooltip never blocks a GUI. The file is cached and re-read on change,
+so edits take effect without `clear functions`.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
@@ -168,6 +179,8 @@ stack. Deliberately standalone, but shares the `GVerbosity` global with the host
 - `.esgc` — calibration data (`Engine.save`/`Engine.load`). Legacy `.sgc` is not supported.
 - `.spl` — stimulus banks (`StimPlayer.save_bank`/`load_bank`).
 - `.eprot` — host protocol files; loaded only through `HardwareHost.loadProtocol`.
+- `+stimgen/tooltips.json` — the tooltip catalog, read only through `stimgen.util.tooltip`. Ships
+  with the package; a copy of `+stimgen/` without it loses all hover help.
 
 ## Hardware parameter contract
 

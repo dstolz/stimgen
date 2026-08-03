@@ -191,18 +191,29 @@ catch ME
 end
 
 psDb = 10*log10(ps + eps);
-imagesc(ax, timeVec * 1e3, freqVec, psDb);   % time axis in ms
-axis(ax, 'xy');
-xlim(ax, [timeVec(1) timeVec(end)] * 1e3);   % keep the image tight in the axes
+tMs  = timeVec(:).' * 1e3;                   % time axis in ms
+fHz  = freqVec(:).';
 
-useLogFreq = obj.handles.SpecLogFreqCheck.Value;
-if useLogFreq
-    % A log axis cannot show DC; start at the first resolvable bin.
-    set(ax, 'YScale', 'log');
-    ylim(ax, [freqVec(2), fs/2]);
+if obj.handles.SpecLogFreqCheck.Value
+    % An image is not resampled by a non-linear axis transform: MATLAB maps
+    % only its four corners, so on a log axis the spectrogram collapses into a
+    % wedge. A flat-shaded surface is transformed per face and draws correctly.
+    tEdges = bin_edges_(tMs);
+    fEdges = bin_edges_(fHz);
+    C      = psDb(2:end, :);                 % a log axis cannot show the DC bin,
+    fEdges = fEdges(2:end);                  % whose lower edge is below 0 Hz too
+    C(end+1, end+1) = 0;                     % flat shading ignores the last row/column
+    surface(ax, tEdges, fEdges, zeros(size(C)), C, ...
+        'FaceColor', 'flat', 'EdgeColor', 'none');
+    set(ax, 'YScale', 'log', 'YDir', 'normal');
+    ylim(ax, [fEdges(1), fs/2]);
+    xlim(ax, [tEdges(1), tEdges(end)]);      % keep the plot tight in the axes
 else
+    imagesc(ax, tMs, fHz, psDb);
+    axis(ax, 'xy');
     set(ax, 'YScale', 'linear');
     ylim(ax, [0, fs/2]);
+    xlim(ax, [tMs(1), tMs(end)]);
 end
 xlabel(ax, 'time (ms)');
 ylabel(ax, 'frequency (Hz)');
@@ -297,6 +308,22 @@ if m < n
     xd = [xd x(m+1:n)];
     yd = [yd y(m+1:n)];
 end
+end
+
+
+function e = bin_edges_(c)
+% e = bin_edges_(c)
+% Cell boundaries around the bin centres c, as a 1-by-(numel(c)+1) row. Used to
+% place a spectrogram surface, whose faces span edges rather than centres.
+
+c = c(:).';
+if isscalar(c)
+    e = [c - 0.5, c + 0.5];
+    return
+end
+
+d = diff(c);
+e = [c(1) - d(1)/2, c(1:end-1) + d/2, c(end) + d(end)/2];
 end
 
 

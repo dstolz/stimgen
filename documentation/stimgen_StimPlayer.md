@@ -148,11 +148,20 @@ plot's time axis is in ms; the underlying `StimType` properties stay in
 seconds. The conversion comes from the `scale` field in `propMeta`.
 
 Every parameter row, label and widget alike, carries hover help taken from the
-`tooltip` field of its `propMeta()` entry, so the explanation lives with the
-stimulus class rather than in the player — see
+`tooltip` field of its `propMeta()` entry, so the explanation is keyed to the
+stimulus class rather than to the player — see
 [Hover help](stimgen_StimType.md#hover-help). The player's own controls (bank
-list, Reps, ISI, order, combination stepping, preview and Run/Pause) set their
-tooltips directly in `create.m`.
+list, bank label, Reps, ISI, order, combination stepping, preview, Run/Pause,
+the status labels and the toolbar) read their text from the same catalog,
+`+stimgen/tooltips.json`, under the `StimPlayer` section:
+
+```matlab
+tip = @(key) stimgen.util.tooltip('StimPlayer', key);
+h.Tooltip = tip('RunBtn');
+```
+
+`create.m` builds all of them except the bank label, which belongs to the
+rebuilt parameter panel and is set in `on_bank_selection_changed.m`.
 
 The panel registers its widgets with `stimObj.set_gui_handles()` and calls
 `stimObj.notify_gui_changed()` after each successful edit, so a stimulus can

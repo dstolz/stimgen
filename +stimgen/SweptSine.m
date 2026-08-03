@@ -109,12 +109,12 @@ classdef SweptSine < stimgen.StimType
             % propMeta() - Display metadata for SweptSine GUI properties.
             m = struct();
             m.StartFrequency = struct('label', 'Start Freq',  'format', '%.1f Hz', 'limits', [10 40000], ...
-                'tooltip', 'Frequency at the start of the sweep, in Hz. Must be below Stop Freq. Scalar only.');
+                'tooltip', stimgen.util.tooltip(obj, 'StartFrequency'));
             m.StopFrequency  = struct('label', 'Stop Freq',   'format', '%.1f Hz', 'limits', [10 40000], ...
-                'tooltip', 'Frequency at the end of the sweep, in Hz. Must be above Start Freq and below Fs/2. Scalar only.');
+                'tooltip', stimgen.util.tooltip(obj, 'StopFrequency'));
             m.ChirpType      = struct('label', 'Chirp Type', 'widget', 'dropdown', ...
                                       'items', ["log-sine", "linear"], ...
-                'tooltip', 'Sweep law: log-sine spends equal time per octave and gives a pink spectrum (preferred for calibration); linear sweeps at a constant Hz/s and emphasizes high frequencies.');
+                'tooltip', stimgen.util.tooltip(obj, 'ChirpType'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end
 

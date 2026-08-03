@@ -76,22 +76,43 @@ Recent UI sync behavior includes `update_handle_value`, which keeps control stat
 ### Hover help
 
 A `propMeta` entry may declare `tooltip`, a single line of plain text applied to
-both the property's label and its widget:
+both the property's label and its widget. The text itself is never written in
+the class — it is looked up in the one tooltip catalog, `+stimgen/tooltips.json`:
 
 ```matlab
 m.Frequency = struct('label','Frequency','format','%.1f Hz','limits',[100 40000], ...
-                     'tooltip','Tone frequency in Hz. Also the key used to look up the calibrated level.');
+                     'tooltip', stimgen.util.tooltip(obj, 'Frequency'));
 ```
 
-Both builders apply it — `create_gui` and
-`stimgen.StimPlayer.on_bank_selection_changed` — so a subclass writes the text
-once and it shows up in the standalone panel and the bank editor alike.
+```json
+"Tone": {
+  "Frequency": "Tone frequency in Hz. Also the key used to look up the calibrated level. ..."
+}
+```
+
+`stimgen.util.tooltip(source, key)` searches the section named after the
+object's class, then each superclass section in turn, so `Tone.Frequency` comes
+from the `Tone` section and `Tone.Duration` from `StimType`. A subclass
+overrides an inherited entry by declaring the same key: `ClickTrain` retitles
+`Duration` as the length of the click train that way, without touching the
+`propMeta` call in the base class. GUI code with no stimulus object passes a
+section name instead — `stimgen.util.tooltip('StimPlayer','RunBtn')` — which is
+how the player, the inspector and the calibration GUIs get the hover text for
+their own controls. An unknown key returns `''` and logs a warning through
+`stimgen.util.vprintf`, so a missing tooltip is noticed but never stops a GUI
+from building. The catalog is cached and re-read whenever the file changes, so
+editing `tooltips.json` takes effect without clearing anything.
+
+Both builders apply the text — `create_gui` and
+`stimgen.StimPlayer.on_bank_selection_changed` — so a subclass declares the
+lookup once and it shows up in the standalone panel and the bank editor alike.
 `refresh_gui_widget` re-applies it along with the label, which matters for a
 property whose metadata varies: `Tone.WindowDuration` swaps in a different
-tooltip under each `WindowMethod`. Every base and subclass property carries one;
-keep new ones to a line, saying what the parameter does plus any non-obvious
-consequence (which properties are vectorizable, what a value of 0 means, which
-other setting overrides it).
+tooltip under each `WindowMethod`, using one catalog key per case
+(`WindowDuration_Proportional`, `WindowDuration_Periods`). Every base and
+subclass property carries one; keep new ones to a line, saying what the
+parameter does plus any non-obvious consequence (which properties are
+vectorizable, what a value of 0 means, which other setting overrides it).
 
 ### Display units
 

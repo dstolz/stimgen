@@ -116,22 +116,23 @@ classdef ClickTrain < stimgen.StimType
             % propMeta() - Display metadata for ClickTrain GUI properties.
             m = struct();
             m.Rate          = struct('label', 'Rate',                'format', '%.1f Hz',  'limits', [0.1 1e6], ...
-                'tooltip', 'Clicks per second. The click interval 1/Rate must be at least Click Duration. Vectorizable.');
+                'tooltip', stimgen.util.tooltip(obj, 'Rate'));
             m.ClickDuration = struct('label', 'Click Duration (ms)', 'format', '%.4f ms',  'limits', [0.001 1000], ...
                                      'scale', 1000, ...
-                'tooltip', 'Width of a single click in ms; also the key used to look up the calibrated level. Must be at least one sample at the current Fs.');
+                'tooltip', stimgen.util.tooltip(obj, 'ClickDuration'));
             m.Polarity      = struct('label', 'Polarity', 'widget', 'dropdown', ...
                                     'items',     {{'+ Positive', '+/- Alternate', '- Negative'}}, ...
                                     'itemsData', {{1, 0, -1}}, ...
-                                    'tooltip', 'Sign of each click. Alternate flips polarity click by click, which cancels stimulus artifact when responses are averaged.');
+                                    'tooltip', stimgen.util.tooltip(obj, 'Polarity'));
             m.OnsetDelay    = struct('label', 'Onset Delay (ms)',    'format', '%.2f ms',  'limits', [0 10000], ...
                                      'scale', 1000, ...
-                'tooltip', 'Silence inserted in ms before the first click. The train shifts later within Train Duration rather than extending it.');
+                'tooltip', stimgen.util.tooltip(obj, 'OnsetDelay'));
             m.Truncate      = struct('label', 'Truncate', ...
-                'tooltip', 'Cut the train at Train Duration instead of zero-padding to it, so a train that does not fit a whole number of clicks ends early.');
+                'tooltip', stimgen.util.tooltip(obj, 'Truncate'));
             base = propMeta@stimgen.StimType(obj);
+            % Only the caption is retitled here: the ClickTrain section of the
+            % tooltip catalog already overrides the inherited Duration text.
             base.Duration.label = 'Train Duration (ms)';
-            base.Duration.tooltip = 'Total length of the click train in ms. Clicks that do not fit a whole interval are dropped; the remainder is zero-padded unless Truncate is on.';
             m = stimgen.StimType.merge_prop_meta(m, base);
         end
     end

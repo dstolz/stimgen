@@ -101,6 +101,7 @@ Several package behaviors are driven by file and metadata conventions:
 - `stimgen.StimType.list()` scans `+stimgen` to decide which classes appear in GUI lists.
 - `propMeta()` and `create_gui()` control how stimulus editors are built; a new subclass with clean metadata usually appears in `StimPlayer` without any player changes.
 - `StimType.apply_calibration()` and the calibration engine are coupled through the stimulus class's `CalibrationType` constant.
+- Every tooltip in the package lives in `+stimgen/tooltips.json`, one section per class, and is read through `stimgen.util.tooltip()`. See [Hover help](stimgen_StimType.md#hover-help).
 
 Practical implications:
 
