@@ -14,6 +14,8 @@ This overview is the entry point for the subsystem. The first half is for users 
 
 - [stimgen_StimType.md](stimgen_StimType.md): base stimulus contract and extension points (developer reference)
 - [stimgen_StimTypes.md](stimgen_StimTypes.md): catalog of built-in stimulus classes and their properties
+- [stimgen_Patch.md](stimgen_Patch.md): stimuli built by wiring reusable components together, where one component drives another's parameter (AM, FM, pulsed, mixed)
+- [stimgen_PatchEditor.md](stimgen_PatchEditor.md): drag-and-drop editor for a patch signal graph
 - [stimgen_StimPlay.md](stimgen_StimPlay.md): repetition and selection wrapper used by playback tools (developer reference)
 - [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
@@ -57,8 +59,11 @@ sp.ISI = [0.8 1.2];
 - `stimgen.FMtone` — frequency-modulated tone
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
 - `stimgen.SoundFile` — playback of pregenerated sound files (vocalizations, phonemes); see [stimgen_SoundFile.md](stimgen_SoundFile.md)
+- `stimgen.Patch` — a stimulus whose signal chain is a graph you build from reusable components, where a component's output drives another component's *parameter*; one mechanism covers AM, FM, pulsed and mixed stimuli. See [stimgen_Patch.md](stimgen_Patch.md)
 
 See [stimgen_StimTypes.md](stimgen_StimTypes.md) for the full property reference of each class.
+
+Each class above other than `Patch` is a fixed recipe. Reach for `stimgen.Patch` when a stimulus needs a *combination* of features — a modulator feeding a carrier's amplitude or frequency, a pulse train gating a tone, several sources summed — rather than writing another class.
 
 To present a family of related stimuli (e.g., a frequency × level grid), assign vector values to the relevant properties and use the variant-selection controls on `stimgen.StimType` (`VariantSelectionMode`, `VariantCombinationMode`, and related methods). This replaced the older `multiTone` class, which has been removed.
 

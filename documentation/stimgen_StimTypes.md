@@ -23,11 +23,18 @@ property marked vectorizable can be assigned a vector to define variants (see
 | [`ClickTrain`](#clicktrain) | Periodic train of rectangular clicks | `"click"` | `"absmax"` |
 | [`SweptSine`](#sweptsine) | Logarithmic or linear chirp | `"swept_sine"` | `"absmax"` |
 | [`SoundFile`](#soundfile) | Playback of a catalog of sound files | overridden per instance (`CalibrationMode`) | overridden per instance (`LevelReference`) |
+| [`Patch`](stimgen_Patch.md) | User-built graph of components; see below | overridden per instance (`CalibrationMode`) | overridden per instance (`LevelReference`) |
 
 `CalibrationType` selects which LUT `apply_calibration` looks up and which property
 supplies the key — see [Calibration coupling](../CLAUDE.md) in the repo root guide.
 `Normalization` selects how the raw waveform is scaled before calibration:
 `"absmax"` normalizes to the signal's peak, `"rms"` normalizes to its RMS.
+
+Every class below is a **fixed recipe**: its signal chain is decided by the class. If
+you want to combine features — a modulator driving a carrier's amplitude or frequency,
+a pulse train gating a tone, several sources mixed together — use
+[`stimgen.Patch`](stimgen_Patch.md), which builds the chain from reusable components you
+wire together. `Patch` is additive; nothing below changes because of it.
 
 ## Tone
 

@@ -18,6 +18,9 @@ addpath('C:\src\stimgen')   % the ROOT, never +stimgen itself (MATLAB resolves i
 t = stimgen.Tone; t.Frequency = 4000; t.update_signal; t.plot   % smoke test
 stimgen.StimPlayer                        % bank editor/player (offline = speaker preview only)
 stimgen.calibration.CalibrationGui        % offline: inspect/load a .esgc
+
+p = stimgen.Patch.preset("PulsedTone"); p.update_signal; p.plot % composable stimulus
+stimgen.PatchEditor(p)                    % drag-and-drop graph editor
 ```
 
 After editing a classdef, MATLAB caches the old definition. `clear classes` (or restart) before
@@ -35,8 +38,14 @@ Three subsystems, plus two abstract seams that keep the package standalone.
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
 `SweptSine`, `ClickTrain`, `SoundFile`. The base class owns level/duration/gating/Fs, the variant
 system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile` is the
-exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
-`FileIndex` as its variant axis, and derives `Duration` from the selected file.
+exception that reads rather than synthesizes: it owns a catalog of sound files,
+uses a vectorizable `FileIndex` as its variant axis, and derives `Duration` from the selected file.
+
+**Composable stimuli** — `stimgen.Patch` (in `@Patch/`) is a StimType whose signal chain is a graph
+of `stimgen.components` nodes, where a connection routes one node's output into another node's
+*parameter*. That covers AM, FM, pulsed, gated and mixed stimuli without a class per combination.
+`stimgen.PatchEditor` (in `@PatchEditor/`) is the drag-and-drop graph editor. See
+`documentation/stimgen_Patch.md`. Its one structural trick is described under **Flattening** below.
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
@@ -138,7 +147,31 @@ has to be excluded there.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
-automatically offered in GUI dropdowns.
+automatically offered in GUI dropdowns. It also enumerates `@Class` folders, admitting only real
+StimType subclasses via a `meta.class` test — that is how `@Patch` is found while `@StimPlayer` and
+`@PatchEditor` are not.
+
+**Flattening (`stimgen.Patch`).** A Patch exposes each component parameter as a *dynamic property*
+named `<NodeLabel>_<ParamName>` (`Osc1_Frequency`), created and destroyed as the graph is edited.
+Everything in this package addresses properties by name through `isprop` and dynamic field access,
+all of which accept dynamic properties — so graph parameters are first-class stimulus parameters
+for free: variants, `toStruct`/`fromStruct`, both GUI generators, expression fields, StimInspector.
+Consequences if you touch this:
+
+- The separator must stay `_`. A dot would be stripped by `rewrite_qualified_property_refs_`, and
+  would not be a legal identifier or struct fieldname.
+- `Patch.propMeta` must set `widget` explicitly on every entry. `resolve_widget_type` falls back to
+  `metaclass(obj).PropertyList`, which never contains dynamic properties.
+- `create_listeners` only walks `metaclass(obj).PropertyList`, so `Patch.rebuild_params_` attaches
+  its own `PostSet` listener per dynamic property.
+- `Graph` is first in `UserProperties`: all three restore paths assign in that order, and the nodes
+  must exist before their parameters can be written. Same reason as `SoundFile.Catalog`.
+
+**Errors thrown inside a property listener become warnings.** `onPropertyChanged` regenerates the
+signal, so anything `update_signal` raises is downgraded and never reaches the caller. Two places
+account for this: `Patch.validate_graph_` rejects cycles at *assignment* time rather than at render,
+and `StimPlayer`'s `set_prop_` captures the previous value and rolls it back when the regeneration
+that follows an assignment fails.
 
 **Calibration coupling.** A subclass's `CalibrationType` constant (`"tone"`, `"click"`,
 `"filter"`, `"swept_sine"`) selects which LUT `apply_calibration` interpolates and which property
@@ -174,4 +207,6 @@ application's hardware circuit must expose to support hardware-triggered playbac
 ## Documentation
 
 `documentation/` holds per-class guides; `stimgen_overview.md` is the entry point. Keep them in
-sync when changing public behavior.
+sync when changing public behavior. A new stimulus class needs a row in the summary table and a
+section in `stimgen_StimTypes.md`; a new component needs a row in the component table in
+`stimgen_Patch.md`.
