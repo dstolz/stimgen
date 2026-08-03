@@ -56,10 +56,13 @@ classdef FMtone < stimgen.StimType
                 phase = 2*pi*fc*t + onsetPhase;
             else
                 % Instantaneous frequency: f(t) = Fc + D*sin(2*pi*Fm*t)
-                % Phase is integral of f(t):
-                %   phi(t) = 2*pi*Fc*t - (2*pi*D/Fm)*cos(2*pi*Fm*t) + const
-                phase = 2*pi*fc*t - (2*pi*fd/fm)*cos(2*pi*fm*t) + ...
-                        (2*pi*fd/fm) + onsetPhase;
+                % Phase is the integral of 2*pi*f(t) dt:
+                %   phi(t) = 2*pi*Fc*t - (D/Fm)*cos(2*pi*Fm*t) + const
+                % (the constant sets phi(0) = onsetPhase). D/Fm, not
+                % 2*pi*D/Fm: d/dt[-(D/Fm)*cos(2*pi*Fm*t)] = 2*pi*D*sin(2*pi*Fm*t),
+                % which already carries the 2*pi needed to match 2*pi*f(t).
+                phase = 2*pi*fc*t - (fd/fm)*cos(2*pi*fm*t) + ...
+                        (fd/fm) + onsetPhase;
             end
 
             x = sin(phase);
