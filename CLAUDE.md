@@ -33,9 +33,9 @@ Three subsystems, plus two abstract seams that keep the package standalone.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain`, `SoundFile`. The base class owns level/duration/gating/Fs, the variant
-system, serialization, and GUI generation; subclasses only synthesize a waveform. `SoundFile` is the
-exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
+`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
+variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
+`SoundFile` is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
 `FileIndex` as its variant axis, and derives `Duration` from the selected file.
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
