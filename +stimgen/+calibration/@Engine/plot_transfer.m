@@ -5,11 +5,12 @@ function plot_transfer(~, type, tableData, reset)
 if nargin < 2, type = ''; end
 if nargin < 3, tableData = []; end
 if nargin < 4, reset = false; end
-f  = stimgen.calibration.Engine.cal_fig_('transfer');
-ax = axes('Parent', f);
+f  = stimgen.calibration.Engine.cal_fig_('calibration');
+ax = subplot(2, 2, [2 4], 'Parent', f);
 if reset, cla(ax); drawnow; return; end
 if isempty(type), return; end
 
+cla(ax);
 hold(ax, 'on');
 switch type
     case 'tone'

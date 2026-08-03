@@ -5,8 +5,8 @@ arguments
     obj
     reset (1,1) logical = false
 end
-f = stimgen.calibration.Engine.cal_fig_('signal');
-ax = subplot(2,1,1, 'Parent', f);
+f = stimgen.calibration.Engine.cal_fig_('calibration');
+ax = subplot(2,2,1, 'Parent', f);
 if reset, cla(ax); drawnow; return; end
 if isempty(obj.ResponseSignal), return; end
 fs = obj.Fs;
