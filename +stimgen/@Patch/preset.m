@@ -130,13 +130,6 @@ switch name
 
 end
 
-% Lay the graph out left to right by evaluation order, so a preset opens in
-% the editor already readable rather than stacked on the default grid.
-order = obj.topo_order_();
-nCols = max(1, numel(order));
-for k = 1:numel(order)
-    x = 0.12 + 0.76 * (k-1) / max(1, nCols-1);
-    y = 0.5 + 0.22 * (-1)^k * (k > 1);
-    obj.set_node_position(obj.Graph.Nodes(order(k)).Label, [x y]);
-end
+% Lay the graph out by depth so a preset opens in the editor already readable.
+obj.Graph = stimgen.Patch.auto_layout_(obj.Graph);
 end

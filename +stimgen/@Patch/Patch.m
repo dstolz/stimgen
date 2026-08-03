@@ -184,6 +184,7 @@ classdef Patch < stimgen.StimType & dynamicprops
         g = validate_graph_(g)                                % Normalize and check a topology
         s = topology_signature_(g)                            % Graph identity ignoring positions
         order = topo_order_for_(g)                            % Evaluation order for a raw graph
+        g = auto_layout_(g)                                   % Layered left-to-right node layout
         v = apply_mode_(mode, base, m, range, depth, powerComp) % One connection's parameter math
     end
 

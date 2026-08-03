@@ -45,8 +45,12 @@ for i = 1:numel(g.Nodes)
     pos = g.Nodes(i).Position;
     if isempty(pos) || numel(pos) ~= 2 || ~all(isfinite(pos))
         % Lay unplaced nodes out on a coarse grid so a graph built from a
-        % script still opens sensibly in the editor.
-        pos = [0.15 + 0.22*mod(i-1,4), 0.80 - 0.25*floor((i-1)/4)];
+        % script still opens sensibly in the editor. Positions are the box's
+        % top-left corner; the grid stays well inside the canvas so a box
+        % never overhangs the edge or the OUT terminal.
+        col = mod(i-1, 3);
+        row = mod(floor((i-1)/3), 3);
+        pos = [0.05 + 0.24*col, 0.92 - 0.29*row];
     end
     g.Nodes(i).Label    = label;
     g.Nodes(i).Kind     = kind;
