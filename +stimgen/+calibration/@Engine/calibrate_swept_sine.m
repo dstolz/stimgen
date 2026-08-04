@@ -113,12 +113,18 @@ obj.ExcitationSignal = y;
 
 n = numel(freqs);
 swept_sine_data = obj.empty_table_(n);
+% Every abscissa up front, levels still NaN: that is what lets the monitor
+% draw the points still to come alongside the ones already measured.
+swept_sine_data.x = freqs(:).';
 measAll = nan(repeatCount, n);
 responses = cell(repeatCount, 1);
 
-if obj.ShowLivePlots
-    obj.plot_reset();
-end
+% Axis metadata for the live table; identical on every update of this run.
+axisMeta = {'XLabel', "frequency (Hz)", 'XScale', "log", 'XFactor', 1};
+
+obj.begin_run_();
+obj.emit_live_("swept_sine", "start", 'Table', swept_sine_data, 'Total', n, ...
+    'RepeatTotal', repeatCount, axisMeta{:});
 
 try
     stimgen.util.vprintf(1, 'Analyzing swept sine response at %d frequencies (%d averages)...', n, repeatCount);
@@ -135,17 +141,22 @@ try
 
         measAll(rep, :) = obj.sweep_transfer_rms_(y, response, freqs, fs, [startFreq stopFreq]);
 
+        % A sweep measures the whole band at once, so a pass fills every point
+        % rather than advancing an index. Progress is stated per pass; the
+        % point-major default would read it as one point of n.
         if obj.ShowLivePlots
             for i = 1:n
                 mAvg = mean(measAll(1:rep, i), 'omitnan');
                 [spl, volt] = obj.compute_spl_voltage_(mAvg, "specfreq");
-                swept_sine_data.x(i) = freqs(i);
                 swept_sine_data.measurement(i) = mAvg;
                 swept_sine_data.spl_db(i) = spl;
                 swept_sine_data.voltage(i) = volt;
             end
-            obj.plot_spectrum();
-            obj.plot_transfer('swept_sine', swept_sine_data);
+            swept_sine_data.sd_db = obj.level_sd_db_(measAll);
+            obj.emit_live_("swept_sine", "measure", 'Table', swept_sine_data, ...
+                'Index', 0, 'Total', n, ...
+                'Repeat', rep, 'RepeatTotal', repeatCount, ...
+                'Progress', rep / repeatCount, axisMeta{:});
         end
     end
 
@@ -166,7 +177,6 @@ try
     for i = 1:n
         m = mean(measAll(:, i), 'omitnan');
         [spl, volt] = obj.compute_spl_voltage_(m, "specfreq");
-        swept_sine_data.x(i)           = freqs(i);
         swept_sine_data.measurement(i) = m;
         swept_sine_data.spl_db(i)      = spl;
         swept_sine_data.voltage(i)     = volt;
@@ -257,6 +267,13 @@ cd_out.swept_sine = struct( ...
         'clipping_headroom', sweptHeadroom));
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
+
+swept_sine_data.sd_db = obj.level_sd_db_(measAll);
+obj.emit_live_("swept_sine", "done", 'Table', swept_sine_data, ...
+    'Index', 0, 'Total', n, 'Repeat', repeatCount, 'RepeatTotal', repeatCount, ...
+    'Progress', 1, axisMeta{:}, ...
+    'Metrics', struct('snr_db', snrDb, 'thd_db', hm.thd_db, ...
+                      'h2_db', hm.h2_db, 'h3_db', hm.h3_db));
 
 stimgen.util.vprintf(1, 'Swept sine calibration complete. %d points over %g-%g Hz, SNR: %.1f dB', ...
     n, freqs(1), freqs(end), snrDb);

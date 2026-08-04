@@ -48,8 +48,15 @@ classdef Engine < handle
     %   eng = stimgen.calibration.Engine.load('my_cal.esgc');
     %   v   = eng.compute_adjusted_voltage("tone", 4000, 70);
     %
+    % While a run is in progress the engine broadcasts a LiveUpdate event
+    % carrying a stimgen.calibration.LiveUpdate payload for every measurement,
+    % gated by ShowLivePlots. stimgen.calibration.LiveMonitor renders that
+    % stream; a host application can listen to it instead to log or forward
+    % progress. Nothing in this class draws.
+    %
     % See also: stimgen.calibration.HwAdapter,
     %           stimgen.calibration.WindowsSoundCardAdapter,
+    %           stimgen.calibration.LiveMonitor, stimgen.calibration.LiveUpdate,
     %           documentation/stimgen_calibration.md
 
     % --- Persistent calibration parameters ---
@@ -59,8 +66,15 @@ classdef Engine < handle
         ReferenceFrequency  (1,1) double {mustBePositive,mustBeFinite}      = 1000  % Hz
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
+        MaxOutputVoltage    (1,1) double {mustBePositive,mustBeFinite}      = 10    % V full scale
         ShowLivePlots       (1,1) logical                                   = false
         CalibrationTimestamp (1,1) datetime = datetime("")
+    end
+
+    events
+        % Broadcast per measurement while ShowLivePlots is true. Event data is
+        % a stimgen.calibration.LiveUpdate.
+        LiveUpdate
     end
 
     % --- Calibration results and transient signals ---
@@ -74,6 +88,9 @@ classdef Engine < handle
 
     properties (Access = private)
         CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
+        Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
+        RunTic_                     % tic id of the run in progress; [] outside one
+        LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
     end
 
     properties (Dependent)
@@ -131,19 +148,191 @@ classdef Engine < handle
         end
 
         function plot_reset(obj)
-            % Clear calibration plot axes.
-            obj.plot_signal(true);
-            obj.plot_spectrum(true);
-            obj.plot_transfer('', [], true);
+            % Clear the attached monitors' panels.
+            %
+            % Deprecated along with plot_signal/plot_spectrum/plot_transfer:
+            % drawing belongs to stimgen.calibration.LiveMonitor now. Kept so
+            % that scripts written against the old subplot figure keep working.
+            mons = obj.live_monitors_();
+            for k = 1:numel(mons)
+                mons{k}.reset();
+            end
             drawnow;
         end
 
-        plot_signal(obj, reset) % Plot current response waveform.
-        plot_spectrum(obj, reset) % Plot current response spectrum.
-        plot_transfer(obj, type, tableData, reset) % Plot transfer data overlays.
+        plot_signal(obj, reset) % Deprecated; delegates to LiveMonitor.
+        plot_spectrum(obj, reset) % Deprecated; delegates to LiveMonitor.
+        plot_transfer(obj, type, tableData, reset) % Deprecated; delegates to LiveMonitor.
+    end
+
+    % ------------------------------------------------------------------ %
+    % Live-update plumbing. stimgen.calibration.LiveMonitor is the only
+    % outside caller: it registers itself so the deprecated plot_ entry
+    % points can find a renderer, and asks for a snapshot when it needs to
+    % draw the engine's state outside a run.
+    methods (Access = {?stimgen.calibration.Engine, ?stimgen.calibration.LiveMonitor})
+
+        function register_monitor_(obj, mon)
+            % register_monitor_(obj, mon)
+            % Remember a monitor that is following this engine. The LiveUpdate
+            % event drives it during a run; this registration is what lets the
+            % off-run entry points reach it as well.
+            mons = obj.live_monitors_();
+            for k = 1:numel(mons)
+                if mons{k} == mon
+                    obj.Monitors_ = mons;
+                    return
+                end
+            end
+            obj.Monitors_ = [mons, {mon}];
+        end
+
+        function unregister_monitor_(obj, mon)
+            % unregister_monitor_(obj, mon)
+            % Forget a monitor. Also drops any that have since been deleted.
+            mons = obj.live_monitors_();
+            keep = true(1, numel(mons));
+            for k = 1:numel(mons)
+                keep(k) = mons{k} ~= mon;
+            end
+            obj.Monitors_ = mons(keep);
+        end
+
+        function d = live_snapshot_(obj, stage, phase, varargin)
+            % d = live_snapshot_(obj, stage, phase)
+            % d = live_snapshot_(obj, stage, phase, Name, Value, ...)
+            %
+            % Build one stimgen.calibration.LiveUpdate describing the engine's
+            % current state. Everything a renderer can derive from the engine
+            % itself -- sample rate, the excitation/response pair, the
+            % parameters needed to turn volts into dB SPL, elapsed run time --
+            % is filled in here, so a caller only supplies what is specific to
+            % the measurement it just took (Table, Span, Index, Markers, ...).
+            %
+            % A Metrics struct passed by the caller is merged onto the
+            % engine-derived one rather than replacing it, so naming spl_db
+            % does not silently discard peak_v and the clipping flag.
+            args            = struct();
+            args.Fs         = obj.Fs;
+            args.Excitation = obj.ExcitationSignal;
+            args.Response   = obj.ResponseSignal;
+            args.Context    = obj.live_context_();
+            args.Elapsed    = obj.run_elapsed_();
+
+            metrics = obj.live_metrics_();
+            for k = 1:2:numel(varargin)
+                if strcmp(varargin{k}, 'Metrics')
+                    metrics = obj.merge_struct_(metrics, varargin{k+1});
+                else
+                    args.(varargin{k}) = varargin{k+1};
+                end
+            end
+            args.Metrics = metrics;
+
+            nv = namedargs2cell(args);
+            d  = stimgen.calibration.LiveUpdate(stage, phase, nv{:});
+        end
     end
 
     methods (Access = private)
+        function mons = live_monitors_(obj)
+            % mons = live_monitors_(obj)
+            % Registered monitors that are still alive. A host GUI can be
+            % closed without detaching, so the list is pruned on every read
+            % rather than trusted.
+            mons = obj.Monitors_;
+            if isempty(mons), return; end
+            alive = cellfun(@(m) ~isempty(m) && isvalid(m), mons);
+            mons  = mons(alive);
+            obj.Monitors_ = mons;
+        end
+
+        function emit_live_(obj, stage, phase, varargin)
+            % emit_live_(obj, stage, phase, Name, Value, ...)
+            % Broadcast one LiveUpdate, gated by ShowLivePlots so a headless
+            % run pays nothing for the payload it would not render.
+            %
+            % notify() propagates a listener's error to its caller, and every
+            % calibrate_ method treats an error as an aborted run and discards
+            % the partial data. Unguarded, that makes any bug in any attached
+            % renderer able to destroy a sweep that took minutes to acquire.
+            % Display is not worth a measurement: the failure is logged once
+            % per run and the sweep carries on.
+            if ~obj.ShowLivePlots, return; end
+            try
+                notify(obj, 'LiveUpdate', obj.live_snapshot_(stage, phase, varargin{:}));
+            catch ME
+                if ~obj.LiveHookFailed_
+                    obj.LiveHookFailed_ = true;
+                    stimgen.util.vprintf(0, 1, ...
+                        'A LiveUpdate listener failed; live plotting may be incomplete for this run.');
+                    stimgen.util.vprintf(0, 1, ME);
+                end
+            end
+        end
+
+        function begin_run_(obj)
+            % Start the clock that feeds LiveUpdate.Elapsed, from which the
+            % monitor derives its time-remaining estimate. Also re-arms the
+            % broken-listener warning, so a fault is reported once per run
+            % rather than once per session.
+            obj.RunTic_ = tic;
+            obj.LiveHookFailed_ = false;
+        end
+
+        function s = run_elapsed_(obj)
+            % Seconds since begin_run_, or 0 outside a run.
+            if isempty(obj.RunTic_)
+                s = 0;
+            else
+                s = toc(obj.RunTic_);
+            end
+        end
+
+        function c = live_context_(obj)
+            % Engine parameters a renderer needs to interpret a payload.
+            c = struct( ...
+                'ReferenceLevel',    obj.ReferenceLevel, ...
+                'MicSensitivity',    obj.MicSensitivity, ...
+                'NormativeValue',    obj.NormativeValue, ...
+                'ExcitationVoltage', obj.ExcitationVoltage, ...
+                'MaxOutputV',        obj.MaxOutputVoltage);
+        end
+
+        function m = live_metrics_(obj)
+            % Scalars derivable from the response record alone. Clipping is
+            % judged by estimate_headroom_, the same test whose verdict is
+            % stored in the calibration metrics, so the warning on screen and
+            % the flag in the saved file cannot disagree.
+            m = stimgen.calibration.LiveUpdate.default_metrics();
+            m.full_scale_v = obj.MaxOutputVoltage;
+
+            y = obj.ResponseSignal;
+            if isempty(y), return; end
+
+            h = obj.estimate_headroom_(obj.ExcitationSignal, y);
+            m.peak_v   = h.responsePeakV;
+            m.rms_v    = sqrt(mean(y .^ 2));
+            m.clipping = h.responseClippingLikely;
+        end
+
+        function render_engine_state_(obj, reset)
+            % Back end of the deprecated plot_signal/plot_spectrum entry
+            % points: draw the current response through whichever monitors are
+            % attached, creating one that owns its own window if none is.
+            mons = obj.live_monitors_();
+            if isempty(mons)
+                mons = {stimgen.calibration.LiveMonitor(obj)};
+            end
+            for k = 1:numel(mons)
+                if reset
+                    mons{k}.reset();
+                else
+                    mons{k}.show_engine_state(obj);
+                end
+            end
+        end
+
         function assert_adapter_(obj)
             % Raise an error when no hardware adapter is attached.
             if isempty(obj.Adapter)
@@ -180,8 +369,12 @@ classdef Engine < handle
 
         function t = empty_table_(~, n)
             % Allocate a calibration table struct for in-progress runs.
+            % sd_db is the across-repeat spread of the level, NaN until a
+            % second pass exists to compute one from; LiveUpdate.Table carries
+            % it so the monitor can draw the convergence ribbon.
             t = struct('x', nan(1,n), 'measurement', nan(1,n), ...
-                       'spl_db', nan(1,n), 'voltage', nan(1,n));
+                       'spl_db', nan(1,n), 'voltage', nan(1,n), ...
+                       'sd_db', nan(1,n));
         end
 
         restore_from_struct_(obj, s) % Restore engine state from saved struct.
@@ -193,13 +386,29 @@ classdef Engine < handle
     end
 
     methods (Static, Access = private)
-        function f = cal_fig_(name)
-            % Return/create named figure used by calibration plotting helpers.
-            f = findobj('Type', 'figure', 'Name', name);
-            if isempty(f)
-                f = figure('Name', name, 'NumberTitle', 'off');
+        function s = merge_struct_(s, add)
+            % Overlay the fields of add onto s. Used to let a caller name only
+            % the metrics it knows without dropping the engine-derived rest.
+            if ~isstruct(add), return; end
+            f = fieldnames(add);
+            for k = 1:numel(f)
+                s.(f{k}) = add.(f{k});
             end
-            figure(f);
+        end
+
+        function sd = level_sd_db_(measurements)
+            % sd = level_sd_db_(measurements)
+            % Across-repeat standard deviation of a level, in dB, for each
+            % column of a repeats-by-points measurement matrix. 0 for a single
+            % pass, which the monitor reads as "no spread measured" and skips.
+            n  = size(measurements, 2);
+            sd = nan(1, n);
+            for i = 1:n
+                v = measurements(:, i);
+                v = v(isfinite(v) & v > 0);
+                if numel(v) < 2, continue; end
+                sd(i) = std(20 * log10(v));
+            end
         end
 
         function s = rmfield_safe_(s, fname)

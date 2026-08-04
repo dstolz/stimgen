@@ -139,7 +139,11 @@
     "LoadTool": "Load (.esgc)",
     "SaveTool": "Save (.esgc)",
     "MeasureReferenceTool": "Measure Reference",
-    "RunCalibrationTool": "Run Calibration"
+    "RunCalibrationTool": "Run Calibration",
+    "RefreshPlotsTool": "Redraw the panels from the current calibration",
+    "MaxOutputVoltage": "Output ceiling of the rig, in volts. Sets the clipping limits drawn on the waveform and the line above which a required drive voltage is unreachable.",
+    "ShowLivePlots": "Update the panels during a sweep, measurement by measurement, instead of only when it finishes.",
+    "LogXAxis": "Log frequency axis on the transfer panel. Turn off for a linear axis."
   },
 
   "CalibrationGui": {

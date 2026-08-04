@@ -67,6 +67,9 @@ burstsPerTrain = floor((options.MaxSequenceDuration - gapDur) / strideDur);
 
 n         = numel(freqs);
 tone_data = obj.empty_table_(n);
+% Every abscissa up front, levels still NaN: that is what lets the monitor
+% draw the points still to come alongside the ones already measured.
+tone_data.x = freqs(:).';
 toneMeasAll = nan(repeatCount, n);
 toneSnrAll = nan(repeatCount, n);
 toneNoiseFloorAll = nan(repeatCount, n);
@@ -85,9 +88,12 @@ toneHeadroomAll = repmat(struct( ...
 
 maxLag = max(round(gapDur * fs), 1);
 
-if obj.ShowLivePlots
-    obj.plot_reset();
-end
+% Axis metadata for the live table; identical on every update of this run.
+axisMeta = {'XLabel', "frequency (Hz)", 'XScale', "log", 'XFactor', 1};
+
+obj.begin_run_();
+obj.emit_live_("tone", "start", 'Table', tone_data, 'Total', n, ...
+    'RepeatTotal', repeatCount, axisMeta{:});
 
 try
     trainStarts = 1:burstsPerTrain:n;
@@ -125,7 +131,7 @@ try
 
                 [exBurst, rsBurst] = slice_(x, response, s.onset, 0, s.nsamples, lag);
                 [aRel, bRel] = steady_span_(s, fs);
-                [~, rsSteady] = slice_(x, response, s.onset, aRel, bRel, lag);
+                [~, rsSteady, steadySpan] = slice_(x, response, s.onset, aRel, bRel, lag);
 
                 toneMeasAll(rep, i) = stimgen.calibration.Engine.spectral_rms( ...
                     rsSteady, freqs(i), fs);
@@ -134,21 +140,38 @@ try
                 [toneThdAll(rep, i), toneH2All(rep, i), toneH3All(rep, i)] = ...
                     obj.estimate_harmonics_(rsSteady, fs, freqs(i));
                 toneHeadroomAll(rep, i) = obj.estimate_headroom_(exBurst, rsBurst);
-            end
 
-            if obj.ShowLivePlots
-                for k = 1:numel(idx)
-                    i = idx(k);
-                    m = mean(toneMeasAll(1:rep, i), 'omitnan');
-                    [spl, volt] = obj.compute_spl_voltage_(m, "specfreq");
-                    tone_data.x(i)           = freqs(i);
-                    tone_data.measurement(i) = m;
-                    tone_data.spl_db(i)      = spl;
-                    tone_data.voltage(i)     = volt;
+                % One update per burst, carrying the span it was measured
+                % over. A whole train is a single record, so without the span
+                % the waveform panel could not show which burst a level came
+                % from -- and mis-segmentation is the failure this sweep is
+                % most prone to.
+                if obj.ShowLivePlots
+                    mAvg = mean(toneMeasAll(1:rep, i), 'omitnan');
+                    [splRep, voltRep] = obj.compute_spl_voltage_(mAvg, "specfreq");
+                    tone_data.measurement(i) = mAvg;
+                    tone_data.spl_db(i)      = splRep;
+                    tone_data.voltage(i)     = voltRep;
+                    tone_data.sd_db          = obj.level_sd_db_(toneMeasAll);
+
+                    % Trains are measured train-major, not point-major, so the
+                    % payload has to state its own progress rather than let it
+                    % be inferred from the point index.
+                    done = (b - 1) * repeatCount + (rep - 1) + k / numel(idx);
+                    obj.emit_live_("tone", "measure", 'Table', tone_data, ...
+                        'Span', steadySpan, ...
+                        'Markers', freqs(i) .* [1 2 3], ...
+                        'MarkerLabels', ["f0" "2f0" "3f0"], ...
+                        'Index', i, 'Total', n, ...
+                        'Repeat', rep, 'RepeatTotal', repeatCount, ...
+                        'Progress', done / (numel(trainStarts) * repeatCount), ...
+                        axisMeta{:}, ...
+                        'Metrics', struct('spl_db', splRep, 'voltage', voltRep, ...
+                                          'snr_db', toneSnrAll(rep, i), ...
+                                          'thd_db', toneThdAll(rep, i), ...
+                                          'h2_db', toneH2All(rep, i), ...
+                                          'h3_db', toneH3All(rep, i)));
                 end
-                obj.plot_signal();
-                obj.plot_spectrum();
-                obj.plot_transfer('tone', tone_data);
             end
         end
     end
@@ -156,7 +179,6 @@ try
     for i = 1:n
         m = mean(toneMeasAll(:, i), 'omitnan');
         [spl, volt] = obj.compute_spl_voltage_(m, "specfreq");
-        tone_data.x(i)           = freqs(i);
         tone_data.measurement(i) = m;
         tone_data.spl_db(i)      = spl;
         tone_data.voltage(i)     = volt;
@@ -206,6 +228,11 @@ cd_out.tone = struct( ...
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
 
+tone_data.sd_db = obj.level_sd_db_(toneMeasAll);
+obj.emit_live_("tone", "done", 'Table', tone_data, ...
+    'Index', n, 'Total', n, 'Repeat', repeatCount, 'RepeatTotal', repeatCount, ...
+    'Progress', 1, axisMeta{:});
+
 stimgen.util.vprintf(1, 'Tone calibration complete. %d points over %g-%g Hz in %d train(s) x %d repeat(s)', ...
     n, freqs(1), freqs(end), numel(trainStarts), repeatCount);
 end
@@ -226,14 +253,20 @@ end
 end
 
 % ------------------------------------------------------------------------ %
-function [exSeg, rsSeg] = slice_(x, response, onset, aRel, bRel, lag)
+function [exSeg, rsSeg, rsSpan] = slice_(x, response, onset, aRel, bRel, lag)
 % Cut the same half-open span out of the excitation and, shifted by the
 % acquisition delay, out of the response. Both are clamped to their records:
 % the trailing gap normally covers the shift, but a mis-estimated delay or a
 % short return from the adapter must not index past the end.
+%
+% rsSpan is the clamped [first last] index of rsSeg within response, which the
+% live update passes to the monitor so the analysed window can be drawn on the
+% waveform. It is returned from here rather than recomputed by the caller so
+% that the shift and the clamping have exactly one definition.
 a = onset + aRel;
 b = onset + bRel - 1;
 
-exSeg = x(max(a,1) : min(b, numel(x)));
-rsSeg = response(max(a + lag, 1) : min(b + lag, numel(response)));
+exSeg  = x(max(a,1) : min(b, numel(x)));
+rsSpan = [max(a + lag, 1), min(b + lag, numel(response))];
+rsSeg  = response(rsSpan(1) : rsSpan(2));
 end

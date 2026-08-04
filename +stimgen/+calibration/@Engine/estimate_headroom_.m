@@ -1,5 +1,9 @@
-function m = estimate_headroom_(~, excitation, response)
-fullScaleV = 10;
+function m = estimate_headroom_(obj, excitation, response)
+% Clipping and headroom margins against the rig's output ceiling. Reads
+% MaxOutputVoltage rather than assuming +/-10 V, so a rig with a different
+% converter reports real headroom -- and so the live monitor's ceiling line
+% and the flag stored in the calibration metrics come from one number.
+fullScaleV = obj.MaxOutputVoltage;
 m = struct( ...
     'assumedFullScaleV', fullScaleV, ...
     'excitationPeakV', nan, ...

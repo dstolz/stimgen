@@ -8,7 +8,7 @@ function open_calibration_gui(obj)
 % GUI opens offline and the runtime menu actions are unavailable.
 
 try
-    stimgen.calibration.CalibrationGui(stimgen.calibration.Engine(), obj.Host);
+    stimgen.calibration.CalibrationGui(obj.Host);
     if isempty(obj.Host)
         obj.show_gui_message_( ...
             "Calibration GUI opened in offline mode; this StimPlayer has no hardware host attached.", ...

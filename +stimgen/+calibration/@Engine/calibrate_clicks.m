@@ -33,6 +33,9 @@ so.OnsetDelay = 0.01;
 
 n          = numel(durs);
 click_data = obj.empty_table_(n);
+% Every abscissa up front, levels still NaN: that is what lets the monitor
+% draw the points still to come alongside the ones already measured.
+click_data.x = durs(:).';
 clickMeasAll = nan(repeatCount, n);
 clickSnrAll = nan(repeatCount, n);
 clickNoiseFloorAll = nan(repeatCount, n);
@@ -47,9 +50,12 @@ clickHeadroomAll = repmat(struct( ...
     'responseFlatTopFraction', nan, ...
     'responseClippingLikely', false), repeatCount, n);
 
-if obj.ShowLivePlots
-    obj.plot_reset();
-end
+% Axis metadata for the live table; identical on every update of this run.
+axisMeta = {'XLabel', "click duration (\mus)", 'XScale', "log", 'XFactor', 1e6};
+
+obj.begin_run_();
+obj.emit_live_("click", "start", 'Table', click_data, 'Total', n, ...
+    'RepeatTotal', repeatCount, axisMeta{:});
 
 try
     for i = 1:n
@@ -71,20 +77,31 @@ try
             [clickNoiseFloorAll(rep, i), clickSnrAll(rep, i)] = obj.estimate_noise_snr_(response, fs, nan);
             clickThdAll(rep, i) = thd(response, fs);
             clickHeadroomAll(rep, i) = obj.estimate_headroom_(y, response);
+
+            % Publish the running average rather than waiting for the point to
+            % finish: on a many-pass run that is the difference between a curve
+            % that grows steadily and one that stalls for seconds at a time.
+            if obj.ShowLivePlots
+                mAvg = mean(clickMeasAll(1:rep, i), 'omitnan');
+                [splRep, voltRep] = obj.compute_spl_voltage_(mAvg, "peak");
+                click_data.measurement(i) = mAvg;
+                click_data.spl_db(i)      = splRep;
+                click_data.voltage(i)     = voltRep;
+                click_data.sd_db          = obj.level_sd_db_(clickMeasAll);
+                obj.emit_live_("click", "measure", 'Table', click_data, ...
+                    'Index', i, 'Total', n, ...
+                    'Repeat', rep, 'RepeatTotal', repeatCount, axisMeta{:}, ...
+                    'Metrics', struct('spl_db', splRep, 'voltage', voltRep, ...
+                                      'snr_db', clickSnrAll(rep, i), ...
+                                      'thd_db', clickThdAll(rep, i)));
+            end
         end
         m = m ./ repeatCount;
         [spl, volt] = obj.compute_spl_voltage_(m, "peak");
 
-        click_data.x(i)           = durs(i);
         click_data.measurement(i) = m;
         click_data.spl_db(i)      = spl;
         click_data.voltage(i)     = volt;
-
-        if obj.ShowLivePlots
-            obj.plot_signal();
-            obj.plot_spectrum();
-            obj.plot_transfer('click', click_data);
-        end
     end
 catch ME
     if isstruct(obj.CalibrationData)
@@ -117,4 +134,9 @@ cd_out.click = struct( ...
         'clipping_headroom', clickHeadroom));
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
+
+click_data.sd_db = obj.level_sd_db_(clickMeasAll);
+obj.emit_live_("click", "done", 'Table', click_data, ...
+    'Index', n, 'Total', n, 'Repeat', repeatCount, 'RepeatTotal', repeatCount, ...
+    'Progress', 1, axisMeta{:});
 end

@@ -1,19 +1,20 @@
 function plot_signal(obj, reset)
-% plot_signal(obj)  - plot current ResponseSignal vs time
-% plot_signal(obj, true) - clear axes
+% plot_signal(obj)       - draw the current ResponseSignal
+% plot_signal(obj, true) - clear the monitor's panels
+%
+% Deprecated. The engine no longer draws: it broadcasts LiveUpdate and
+% stimgen.calibration.LiveMonitor renders. This entry point is kept so scripts
+% written against the old subplot figure keep working, and forwards to whatever
+% monitors are attached -- creating one that owns its own window if none is.
+%
+% The waveform and spectrum panels are refreshed together, because both come
+% from the one snapshot the monitor is handed. Prefer attaching a LiveMonitor
+% and calling its show_engine_state directly.
+%
+% See also: stimgen.calibration.LiveMonitor.show_engine_state
 arguments
     obj
     reset (1,1) logical = false
 end
-f = stimgen.calibration.Engine.cal_fig_('calibration');
-ax = subplot(2,2,1, 'Parent', f);
-if reset, cla(ax); drawnow; return; end
-if isempty(obj.ResponseSignal), return; end
-fs = obj.Fs;
-if fs == 0, return; end
-t = (0:numel(obj.ResponseSignal)-1) ./ fs .* 1e3; % ms
-plot(ax, t, obj.ResponseSignal);
-grid(ax, 'on');
-xlabel(ax, 'time (ms)');
-ylabel(ax, 'V');
+obj.render_engine_state_(reset);
 end

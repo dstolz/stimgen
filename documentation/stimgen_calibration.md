@@ -133,8 +133,14 @@ eng.set_configuration( ...
     ReferenceFrequency=1000, ...% Hz (default 1000)
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
-    ShowLivePlots=true);        % show plots during sweeps (default false)
+    MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
+    ShowLivePlots=true);        % broadcast progress during sweeps (default false)
 ```
+
+`ShowLivePlots` does not itself draw anything. It gates a `LiveUpdate` event that
+the engine broadcasts for every measurement; attach a
+[`stimgen.calibration.LiveMonitor`](#watching-a-run) to render it, or listen to it
+yourself to log or forward progress.
 
 ### Step 4 — Measure The Microphone Reference
 
@@ -241,6 +247,51 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 
 ---
 
+## Watching A Run
+
+The engine does not draw. With `ShowLivePlots=true` it broadcasts a `LiveUpdate`
+event for every measurement, carrying a
+[`stimgen.calibration.LiveUpdate`](../+stimgen/+calibration/LiveUpdate.m) payload: the
+waveform just acquired, the span of it that was measured, the partial lookup table, and
+the scalar metrics for that point.
+
+`stimgen.calibration.LiveMonitor` renders that stream into three panels — waveform,
+spectrum in dB SPL, and the transfer curve as it fills in:
+
+```matlab
+eng.set_configuration(ShowLivePlots=true);
+mon = stimgen.calibration.LiveMonitor(eng);   % opens its own window
+eng.calibrate_tones();
+```
+
+A host GUI supplies its own axes instead, which is how `stimgen.StimCalibration` shows a
+run beside the controls driving it:
+
+```matlab
+mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSignal axSpectrum axTransfer]);
+```
+
+Outside a run, `mon.show_engine_state(eng)` redraws the response panels and
+`mon.show_calibration(eng)` draws the committed lookup tables — call
+`show_calibration` first, since it resets the monitor's graphics cache.
+
+Nothing obliges you to plot. The event is a plain data stream, so a host application can
+listen to it to log progress, drive a progress bar, or forward it over a network:
+
+```matlab
+addlistener(eng, 'LiveUpdate', @(~, d) fprintf('%s %d/%d — %.0f%%\n', ...
+    d.Stage, d.Index, d.Total, 100 * d.Progress));
+```
+
+A listener that throws is logged and skipped rather than allowed to abort the sweep: a
+plotting bug must not discard a measurement that took minutes to acquire.
+
+`Engine.plot_signal`, `plot_spectrum`, `plot_transfer` and `plot_reset` still exist and
+forward to an attached monitor, creating one if none is attached. They are deprecated;
+prefer a `LiveMonitor`.
+
+---
+
 ## Reference: Engine Parameters
 
 | Parameter | Default | Meaning |
@@ -250,7 +301,8 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
-| `ShowLivePlots` | false | Show waveform and spectrum plots during sweeps |
+| `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
+| `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
 
 These are all `SetAccess = protected` — they are readable from anywhere but can only
 be written through `eng.set_configuration(Name=value)`, which is what runs their
@@ -329,6 +381,8 @@ Source: `+stimgen/+calibration/`
 - `Engine.m` — calibration orchestration, result storage, save/load, and voltage lookup.
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
+- `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
+- `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes.
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
 
 Host-supplied adapters for lab hardware (TDT and similar) live outside this package; a host

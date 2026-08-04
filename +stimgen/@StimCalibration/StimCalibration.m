@@ -12,21 +12,29 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     % can load a .esgc file for use by StimType. When an adapter is supplied
     % the calibration GUI is launched against that hardware.
     %
+    % Plotting is delegated to a stimgen.calibration.LiveMonitor attached to
+    % axes inside the GUI window, so a sweep's waveform, spectrum and transfer
+    % curve fill in beside the controls driving it. Nothing in this class
+    % draws.
+    %
     % Properties (delegated from Engine):
     %   CalibrationData, MicSensitivity, ReferenceLevel, ReferenceFrequency,
     %   NormativeValue, ExcitationSignalVoltage, CalibrationTimestamp
     %
     % Methods:
     %   gui                      - Launch calibration GUI.
+    %   refresh_plots            - Redraw the panels from the Engine's state.
     %   compute_adjusted_voltage - Proxy to Engine; used by StimType.
     %   load_calibration         - Load .esgc file into Engine.
     %   save_calibration         - Save Engine data to .esgc file.
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.HwAdapter,
+    %           stimgen.calibration.LiveMonitor,
     %           documentation/stimgen_StimCalibration.md
 
     properties (SetAccess = protected)
         Engine  stimgen.calibration.Engine  % core calibration engine
+        Monitor stimgen.calibration.LiveMonitor  % live plot renderer; empty until gui()
     end
 
     properties (SetAccess = private, SetObservable, AbortSet)
@@ -52,6 +60,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     methods
 
         gui(obj)  % Launch calibration GUI.
+        refresh_plots(obj)  % Redraw the monitor panels from the Engine's state.
         v = compute_adjusted_voltage(obj, type, value, level)  % Proxy to Engine.
 
         % ---------------------------------------------------------- %
@@ -180,6 +189,11 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             h   = obj.handles;
             hen = findobj(h.parent, '-property', 'Enable');
 
+            % Axes carry an Enable property of their own; greying them out
+            % along with the controls would blank the live plots for exactly
+            % the duration of the run they exist to show.
+            hen = hen(~isa(hen, 'matlab.graphics.axis.AbstractAxes'));
+
             switch obj.STATE
                 case "IDLE"
                     set(hen, 'Enable', 'on');
@@ -206,8 +220,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
 
                     set(hen, 'Enable', 'on');
                     h.RefMeasure.Text = 'Measure Reference';
-                    obj.Engine.plot_signal();
-                    obj.Engine.plot_spectrum();
+                    obj.refresh_plots();
                     obj.STATE = "IDLE";
 
                 case "CALIBRATE"
@@ -234,6 +247,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
                     end
                     set(hen, 'Enable', 'on');
                     h.RunCalibration.Text = 'Calibrate';
+                    obj.refresh_plots();
                     obj.STATE = "IDLE";
             end
             drawnow;
@@ -279,12 +293,27 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             if isempty(eng), return; end
             obj.Engine = eng;
 
-            % Sync GUI fields to loaded values.
-            obj.sync_gui_field_('MicSensitivity',      obj.Engine.MicSensitivity);
-            obj.sync_gui_field_('ReferenceLevel',      obj.Engine.ReferenceLevel);
-            obj.sync_gui_field_('ReferenceFrequency',  obj.Engine.ReferenceFrequency);
-            obj.sync_gui_field_('NormativeValue',      obj.Engine.NormativeValue);
-            obj.sync_gui_field_('ExcitationSignalVoltage', obj.Engine.ExcitationVoltage);
+            % The monitor follows an engine, not this object, so a load that
+            % swaps the engine has to move it across or it would keep
+            % rendering the discarded one.
+            if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
+                obj.Monitor.attach(obj.Engine);
+            end
+
+            % Sync GUI fields to loaded values, and move the mirroring
+            % listeners onto the engine that just replaced the old one.
+            if isfield(obj.handles, 'EngineListeners')
+                obj.attach_engine_listeners_();
+                obj.sync_gui_field_('MicSensitivity',      obj.Engine.MicSensitivity);
+                obj.sync_gui_field_('ReferenceLevel',      obj.Engine.ReferenceLevel);
+                obj.sync_gui_field_('ReferenceFrequency',  obj.Engine.ReferenceFrequency);
+                obj.sync_gui_field_('NormativeValue',      obj.Engine.NormativeValue);
+                obj.sync_gui_field_('ExcitationSignalVoltage', obj.Engine.ExcitationVoltage);
+                obj.sync_gui_field_('MaxOutputVoltage',    obj.Engine.MaxOutputVoltage);
+                obj.sync_gui_field_('ShowLivePlots',       obj.Engine.ShowLivePlots);
+            end
+
+            obj.refresh_plots();
 
             f = ancestor(obj.handles.parent, 'figure');
             if ~isempty(f), figure(f); end
@@ -300,10 +329,71 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             if ~isempty(f), figure(f); end
         end
 
+        % ---------------------------------------------------------- %
+        function delete(obj)
+            % Release everything holding a listener on the engine: a StimType
+            % may keep using that engine long after this object is gone.
+            if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
+                obj.Monitor.detach();
+                delete(obj.Monitor);
+            end
+            if isfield(obj.handles, 'EngineListeners')
+                delete(obj.handles.EngineListeners);
+            end
+        end
+
     end  % public methods
 
     % ------------------------------------------------------------------ %
     methods (Access = private)
+        build_plots_(obj, parent)  % Create the plot panel and its LiveMonitor.
+
+        function set_log_x_(obj, tf)
+            % Switch the transfer panel between log and linear frequency, then
+            % redraw so the change is visible without waiting for a run.
+            if isempty(obj.Monitor) || ~isvalid(obj.Monitor)
+                return
+            end
+            obj.Monitor.LogX = tf;
+            obj.refresh_plots();
+        end
+
+        function attach_engine_listeners_(obj)
+            % attach_engine_listeners_(obj)
+            % Mirror the Engine's parameters into the widgets.
+            %
+            % The engine writes some of these itself -- calibrate_reference
+            % replaces MicSensitivity -- and a host application can call
+            % set_configuration directly. Relying on every writer to also
+            % update the GUI is what let the fields drift out of step with the
+            % engine they claim to show; the properties are SetObservable, so
+            % listening is both cheaper and complete.
+            %
+            % Re-registered by load_calibration, which swaps the engine out
+            % from under the listeners.
+            map = { ...
+                'MicSensitivity',     'MicSensitivity'; ...
+                'ReferenceLevel',     'ReferenceLevel'; ...
+                'ReferenceFrequency', 'ReferenceFrequency'; ...
+                'NormativeValue',     'NormativeValue'; ...
+                'ExcitationVoltage',  'ExcitationSignalVoltage'; ...
+                'MaxOutputVoltage',   'MaxOutputVoltage'; ...
+                'ShowLivePlots',      'ShowLivePlots'};
+
+            if isfield(obj.handles, 'EngineListeners')
+                delete(obj.handles.EngineListeners);
+            end
+
+            L = cell(1, size(map, 1));
+            for k = 1:size(map, 1)
+                prop = map{k, 1};
+                tag  = map{k, 2};
+                L{k} = addlistener(obj.Engine, prop, 'PostSet', ...
+                    @(~,~) obj.sync_gui_field_(tag, obj.Engine.(prop)));
+            end
+            obj.handles.EngineListeners = [L{:}];
+        end
+
         function sync_gui_field_(obj, tag, value)
             % sync_gui_field_(obj, tag, value)
             % Update a GUI control identified by handles.(tag) if it exists.
@@ -311,9 +401,24 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
                 return;
             end
             h = obj.handles.(tag);
-            if isvalid(h) && isprop(h, 'Value')
-                h.Value = value;
+            if ~isvalid(h) || ~isprop(h, 'Value')
+                return;
             end
+
+            % A numeric field's Limits are a tighter guard on typed input than
+            % the engine's own validators, so an engine-legal value can still
+            % be one this widget refuses. Assigning it would throw from inside
+            % a PostSet listener and take the caller down with it, which for a
+            % listener attached to a running sweep means losing the run.
+            if isprop(h, 'Limits') && isnumeric(value) && isscalar(value) ...
+                    && (value < h.Limits(1) || value > h.Limits(2))
+                stimgen.util.vprintf(2, ...
+                    'StimCalibration: %s = %g is outside the field limits [%g %g]; not displayed.', ...
+                    tag, value, h.Limits(1), h.Limits(2));
+                return;
+            end
+
+            h.Value = value;
         end
     end
 

@@ -1,5 +1,6 @@
 classdef CalibrationGui < handle
     % gui = stimgen.calibration.CalibrationGui()
+    % gui = stimgen.calibration.CalibrationGui(host)
     % gui = stimgen.calibration.CalibrationGui(eng)
     % Interactive GUI for the stimgen.calibration package.
     %
@@ -9,9 +10,12 @@ classdef CalibrationGui < handle
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
+    % Arguments are identified by type, so an Engine and a HardwareHost may be
+    % passed in either order, either one alone, or as Engine=/Host= pairs.
+    %
     % Parameters:
     %   eng  - (optional) stimgen.calibration.Engine with an adapter already
-    %          attached. Omit to start in offline mode.
+    %          attached. Omit to start with a fresh offline engine.
     %   host - (optional) stimgen.HardwareHost. Required only for the runtime
     %          menu actions; omit when supplying an engine that already has an
     %          adapter, or when working offline.
@@ -23,12 +27,16 @@ classdef CalibrationGui < handle
     %   % Offline mode — load a saved calibration, no hardware:
     %   gui = stimgen.calibration.CalibrationGui();
     %
+    %   % Host-driven: attach hardware from the GUI menu.
+    %   gui = stimgen.calibration.CalibrationGui(host);
+    %
     %   % Pre-built engine with adapter:
     %   eng = stimgen.calibration.Engine(adapter);
     %   gui = stimgen.calibration.CalibrationGui(eng);
     %
-    %   % Host-driven: attach hardware from the GUI menu.
-    %   gui = stimgen.calibration.CalibrationGui(stimgen.calibration.Engine(), host);
+    %   % Both, in either order or by name:
+    %   gui = stimgen.calibration.CalibrationGui(eng, host);
+    %   gui = stimgen.calibration.CalibrationGui(Host=host);
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.HwAdapter,
     %           stimgen.HardwareHost,
@@ -56,6 +64,7 @@ classdef CalibrationGui < handle
         ExcitationField
         ShowLivePlotsCheck
         TransferLogXCheck
+        SampleRateLabel
         StatusLabel
 
         % Buttons
@@ -73,24 +82,23 @@ classdef CalibrationGui < handle
     end
 
     methods
-        function obj = CalibrationGui(eng, host)
+        function obj = CalibrationGui(varargin)
             % obj = stimgen.calibration.CalibrationGui()
+            % obj = stimgen.calibration.CalibrationGui(host)
             % obj = stimgen.calibration.CalibrationGui(eng)
             % obj = stimgen.calibration.CalibrationGui(eng, host)
+            % obj = stimgen.calibration.CalibrationGui(Engine=eng, Host=host)
             % Construct and display the calibration GUI.
             %
+            % Arguments are matched by type rather than position, so either may
+            % be omitted or given in either order.
+            %
             % Parameters:
-            %   eng  - (optional) stimgen.calibration.Engine; omit for offline mode.
+            %   eng  - (optional) stimgen.calibration.Engine; omit for a fresh
+            %          offline engine.
             %   host - (optional) stimgen.HardwareHost enabling the runtime menu
             %          actions (Initialize Runtime From Protocol, Attach Adapter).
-            arguments
-                eng  (1,1) stimgen.calibration.Engine = stimgen.calibration.Engine()
-                host = []
-            end
-
-            if ~isempty(host)
-                mustBeA(host, 'stimgen.HardwareHost');
-            end
+            [eng, host] = parse_construction_args_(varargin);
 
             obj.Engine = eng;
             obj.Host   = host;
@@ -199,8 +207,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [15 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [16 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -249,48 +257,55 @@ classdef CalibrationGui < handle
             obj.ExcitationField.Limits = [eps, 10];
             obj.ExcitationField.ValueDisplayFormat = '%.3f';
 
+            sampleRateLabelCaption = uilabel(g, Text='Hardware Sample Rate', HorizontalAlignment='right');
+            sampleRateLabelCaption.Layout.Row = 6;
+            sampleRateLabelCaption.Layout.Column = 1;
+            obj.SampleRateLabel = uilabel(g, Text='No adapter', HorizontalAlignment='left');
+            obj.SampleRateLabel.Layout.Row = 6;
+            obj.SampleRateLabel.Layout.Column = 2;
+
             showPlotsLabel = uilabel(g, Text='Show Engine Live Plots', HorizontalAlignment='right');
-            showPlotsLabel.Layout.Row = 6;
+            showPlotsLabel.Layout.Row = 7;
             showPlotsLabel.Layout.Column = 1;
             obj.ShowLivePlotsCheck = uicheckbox(g, Text='');
-            obj.ShowLivePlotsCheck.Layout.Row = 6;
+            obj.ShowLivePlotsCheck.Layout.Row = 7;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
 
             transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
-            transferLogXLabel.Layout.Row = 7;
+            transferLogXLabel.Layout.Row = 8;
             transferLogXLabel.Layout.Column = 1;
             obj.TransferLogXCheck = uicheckbox(g, Text='', Value=true, ...
                 ValueChangedFcn=@(~,~) obj.refresh_transfer_plot_());
-            obj.TransferLogXCheck.Layout.Row = 7;
+            obj.TransferLogXCheck.Layout.Row = 8;
             obj.TransferLogXCheck.Layout.Column = 2;
 
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 8;
+            obj.BtnReference.Layout.Row = 9;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 9;
+            obj.BtnTones.Layout.Row = 10;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 10;
+            obj.BtnClicks.Layout.Row = 11;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 11;
+            obj.BtnSweptSine.Layout.Row = 12;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 12;
+            obj.BtnFilter.Layout.Row = 13;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
@@ -298,12 +313,12 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 13;
+            obj.BtnStop.Layout.Row = 14;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 14;
+            obj.StatusLabel.Layout.Row = 15;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -798,6 +813,8 @@ classdef CalibrationGui < handle
         end
 
         function update_runtime_state_(obj)
+            obj.refresh_sample_rate_label_();
+
             hasAdapter = ~isempty(obj.Engine.Adapter);
             if hasAdapter
                 obj.BtnReference.Enable = 'on';
@@ -820,6 +837,15 @@ classdef CalibrationGui < handle
                 obj.BtnFilter.Enable = 'on';
             else
                 obj.BtnFilter.Enable = 'off';
+            end
+        end
+
+        function refresh_sample_rate_label_(obj)
+            fs = obj.Engine.Fs;
+            if fs > 0
+                obj.SampleRateLabel.Text = sprintf('%g Hz', fs);
+            else
+                obj.SampleRateLabel.Text = 'No adapter';
             end
         end
 
@@ -1127,4 +1153,57 @@ classdef CalibrationGui < handle
             obj.StatusLabel.Text = msg;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function [eng, host] = parse_construction_args_(args)
+% [eng, host] = parse_construction_args_(args)
+% Resolve the constructor inputs by type so an Engine and a HardwareHost can
+% be supplied in any order, alone, or as Engine=/Host= pairs. A missing engine
+% becomes a fresh offline Engine; a missing host leaves the runtime menu
+% actions disabled.
+
+eng  = stimgen.calibration.Engine.empty;
+host = [];
+
+k = 1;
+while k <= numel(args)
+    a = args{k};
+    if isa(a, 'stimgen.calibration.Engine')
+        eng = a;
+        k = k + 1;
+    elseif isa(a, 'stimgen.HardwareHost')
+        host = a;
+        k = k + 1;
+    elseif isempty(a) && ~ischar(a) && ~isstring(a)
+        % Tolerate [] placeholders forwarded by callers with an optional host.
+        k = k + 1;
+    elseif (ischar(a) || (isstring(a) && isscalar(a))) && k < numel(args)
+        value = args{k+1};
+        switch lower(string(a))
+            case "engine"
+                mustBeA(value, 'stimgen.calibration.Engine');
+                eng = value;
+            case "host"
+                if ~isempty(value)
+                    mustBeA(value, 'stimgen.HardwareHost');
+                end
+                host = value;
+            otherwise
+                error('stimgen:calibration:CalibrationGui:invalidArgument', ...
+                    'Unrecognized option "%s". Valid options are Engine and Host.', a);
+        end
+        k = k + 2;
+    else
+        error('stimgen:calibration:CalibrationGui:invalidArgument', ...
+            ['Unrecognized argument of class "%s". Expected a ' ...
+            'stimgen.calibration.Engine, a stimgen.HardwareHost, or ' ...
+            'Engine=/Host= pairs.'], class(a));
+    end
+end
+
+if isempty(eng)
+    eng = stimgen.calibration.Engine();
+end
+eng = eng(1);
 end

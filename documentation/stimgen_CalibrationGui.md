@@ -23,19 +23,26 @@ CalibrationGui.m implements:
 
 ## Constructor
 
-Three call patterns are supported:
+Both inputs are optional and are identified by **type**, not position, so an `Engine` and a `HardwareHost` may be given in either order, either one alone, or as `Engine=`/`Host=` pairs:
 
 ```matlab
 % Offline mode — no hardware; load/inspect a saved calibration:
 gui = stimgen.calibration.CalibrationGui()
 
+% Host-driven — enables File > Initialize Runtime From Protocol:
+gui = stimgen.calibration.CalibrationGui(host)
+
 % Pre-built Engine with adapter already attached:
 eng = stimgen.calibration.Engine(adapter);
 gui = stimgen.calibration.CalibrationGui(eng)
 
-% Host-driven — enables File > Initialize Runtime From Protocol:
-gui = stimgen.calibration.CalibrationGui(stimgen.calibration.Engine(), host)
+% Both — any of these are equivalent:
+gui = stimgen.calibration.CalibrationGui(eng, host)
+gui = stimgen.calibration.CalibrationGui(host, eng)
+gui = stimgen.calibration.CalibrationGui(Engine=eng, Host=host)
 ```
+
+Omitting the engine creates a fresh offline one, so a host application never has to pass `stimgen.calibration.Engine()` just to reach the second argument. An empty `[]` is accepted in place of either input, which is what lets a caller forward an optional host unconditionally. Anything else raises `stimgen:calibration:CalibrationGui:invalidArgument`.
 
 If no adapter is attached at construction time, live calibration buttons are disabled until adapter attachment succeeds. The runtime menu actions require a host and raise `stimgen:calibration:CalibrationGui:noHost` without one.
 

@@ -10,6 +10,7 @@ function set_configuration(obj, options)
 %   ReferenceFrequency - (1,1) double, > 0
 %   NormativeValue     - (1,1) double, > 0
 %   ExcitationVoltage  - (1,1) double, > 0
+%   MaxOutputVoltage   - (1,1) double, > 0 (rig output ceiling, V)
 %   ShowLivePlots      - (1,1) logical
 arguments
     obj
@@ -18,6 +19,7 @@ arguments
     options.ReferenceFrequency (1,1) double {mustBePositive,mustBeFinite} = obj.ReferenceFrequency
     options.NormativeValue     (1,1) double {mustBePositive,mustBeFinite} = obj.NormativeValue
     options.ExcitationVoltage  (1,1) double {mustBePositive} = obj.ExcitationVoltage
+    options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
     options.ShowLivePlots      (1,1) logical = obj.ShowLivePlots
 end
 
@@ -26,5 +28,6 @@ obj.ReferenceLevel    = options.ReferenceLevel;
 obj.ReferenceFrequency = options.ReferenceFrequency;
 obj.NormativeValue    = options.NormativeValue;
 obj.ExcitationVoltage = options.ExcitationVoltage;
+obj.MaxOutputVoltage  = options.MaxOutputVoltage;
 obj.ShowLivePlots     = options.ShowLivePlots;
 end

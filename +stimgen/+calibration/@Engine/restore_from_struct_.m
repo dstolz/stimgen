@@ -8,4 +8,10 @@ obj.ReferenceLevel       = s.ReferenceLevel;
 obj.ReferenceFrequency   = s.ReferenceFrequency;
 obj.ExcitationVoltage    = s.ExcitationVoltage;
 obj.CalibrationTimestamp = s.CalibrationTimestamp;
+
+% Written since the output ceiling became configurable; a file saved before
+% that keeps the property's default rather than failing to load.
+if isfield(s, 'MaxOutputVoltage')
+    obj.MaxOutputVoltage = s.MaxOutputVoltage;
+end
 end

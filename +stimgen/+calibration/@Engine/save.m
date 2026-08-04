@@ -38,6 +38,7 @@ s.NormativeValue      = obj.NormativeValue;
 s.ReferenceLevel      = obj.ReferenceLevel;
 s.ReferenceFrequency  = obj.ReferenceFrequency;
 s.ExcitationVoltage   = obj.ExcitationVoltage;
+s.MaxOutputVoltage    = obj.MaxOutputVoltage;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

@@ -1,44 +1,29 @@
-function plot_transfer(~, type, tableData, reset)
-% plot_transfer(obj, type)
-% plot_transfer(obj, type, tableData) - overlay in-progress table
-% plot_transfer(obj, '', [], true)    - clear axes
-if nargin < 2, type = ''; end
-if nargin < 3, tableData = []; end
+function plot_transfer(obj, ~, ~, reset)
+% plot_transfer(obj)                  - draw the committed lookup tables
+% plot_transfer(obj, type, tableData) - accepted, ignored (see below)
+% plot_transfer(obj, '', [], true)    - clear the monitor's panels
+%
+% Deprecated. The engine no longer draws: it broadcasts LiveUpdate and
+% stimgen.calibration.LiveMonitor renders. This entry point forwards to
+% whatever monitors are attached -- creating one that owns its own window if
+% none is -- and draws the committed LUTs.
+%
+% The type/tableData arguments existed to overlay a run's partial table. That
+% is now carried by LiveUpdate.Table and pushed automatically during a run, so
+% they are accepted for call compatibility and otherwise unused.
+%
+% See also: stimgen.calibration.LiveMonitor.show_calibration
 if nargin < 4, reset = false; end
-f  = stimgen.calibration.Engine.cal_fig_('calibration');
-ax = subplot(2, 2, [2 4], 'Parent', f);
-if reset, cla(ax); drawnow; return; end
-if isempty(type), return; end
 
-cla(ax);
-hold(ax, 'on');
-switch type
-    case 'tone'
-        if ~isempty(tableData)
-            validIdx = ~isnan(tableData.spl_db);
-            x = tableData.x(validIdx) ./ 1000;
-            y = tableData.spl_db(validIdx);
-            plot(ax, x, y, 'x-r');
-            xlabel(ax, 'frequency (kHz)');
-        end
-    case 'click'
-        if ~isempty(tableData)
-            validIdx = ~isnan(tableData.spl_db);
-            x = tableData.x(validIdx) .* 1e6;
-            y = tableData.spl_db(validIdx);
-            plot(ax, x, y, 'o-b');
-            xlabel(ax, 'duration (μs)');
-        end
-    case 'swept_sine'
-        if ~isempty(tableData)
-            validIdx = ~isnan(tableData.spl_db);
-            x = tableData.x(validIdx) ./ 1000;
-            y = tableData.spl_db(validIdx);
-            loglog(ax, x, y, '^-g');
-            xlabel(ax, 'frequency (kHz)');
-        end
+mons = obj.live_monitors_();
+if isempty(mons)
+    mons = {stimgen.calibration.LiveMonitor(obj)};
 end
-ylabel(ax, 'dB SPL');
-grid(ax, 'on');
-hold(ax, 'off');
+for k = 1:numel(mons)
+    if reset
+        mons{k}.reset();
+    else
+        mons{k}.show_calibration(obj);
+    end
+end
 end
