@@ -47,6 +47,15 @@ math and owns `.esgc` save/load. `stimgen.StimCalibration` is a thin GUI-state w
 delegates every property to an Engine; it exists so `StimType` sees stable property names.
 `stimgen.calibration.CalibrationGui` is the interactive front end.
 
+The engine never draws. Gated by `ShowLivePlots`, it broadcasts a `LiveUpdate` event carrying a
+`stimgen.calibration.LiveUpdate` payload for every measurement; `stimgen.calibration.LiveMonitor`
+renders that stream, either into its own window or into axes a host GUI supplies (which is how
+`StimCalibration` embeds it). A listener that throws is logged and skipped — `notify` propagates
+listener errors to its caller, and every `calibrate_*` treats an error as an aborted run and
+discards the partial data, so an unguarded broadcast would let a plotting bug destroy a sweep.
+`Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset` remain only as deprecated
+shims that forward to an attached monitor.
+
 ### The two abstract seams — do not break these
 
 `stimgen` never references a host-application type. All hardware coupling goes through:
