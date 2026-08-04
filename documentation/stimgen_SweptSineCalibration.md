@@ -124,16 +124,48 @@ which is exactly what `calibrate_tones` measures directly. Feeding $m(f)$ throug
 `compute_spl_voltage_` puts the swept-sine and tone LUTs on one scale — they agree to
 within 0.01 dB on a synthetic system of known response.
 
-Two implementation details matter:
+Three implementation details matter:
 
 - **Kirkeby regularization.** $H = Y\overline{X} / (|X|^2 + \lambda\,\overline{|X|^2})$ with
   $\lambda = 10^{-6}$. A plain $Y/X$ diverges outside the swept band where $|X| \to 0$.
 - **1/12-octave power smoothing** of $|H|$. Single-bin estimates are unbiased but noisy;
   the band average costs no accuracy on a smooth response and cuts measurement-noise error
   roughly tenfold at 20 dB SNR.
+- **The excitation sweeps wider than the LUT reports** — a sixth of an octave past each end
+  of the requested frequency list, as far as $0.95 f_s/2$ allows. See below.
 
-Analysis frequencies outside the swept band carry no excitation energy and are dropped with
-a log message rather than being filled with noise-floor readings.
+Analysis frequencies above $0.95 f_s/2$ cannot be measured at the sample rate and are dropped
+with a log message rather than being filled with noise-floor readings.
+
+#### The band-edge lift, and why the sweep is wider than the LUT
+
+A chirp's spectrum does not stop at $f_2$; it rolls off over a transition region roughly
+$\sqrt{df/dt}$ wide, and the regularized deconvolution's noise gain $|X|/(|X|^2+\lambda)$
+*peaks* on that shoulder — up to $1/(2\sqrt{\lambda})$, some 40 dB above its in-band value.
+A power average is the one statistic that cannot ignore an outlier that large.
+
+This bites hardest at the topmost calibration point. A 1/12-octave band centred on $f_2$
+draws **half its bins from above $f_2$**, so the reported level there tracks the noise floor
+instead of the transducer. On a simulated system of known response, the top point read
++0.5 dB high at 40 dB SNR, +3.0 dB at 30 dB, and +6.1 dB at 25 dB, while every other point
+stayed within 0.1 dB — a lift confined to the last point but drawn as a rising segment from
+the second-to-last, which is what makes it look like a wideband high-frequency error when
+plotted against the tone LUT.
+
+Two guards, in order of preference:
+
+1. `calibrate_swept_sine` sweeps 1/6 octave past both ends of the reported band, so every
+   reported point sits in the chirp's flat interior. This costs a few percent of sweep time
+   and is the only one of the two that puts real excitation energy where it was missing.
+2. `sweep_transfer_rms_` confines each average to the swept band, then drops any bin more
+   than 12 dB below the strongest excitation *within that same averaging band*. The test is
+   local because a log sweep's own spectrum tilts ~3 dB/octave, so no global threshold
+   separates the roll-off shoulder from the far end of a wide sweep. This carries the case
+   where the sample rate leaves no headroom for the margin — a request topping out at
+   $0.95 f_s/2$ — which is also logged as a warning.
+
+With both in place the top point tracks the rest of the band to within 0.1 dB down to
+25 dB SNR.
 
 ### Distortion separation (not implemented)
 

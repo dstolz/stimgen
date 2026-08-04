@@ -11,7 +11,6 @@ function set_configuration(obj, options)
 %   NormativeValue     - (1,1) double, > 0
 %   ExcitationVoltage  - (1,1) double, > 0
 %   ShowLivePlots      - (1,1) logical
-%   OnsetIgnoreDuration - (1,1) double, >= 0 (ms)
 arguments
     obj
     options.MicSensitivity     (1,1) double {mustBePositive,mustBeFinite} = obj.MicSensitivity
@@ -20,7 +19,6 @@ arguments
     options.NormativeValue     (1,1) double {mustBePositive,mustBeFinite} = obj.NormativeValue
     options.ExcitationVoltage  (1,1) double {mustBePositive} = obj.ExcitationVoltage
     options.ShowLivePlots      (1,1) logical = obj.ShowLivePlots
-    options.OnsetIgnoreDuration (1,1) double {mustBeNonnegative,mustBeFinite} = obj.OnsetIgnoreDuration
 end
 
 obj.MicSensitivity    = options.MicSensitivity;
@@ -29,5 +27,4 @@ obj.ReferenceFrequency = options.ReferenceFrequency;
 obj.NormativeValue    = options.NormativeValue;
 obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.ShowLivePlots     = options.ShowLivePlots;
-obj.OnsetIgnoreDuration = options.OnsetIgnoreDuration;
 end

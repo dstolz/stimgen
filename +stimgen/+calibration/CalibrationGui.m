@@ -44,6 +44,10 @@ classdef CalibrationGui < handle
         Grid
         Host                    % stimgen.HardwareHost | []
 
+        % File menu
+        RecentProtocolsMenu
+        RecentCalibrationsMenu
+
         % Controls
         RefLevelField
         RefFreqField
@@ -51,7 +55,7 @@ classdef CalibrationGui < handle
         NormativeField
         ExcitationField
         ShowLivePlotsCheck
-        OnsetIgnoreField
+        TransferLogXCheck
         StatusLabel
 
         % Buttons
@@ -171,6 +175,8 @@ classdef CalibrationGui < handle
             fileMenu = uimenu(obj.Figure, Text='File');
             uimenu(fileMenu, Text='Initialize Runtime From Protocol...', ...
                 MenuSelectedFcn=@(~,~) obj.on_initialize_runtime_());
+            obj.RecentProtocolsMenu = uimenu(fileMenu, Text='Recent Protocols');
+            obj.refresh_recent_protocols_menu_();
             uimenu(fileMenu, Text='Attach Adapter', ...
                 MenuSelectedFcn=@(~,~) obj.on_attach_adapter_());
             uimenu(fileMenu, Text='Disconnect Runtime/Adapter', ...
@@ -180,6 +186,8 @@ classdef CalibrationGui < handle
                 MenuSelectedFcn=@(~,~) obj.on_load_());
             uimenu(fileMenu, Text='Save .esgc', ...
                 MenuSelectedFcn=@(~,~) obj.on_save_());
+            obj.RecentCalibrationsMenu = uimenu(fileMenu, Text='Recent Calibrations');
+            obj.refresh_recent_calibrations_menu_();
 
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start', ...
@@ -191,8 +199,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [16 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 16, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [15 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -248,43 +256,41 @@ classdef CalibrationGui < handle
             obj.ShowLivePlotsCheck.Layout.Row = 6;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
 
-            onsetIgnoreLabel = uilabel(g, Text='Onset Ignore (ms)', HorizontalAlignment='right');
-            onsetIgnoreLabel.Layout.Row = 7;
-            onsetIgnoreLabel.Layout.Column = 1;
-            obj.OnsetIgnoreField = uieditfield(g, 'numeric');
-            obj.OnsetIgnoreField.Layout.Row = 7;
-            obj.OnsetIgnoreField.Layout.Column = 2;
-            obj.OnsetIgnoreField.Limits = [0, 1000];
-            obj.OnsetIgnoreField.ValueDisplayFormat = '%.1f';
-            obj.OnsetIgnoreField.Tooltip = stimgen.util.tooltip('CalibrationGui', 'OnsetIgnoreField');
+            transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
+            transferLogXLabel.Layout.Row = 7;
+            transferLogXLabel.Layout.Column = 1;
+            obj.TransferLogXCheck = uicheckbox(g, Text='', Value=true, ...
+                ValueChangedFcn=@(~,~) obj.refresh_transfer_plot_());
+            obj.TransferLogXCheck.Layout.Row = 7;
+            obj.TransferLogXCheck.Layout.Column = 2;
 
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 9;
+            obj.BtnReference.Layout.Row = 8;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 10;
+            obj.BtnTones.Layout.Row = 9;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 11;
+            obj.BtnClicks.Layout.Row = 10;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 12;
+            obj.BtnSweptSine.Layout.Row = 11;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 13;
+            obj.BtnFilter.Layout.Row = 12;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
@@ -292,12 +298,12 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 14;
+            obj.BtnStop.Layout.Row = 13;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 15;
+            obj.StatusLabel.Layout.Row = 14;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -451,21 +457,40 @@ classdef CalibrationGui < handle
         end
 
         function on_save_(obj)
-            obj.with_busy_state_(@() obj.run_save_(), 'Saving calibration file...');
+            obj.with_busy_state_(@() obj.run_save_(''), 'Saving calibration file...');
         end
 
-        function run_save_(obj)
-            obj.Engine.save();
+        function run_save_(obj, ffn)
+            arguments
+                obj
+                ffn (1,:) char = ''
+            end
+            ffn = obj.Engine.save(ffn);
+            if isempty(ffn)
+                obj.set_status_('Save cancelled.', false);
+                return
+            end
+            obj.add_recent_calibration_(ffn);
             obj.set_status_('Calibration saved.', false);
         end
 
         function on_load_(obj)
-            obj.with_busy_state_(@() obj.run_load_(), 'Loading calibration file...');
+            obj.with_busy_state_(@() obj.run_load_(''), 'Loading calibration file...');
         end
 
-        function run_load_(obj)
+        function run_load_(obj, ffn)
+            arguments
+                obj
+                ffn (1,:) char = ''
+            end
+            if ~isempty(ffn) && ~isfile(ffn)
+                obj.remove_recent_calibration_(ffn);
+                obj.set_status_(sprintf('Recent calibration not found: %s', ffn), true);
+                return
+            end
+
             prevAdapter = obj.Engine.Adapter;
-            eng = stimgen.calibration.Engine.load();
+            [eng, ffn] = stimgen.calibration.Engine.load(ffn);
             if isempty(eng)
                 obj.set_status_('Load cancelled.', false);
                 return
@@ -477,6 +502,7 @@ classdef CalibrationGui < handle
             obj.sync_controls_();
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
+            obj.add_recent_calibration_(ffn);
             obj.set_status_('Calibration loaded.', false);
         end
 
@@ -490,27 +516,39 @@ classdef CalibrationGui < handle
         end
 
         function on_initialize_runtime_(obj)
-            obj.with_busy_state_(@() obj.run_initialize_runtime_(), 'Initializing calibration runtime...');
+            obj.with_busy_state_(@() obj.run_initialize_runtime_(''), 'Initializing calibration runtime...');
         end
 
-        function run_initialize_runtime_(obj)
+        function run_initialize_runtime_(obj, protocolPath)
+            arguments
+                obj
+                protocolPath (1,:) char = ''
+            end
             obj.assert_host_();
-            [fn, pn] = uigetfile( ...
-                {'*.eprot;*.prot;*.json', 'Protocol files (*.eprot, *.prot, *.json)'}, ...
-                'Load Protocol For Calibration');
-            if isequal(fn, 0)
-                obj.set_status_('Runtime initialization cancelled.', false);
+
+            if isempty(protocolPath)
+                [fn, pn] = uigetfile( ...
+                    {'*.eprot;*.prot;*.json', 'Protocol files (*.eprot, *.prot, *.json)'}, ...
+                    'Load Protocol For Calibration');
+                if isequal(fn, 0)
+                    obj.set_status_('Runtime initialization cancelled.', false);
+                    return
+                end
+                protocolPath = fullfile(pn, fn);
+            elseif ~isfile(protocolPath)
+                obj.remove_recent_protocol_(protocolPath);
+                obj.set_status_(sprintf('Recent protocol not found: %s', protocolPath), true);
                 return
             end
-
-            protocolPath = fullfile(pn, fn);
 
             obj.Host.loadProtocol(protocolPath);
             obj.Host.connect();
             obj.Host.setMode("Preview");
 
             obj.set_adapter(obj.Host.calibrationAdapter());
-            obj.set_status_(sprintf('Runtime initialized from protocol: %s', fn), false);
+            obj.add_recent_protocol_(protocolPath);
+            [~, fn, ext] = fileparts(protocolPath);
+            obj.set_status_(sprintf('Runtime initialized from protocol: %s%s', fn, ext), false);
         end
 
         function on_disconnect_runtime_(obj)
@@ -531,6 +569,100 @@ classdef CalibrationGui < handle
             obj.Engine.set_adapter([]);
             obj.update_runtime_state_();
             obj.set_status_('Calibration runtime disconnected.', false);
+        end
+
+        function refresh_recent_protocols_menu_(obj)
+            obj.refresh_recent_menu_(obj.RecentProtocolsMenu, 'RecentProtocols', @obj.open_recent_protocol_);
+        end
+
+        function refresh_recent_calibrations_menu_(obj)
+            obj.refresh_recent_menu_(obj.RecentCalibrationsMenu, 'RecentCalibrations', @obj.open_recent_calibration_);
+        end
+
+        function refresh_recent_menu_(obj, menu, prefName, openFcn)
+            % Rebuild a Recent-files submenu (most recent first) from stored preferences.
+            if isempty(menu) || ~isvalid(menu)
+                return
+            end
+            delete(allchild(menu));
+
+            paths = obj.get_recent_paths_(prefName);
+            if isempty(paths)
+                uimenu(menu, Text='(None)', Enable='off');
+                return
+            end
+
+            for idx = 1:numel(paths)
+                filePath = paths{idx};
+                [~, fn, ext] = fileparts(filePath);
+                uimenu(menu, ...
+                    Text=sprintf('%d. %s%s | %s', idx, fn, ext, filePath), ...
+                    MenuSelectedFcn=@(~,~) openFcn(filePath));
+            end
+        end
+
+        function open_recent_protocol_(obj, filePath)
+            % Re-run Initialize Runtime From Protocol with a remembered path.
+            obj.with_busy_state_(@() obj.run_initialize_runtime_(filePath), 'Initializing calibration runtime...');
+        end
+
+        function open_recent_calibration_(obj, filePath)
+            % Re-run Load .esgc with a remembered path.
+            obj.with_busy_state_(@() obj.run_load_(filePath), 'Loading calibration file...');
+        end
+
+        function add_recent_protocol_(obj, filePath)
+            obj.add_recent_path_('RecentProtocols', filePath);
+            obj.refresh_recent_protocols_menu_();
+        end
+
+        function remove_recent_protocol_(obj, filePath)
+            obj.remove_recent_path_('RecentProtocols', filePath);
+            obj.refresh_recent_protocols_menu_();
+        end
+
+        function add_recent_calibration_(obj, filePath)
+            obj.add_recent_path_('RecentCalibrations', filePath);
+            obj.refresh_recent_calibrations_menu_();
+        end
+
+        function remove_recent_calibration_(obj, filePath)
+            obj.remove_recent_path_('RecentCalibrations', filePath);
+            obj.refresh_recent_calibrations_menu_();
+        end
+
+        function paths = get_recent_paths_(~, prefName)
+            % Recent-file lists are cell arrays and so are kept out of
+            % get_pref_/set_pref_, which coerce every stored value to char.
+            groupName = 'StimCalibrationGui';
+            if ispref(groupName, prefName)
+                paths = getpref(groupName, prefName);
+            else
+                paths = {};
+            end
+            if ischar(paths)
+                paths = {paths};
+            end
+            paths = paths(:).';
+            paths = paths(~cellfun(@isempty, paths));
+        end
+
+        function add_recent_path_(obj, prefName, filePath)
+            filePath = strtrim(char(filePath));
+            if isempty(filePath)
+                return
+            end
+            paths = obj.get_recent_paths_(prefName);
+            paths(strcmpi(paths, filePath)) = [];
+            paths = [{filePath}, paths];
+            paths = paths(1:min(9, numel(paths)));
+            setpref('StimCalibrationGui', prefName, paths);
+        end
+
+        function remove_recent_path_(obj, prefName, filePath)
+            paths = obj.get_recent_paths_(prefName);
+            paths(strcmpi(paths, char(filePath))) = [];
+            setpref('StimCalibrationGui', prefName, paths);
         end
 
         function assert_host_(obj)
@@ -565,8 +697,7 @@ classdef CalibrationGui < handle
                     MicSensitivity=obj.MicSensField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
-                    ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
-                    OnsetIgnoreDuration=obj.OnsetIgnoreField.Value);
+                    ShowLivePlots=obj.ShowLivePlotsCheck.Value);
                 ok = true;
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
@@ -581,7 +712,6 @@ classdef CalibrationGui < handle
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
-            obj.OnsetIgnoreField.Value = obj.Engine.OnsetIgnoreDuration;
         end
 
         function refresh_all_plots_(obj)
@@ -630,7 +760,7 @@ classdef CalibrationGui < handle
                 C = obj.Engine.CalibrationData;
 
                 if isfield(C, 'tone') && ~isempty(C.tone)
-                    semilogx(obj.AxTransfer, C.tone.frequency, C.tone.spl_db, 'o-b', ...
+                    plot(obj.AxTransfer, C.tone.frequency, C.tone.spl_db, 'o-b', ...
                         DisplayName='Tone SPL');
                     hasData = true;
                 end
@@ -642,10 +772,16 @@ classdef CalibrationGui < handle
                 end
 
                 if isfield(C, 'swept_sine') && ~isempty(C.swept_sine)
-                    semilogx(obj.AxTransfer, C.swept_sine.frequency, C.swept_sine.spl_db, '^-g', ...
+                    plot(obj.AxTransfer, C.swept_sine.frequency, C.swept_sine.spl_db, '^-g', ...
                         DisplayName='Swept Sine SPL');
                     hasData = true;
                 end
+            end
+
+            if obj.TransferLogXCheck.Value
+                obj.AxTransfer.XScale = 'log';
+            else
+                obj.AxTransfer.XScale = 'linear';
             end
 
             if hasData

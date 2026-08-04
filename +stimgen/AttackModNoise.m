@@ -30,14 +30,12 @@ classdef AttackModNoise < stimgen.Noise
     methods
                 
         function obj = AttackModNoise(varargin)
-            obj = obj@stimgen.Noise(varargin{:});
-            
-            obj.DisplayName = 'Attack Modulated Noise';
-
-            obj.UserProperties = ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","Z","EnvelopeOnly","ApplyViemeisterCorrection"];
-            
-            % override some default StimType property values
-            obj.Duration = 1;
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj = obj@stimgen.Noise( ...
+                'DisplayName', 'Attack Modulated Noise', ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","Z","EnvelopeOnly","ApplyViemeisterCorrection"], ...
+                'Duration', 1, ...   % override a default StimType value
+                varargin{:});
         end
         
         

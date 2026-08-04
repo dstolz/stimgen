@@ -19,6 +19,41 @@ Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `Cl
 
 Subclasses implement `update_signal` and set class constants for calibration and normalization behavior.
 
+## Construction
+
+Every subclass constructor takes `Name,Value` pairs and assigns them to public properties:
+
+```matlab
+t = stimgen.Tone('Fs', 48000, 'Frequency', 4000, 'Duration', 0.05);
+n = stimgen.Noise('HighPass', 500, 'LowPass', 16000, 'Calibration', cal);
+```
+
+Rules the base constructor enforces, all of them fail-fast:
+
+- Arguments come in pairs. An odd count raises `stimgen:StimType:badConstructorArgs`, so `stimgen.Tone('Fs')` cannot quietly do nothing.
+- Names are matched **exactly**. `'fs'` does not find `Fs`.
+- Only publicly settable properties can be assigned. Unknown names, protected properties (`Signal`), and constants (`CalibrationType`) all raise `stimgen:StimType:unknownProperty`.
+- There is no positional form. `stimgen.FMtone(48000, cal)` raises rather than being ignored.
+
+Values are assigned before listeners are attached, so construction does not regenerate the waveform once per argument. Call `update_signal` when you want the signal.
+
+### Subclass defaults must be prepended, not assigned afterwards
+
+A subclass that wants its own defaults passes them to the superclass constructor **ahead of** `varargin`, so a caller's value is applied last and wins:
+
+```matlab
+function obj = ClickTrain(varargin)
+    obj = obj@stimgen.StimType( ...
+        'DisplayName', 'Click Train', ...
+        'UserProperties', [...], ...
+        'Duration', 1, ...
+        'ApplyWindow', false, ...
+        varargin{:});
+end
+```
+
+Assigning those defaults *after* the superclass call — the older pattern — silently overwrites whatever the caller asked for. That is a quiet failure with no error to follow, so it is worth checking whenever a new subclass is added.
+
 ## Signal Update Lifecycle
 
 The base class listens to observable property changes and recomputes waveform data.
@@ -230,6 +265,14 @@ between the base class's `Duration` (order 10) and `WindowDuration`
 - `list` (discover available stimulus classes)
 
 ## Minimal Example
+
+```matlab
+t = stimgen.Tone('Frequency', 4000, 'Duration', 0.1, 'SoundLevel', 60);
+t.update_signal();
+t.plot();
+```
+
+or equivalently, assigning after construction:
 
 ```matlab
 t = stimgen.Tone;

@@ -133,8 +133,7 @@ eng.set_configuration( ...
     ReferenceFrequency=1000, ...% Hz (default 1000)
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
-    ShowLivePlots=true, ...     % show plots during sweeps (default false)
-    OnsetIgnoreDuration=10);    % ms of leading response to skip before RMS/peak/spectral measurement (default 10)
+    ShowLivePlots=true);        % show plots during sweeps (default false)
 ```
 
 ### Step 4 — Measure The Microphone Reference
@@ -182,10 +181,11 @@ lobes are wide.
 | `GapDuration` | 0.05 s | Silence before, between, and after bursts. Also bounds the delay search — raise it if the device's round-trip latency exceeds it |
 | `MaxSequenceDuration` | 2 s | Longest single train. Sweeps longer than this are split into consecutive trains, which keeps the excitation inside a fixed hardware output buffer such as an RPvds serial buffer |
 
-`OnsetIgnoreDuration` applies here too, guarding *both* edges of every burst
-against alignment error and transducer settling that outlasts the electrical
-ramp. If ramps and guards would leave too little to estimate a level from, the
-whole burst is measured instead.
+Each burst's steady-state span excludes only its own gating ramp; if that
+would leave too little of the burst to estimate a level from, the whole
+burst is measured instead. The spectral estimate at the burst's own
+frequency is inherently robust to onset transients, so no separate guard
+window is needed.
 
 Two error paths are specific to this arrangement:
 
@@ -251,7 +251,6 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `ShowLivePlots` | false | Show waveform and spectrum plots during sweeps |
-| `OnsetIgnoreDuration` | 10 ms | Leading response window skipped before computing RMS/peak/spectral measurements, to exclude acoustic propagation delay and transducer/mic onset transient |
 
 These are all `SetAccess = protected` — they are readable from anywhere but can only
 be written through `eng.set_configuration(Name=value)`, which is what runs their
@@ -318,7 +317,7 @@ Filter length is therefore a free choice acoustically, but not a free choice in 
 Three notes on behaviour:
 
 - The LUT is resampled onto a dense grid before fitting, rather than being handed to `designfilt` point by point as in earlier versions. Filters designed now differ slightly from filters designed before, most visibly where the measured points are sparse.
-- With `DesignMethod="ls"` the frequency specification has to have an even number of points (`firls` reads it as band-edge pairs); one interior grid point is dropped automatically when needed.
+- `DesignMethod="ls"` solves a system that is rank deficient by exactly one for every Type I arbitrary-magnitude FIR — on a four-point specification as readily as on a thousand-point one. `designfilt` keeps that warning to itself (it reaches `lastwarn` but is never displayed), and the minimum-norm result it returns is the intended design, so nothing needs doing about it.
 - Equalized stimuli generated before this change were delayed by `filterGrpDelay` samples relative to their gate, and lost the last `filterGrpDelay` samples of their content, because the alignment step removed the wrong window. Anything comparing old and new recordings of the same protocol should expect that shift — at the previous auto filter length it was ~24 samples (0.25 ms at 97.6 kHz).
 
 ---

@@ -30,12 +30,12 @@ classdef AMnoise < stimgen.Noise
     methods
                 
         function obj = AMnoise(varargin)
-            obj = obj@stimgen.Noise(varargin{:});
-
-            obj.DisplayName = 'AM Noise';
-            obj.UserProperties = ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","OnsetPhase","EnvelopeOnly","ApplyViemeisterCorrection"]; 
-                        
-            obj.Duration = 1;
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj = obj@stimgen.Noise( ...
+                'DisplayName', 'AM Noise', ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","OnsetPhase","EnvelopeOnly","ApplyViemeisterCorrection"], ...
+                'Duration', 1, ...   % override a default StimType value
+                varargin{:});
         end
         
         

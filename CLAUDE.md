@@ -82,6 +82,18 @@ Inside the body, read vectorized properties through `obj.selected_value("Frequen
 `obj.Frequency` directly, which may be a vector. `Fs`, `ApplyCalibration`, and `ApplyWindow` are
 non-vectorizable (`is_non_vectorizable_property_`).
 
+**Subclass defaults are prepended to the superclass constructor, never assigned after it.**
+`StimType`'s constructor assigns `Name,Value` pairs in order, so whatever comes last wins. A
+subclass therefore passes its own defaults ahead of `varargin`:
+
+```matlab
+obj = obj@stimgen.StimType('DisplayName', 'Click Train', 'Duration', 1, varargin{:});
+```
+
+Assigning `obj.Duration = 1` after the super call instead would silently overwrite a caller's
+`stimgen.ClickTrain('Duration', 0.3)`. Names are matched exactly and only publicly settable
+properties are accepted; anything else raises rather than being dropped.
+
 **Signal pipeline order is normalize → calibrate → gate**, uniformly across all subclasses.
 Calibration must come before gating: `apply_calibration` renormalizes before scaling to the LUT
 voltage, which would undo an earlier ramp.

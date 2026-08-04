@@ -33,7 +33,7 @@ end
 % Scalars go through set_configuration so that their validators run.
 cfg = {};
 scalarFields = ["MicSensitivity", "ReferenceLevel", "ReferenceFrequency", ...
-                "NormativeValue", "ShowLivePlots", "OnsetIgnoreDuration"];
+                "NormativeValue", "ShowLivePlots"];
 for k = 1:numel(scalarFields)
     f = scalarFields(k);
     if isfield(s, f) && ~isempty(s.(f))

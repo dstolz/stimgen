@@ -60,7 +60,6 @@ classdef Engine < handle
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         ShowLivePlots       (1,1) logical                                   = false
-        OnsetIgnoreDuration (1,1) double {mustBeNonnegative,mustBeFinite}   = 10    % ms; leading response window skipped before RMS/peak/spectral measurement (propagation delay + transducer/mic onset transient)
         CalibrationTimestamp (1,1) datetime = datetime("")
     end
 
@@ -113,7 +112,7 @@ classdef Engine < handle
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
         design_filter(obj, source, options) % Design equalization filter from a frequency LUT.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
-        save(obj, ffn) % Save calibration to .esgc file.
+        ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
         restore(obj, s) % Restore engine state from a serialized struct.
         cancel(obj) % Request cancellation of an in-progress calibration run.
 
@@ -166,14 +165,15 @@ classdef Engine < handle
         m = estimate_impulse_metrics_(obj, h, fs, loc, band, searchLast) % Reflections, decay, clarity.
         m = estimate_sweep_harmonics_(obj, h, fs, loc, sweep, geom) % Time-gated harmonic distortion.
         g = harmonic_geometry_(obj, sweep, maxOrder) % Where the harmonic products wrap, and where the linear response ends.
+        y = zero_phase_bandpass_(obj, x, filt) % filtfilt padded to the filter's own settling time.
         r = estimate_reflections_(obj, h, fs, loc, maxCount) % Discrete arrivals after the direct sound.
         d = decay_times_(obj, h, fs, noisePower) % Schroeder EDC, EDT/T20/T30.
         out = smooth_to_log_grid_(obj, fax, vals, grid, fracOct, mode) % Fractional-octave average onto a log grid.
         stats = repeatability_stats_(obj, values) % Summarize repeatability statistics.
         m = estimate_headroom_(obj, excitation, response) % Estimate clipping and headroom margins.
         out = aggregate_headroom_(obj, metricsArray) % Aggregate headroom metrics over repeats.
-        m = sweep_transfer_rms_(obj, x, y, freqs, fs) % Equivalent steady-tone RMS from a swept-sine pair.
-        y = trim_response_(obj, y, trimOnset) % Trim response padding and, optionally, onset window.
+        m = sweep_transfer_rms_(obj, x, y, freqs, fs, band) % Equivalent steady-tone RMS from a swept-sine pair.
+        y = trim_response_(obj, y) % Trim trailing response buffer padding.
         cd = commit_cal_data_(obj) % Build calibration output struct.
         reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
         throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.
@@ -188,7 +188,7 @@ classdef Engine < handle
     end
 
     methods (Static)
-        eng = load(ffn) % Load engine calibration from .esgc file.
+        [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
         r = spectral_rms(x, freq, fs) % Estimate RMS amplitude at a frequency.
     end
 

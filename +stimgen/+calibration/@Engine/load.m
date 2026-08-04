@@ -1,6 +1,7 @@
-function eng = load(ffn)
+function [eng, ffn] = load(ffn)
 % eng = stimgen.calibration.Engine.load()
 % eng = stimgen.calibration.Engine.load(ffn)
+% [eng, ffn] = stimgen.calibration.Engine.load(...)
 %
 % Load a .esgc calibration file and return an Engine with no
 % adapter attached. Suitable for offline compute_adjusted_voltage
@@ -10,7 +11,8 @@ function eng = load(ffn)
 %   ffn - full file path (char, optional); prompts if omitted
 %
 % Returns:
-%   eng - stimgen.calibration.Engine
+%   eng - stimgen.calibration.Engine, or [] if the load dialog was cancelled
+%   ffn - resolved file path; empty if the load dialog was cancelled
 arguments
     ffn (1,:) char = ''
 end

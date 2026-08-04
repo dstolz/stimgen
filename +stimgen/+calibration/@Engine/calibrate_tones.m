@@ -83,10 +83,6 @@ toneHeadroomAll = repmat(struct( ...
     'responseFlatTopFraction', nan, ...
     'responseClippingLikely', false), repeatCount, n);
 
-% Alignment error and the transducer settling that outlasts the electrical
-% ramp both eat into the steady-state middle; OnsetIgnoreDuration is already
-% the engine's figure for exactly that, so it guards both burst edges.
-guardN = round(obj.OnsetIgnoreDuration * 1e-3 * fs);
 maxLag = max(round(gapDur * fs), 1);
 
 if obj.ShowLivePlots
@@ -128,7 +124,7 @@ try
                 s = schedule(k);
 
                 [exBurst, rsBurst] = slice_(x, response, s.onset, 0, s.nsamples, lag);
-                [aRel, bRel] = steady_span_(s, guardN, fs);
+                [aRel, bRel] = steady_span_(s, fs);
                 [~, rsSteady] = slice_(x, response, s.onset, aRel, bRel, lag);
 
                 toneMeasAll(rep, i) = stimgen.calibration.Engine.spectral_rms( ...
@@ -215,12 +211,12 @@ stimgen.util.vprintf(1, 'Tone calibration complete. %d points over %g-%g Hz in %
 end
 
 % ------------------------------------------------------------------------ %
-function [aRel, bRel] = steady_span_(s, guardN, fs)
+function [aRel, bRel] = steady_span_(s, fs)
 % Half-open [aRel, bRel) sample offsets of the burst's steady-state middle,
-% relative to its onset. Falls back to the whole burst when the ramps and
-% guards leave too little to estimate a level from.
-aRel = s.rampSamples + guardN;
-bRel = s.nsamples - s.rampSamples - guardN;
+% relative to its onset. Falls back to the whole burst when the ramps leave
+% too little to estimate a level from.
+aRel = s.rampSamples;
+bRel = s.nsamples - s.rampSamples;
 
 minLen = max(32, ceil(4 * fs / s.frequency));
 if bRel - aRel < minLen

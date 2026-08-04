@@ -80,8 +80,24 @@ if obj.IsCalibrated
 end
 
 if isempty(lutName)
+    % Name what is on hand: the GUI remembers the source across sessions, so
+    % an explicit "swept_sine" against a tone-only calibration would
+    % otherwise fail the same inscrutable way every time.
+    known = ["tone", "swept_sine"];
+    has = false(size(known));
+    for k = 1:numel(known)
+        has(k) = isfield(obj.CalibrationData, known(k)) && ...
+                 ~isempty(obj.CalibrationData.(known(k)));
+    end
+    available = known(has);
+
+    if isempty(available)
+        error('stimgen:calibration:Engine:noToneData', ...
+            'Tone or swept sine calibration must be completed before designing the filter.');
+    end
     error('stimgen:calibration:Engine:noToneData', ...
-        'Tone or swept sine calibration must be completed before designing the filter.');
+        ['This calibration has no %s LUT to design from. Available: %s. ' ...
+         'Choose that source, or use "auto".'], source, strjoin(available, ', '));
 end
 stimgen.util.vprintf(1, 'Designing equalization filter from %s calibration...', lutName);
 
@@ -214,13 +230,12 @@ if fAll(end) < nyq
     aAll = [aAll; aAll(end)];
 end
 
-if options.DesignMethod == "ls" && mod(numel(fAll), 2) == 1
-    % firls reads the frequency vector as band edge pairs, so it needs an even
-    % count. Drop an interior point rather than either endpoint.
-    fAll(end-1) = [];
-    aAll(end-1) = [];
-end
-
+% Frequencies must be strictly increasing for both methods: designfilt
+% rejects the duplicated band edges a direct firls call would accept, and
+% builds the piecewise-linear target from consecutive points itself. Its "ls"
+% solve is rank deficient by one for every Type I arbmagfir - on a four-point
+% specification as readily as on a thousand-point one - and designfilt keeps
+% that warning to itself, leaving the minimum-norm result this design wants.
 filt = designfilt('arbmagfir', ...
     'FilterOrder',  nOrd, ...
     'Frequencies',  fAll, ...
@@ -249,17 +264,17 @@ obj.CalibrationData.filterDesign   = struct( ...
     'designedOn',       datetime('now'));
 
 stimgen.util.vprintf(1, ...
-    ['Filter designed from %s LUT: %d taps (%s), %g-%g Hz, ' ...
+    ['Filter designed from %s LUT: %d taps (%s), %g-%g Hz at Fs = %.4f Hz, ' ...
      'correction span %.1f dB, group delay %d samples'], ...
-    lutName, nCoef, options.DesignMethod, band(1), band(2), correctionDb, gd);
+    lutName, nCoef, options.DesignMethod, band(1), band(2), fs, correctionDb, gd);
 
 if options.ShowResponse
-    show_response_(filt, lutName, nCoef, options.FrequencyScale);
+    show_response_(filt, lutName, nCoef, options.FrequencyScale, fs, band);
 end
 end
 
 % ------------------------------------------------------------------------ %
-function show_response_(filt, lutName, nCoef, freqScale)
+function show_response_(filt, lutName, nCoef, freqScale, fs, band)
 % Raise the new design in fvtool, replacing the window left by the previous
 % design so repeated tuning passes do not litter the desktop.
 %
@@ -272,11 +287,27 @@ try
         delete(hFv);
     end
     hFv = fvtool(filt);
-    set(hFv, 'Name', sprintf('stimgen Equalizer - %s LUT, %d taps', lutName, nCoef), ...
-             'NumberTitle', 'off');
+
+    % filt already carries SampleRate, so fvtool inherits the hardware rate.
+    % Set it anyway: the frequency axis is where the operator confirms the
+    % filter was designed for the rate the equipment actually runs at.
+    set(hFv, 'Fs', fs);
+
     if freqScale == "log"
+        % A log axis over fvtool's default [0, Fs/2) grid starts at
+        % Fs/2/NumberofPoints - a few Hz, decades below the lowest measured
+        % point - so most of the axis shows the flat target held outside the
+        % band rather than the design. Plot the equalized band itself, log
+        % spaced, ending on Nyquist so the axis states the hardware rate.
+        set(hFv, 'FrequencyRange', 'Specify freq. vector');
+        set(hFv, 'FrequencyVector', logspace(log10(band(1)), log10(fs/2), 2048));
         set(hFv, 'FrequencyScale', 'Log');
     end
+
+    % Name last: Fs and FrequencyScale each force a redraw that resets it to
+    % fvtool's own "Figure N: <analysis>" title.
+    set(hFv, 'Name', sprintf('stimgen Equalizer - %s LUT, %d taps, Fs = %.4f Hz', ...
+             lutName, nCoef, fs), 'NumberTitle', 'off');
     figure(hFv);
 catch ME
     % A missing display or a docked-tool failure must not lose the filter.

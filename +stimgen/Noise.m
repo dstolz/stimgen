@@ -24,11 +24,11 @@ classdef Noise < stimgen.StimType
     methods
                 
         function obj = Noise(varargin)
-            obj = obj@stimgen.StimType(varargin{:});
-
-            obj.DisplayName = 'Noise';
-
-            obj.UserProperties = ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass"];
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj = obj@stimgen.StimType( ...
+                'DisplayName', 'Noise', ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass"], ...
+                varargin{:});
         end
         
         function set.digFilter(obj,d)

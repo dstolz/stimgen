@@ -157,7 +157,7 @@ for i = 1:n
         bp = designfilt('bandpassiir', FilterOrder = 8, ...
             HalfPowerFrequency1 = lo(i), HalfPowerFrequency2 = hi(i), ...
             SampleRate = fs);
-        hb = filtfilt(bp, seg);
+        hb = obj.zero_phase_bandpass_(seg, bp);
     catch ME
         stimgen.util.vprintf(2, 'Octave band %.0f Hz skipped: %s', centers(i), ME.message);
         continue

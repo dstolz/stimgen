@@ -124,14 +124,24 @@ CalibrationGui runtime init will not produce a usable adapter when:
 File menu actions:
 
 1. Initialize Runtime From Protocol...
-2. Attach Adapter
-3. Disconnect Runtime/Adapter
-4. Load .esgc
-5. Save .esgc
+2. Recent Protocols (submenu)
+3. Attach Adapter
+4. Disconnect Runtime/Adapter
+5. Load .esgc
+6. Save .esgc
+7. Recent Calibrations (submenu)
 
-A toolbar above the plots mirrors these five actions as icon buttons (built by
-`build_toolbar_`) for one-click access; it does not add any behavior beyond
-the File menu.
+A toolbar above the plots mirrors the five non-submenu actions as icon buttons
+(built by `build_toolbar_`) for one-click access; it does not add any behavior
+beyond the File menu.
+
+Recent Protocols and Recent Calibrations each list up to nine most-recently-used
+paths (newest first), persisted across MATLAB sessions as `StimCalibrationGui`
+preferences (`RecentProtocols` / `RecentCalibrations`). Selecting an entry
+re-runs the corresponding action (Initialize Runtime / Load .esgc) with that
+path directly, skipping the file dialog. Successful Initialize Runtime and
+Load/Save .esgc calls append to the relevant list; selecting an entry whose
+file no longer exists removes it from the list instead of failing silently.
 
 Recommended sequence:
 

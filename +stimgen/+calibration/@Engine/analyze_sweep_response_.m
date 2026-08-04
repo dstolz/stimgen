@@ -44,7 +44,7 @@ band = [sweep.start_freq, sweep.stop_freq];
 % buffer -- roughly 30 dB above the in-band noise on a quiet system. Left in,
 % it flattens the tail of the decay curve and turns every reverberation time
 % into a number set by the regularizer rather than by the room.
-hb = bandlimit_(h, fs, band);
+hb = bandlimit_(obj, h, fs, band);
 
 % The distortion products wrap to the tail of the buffer with the highest
 % order nearest the linear response and H2 last, so the linear window stops
@@ -118,7 +118,7 @@ A = struct( ...
 end
 
 
-function hb = bandlimit_(h, fs, band)
+function hb = bandlimit_(obj, h, fs, band)
 % Restrict an impulse response to the swept band. Falls back to the unfiltered
 % response when the band is too close to DC or Nyquist for a stable design.
 MIN_NORM_FREQ = 5e-4;
@@ -132,7 +132,7 @@ end
 try
     bp = designfilt('bandpassiir', FilterOrder = 8, ...
         HalfPowerFrequency1 = lo, HalfPowerFrequency2 = hi, SampleRate = fs);
-    hb = filtfilt(bp, h);
+    hb = obj.zero_phase_bandpass_(h, bp);
 catch ME
     stimgen.util.vprintf(1, 'Sweep band-limit filter failed (%s); analyzing unfiltered.', ME.message);
     hb = h;

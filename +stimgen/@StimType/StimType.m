@@ -90,11 +90,48 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     methods
 
         function obj = StimType(varargin)
-            % does no property name case matching
-            for i = 1:2:length(varargin)
-                if isfield(obj,varargin{i})
-                    obj.(varargin{i}) = varargin{i+1};
+            % obj = stimgen.StimType(Name, Value, ...)
+            % Assign public properties by name, then attach listeners.
+            %
+            % set() comes from matlab.mixin.SetGet and validates both the
+            % name and its access. The isfield() guard this replaces was
+            % always false for an object, so every constructor argument was
+            % silently discarded and every stimulus came out with defaults.
+            %
+            % Values are assigned before create_listeners, so construction
+            % does not regenerate the signal once per argument. Subclasses
+            % prepend their own defaults to varargin, which is what makes a
+            % caller's value win over a subclass default.
+            if mod(numel(varargin), 2) ~= 0
+                error('stimgen:StimType:badConstructorArgs', ...
+                    ['Constructor arguments must be Name,Value pairs, ' ...
+                     'e.g. stimgen.Tone(''Fs'', 48000, ''Frequency'', 4000).']);
+            end
+
+            % Names are screened before set() runs: set() is called from
+            % inside the class, so on its own it would happily write
+            % protected state such as Signal. Matching is exact - set()
+            % would otherwise accept abbreviated and miscased names.
+            for i = 1:2:numel(varargin)
+                name = varargin{i};
+                if ~(ischar(name) && isrow(name)) && ~(isstring(name) && isscalar(name))
+                    % No argument index here: subclasses prepend their own
+                    % defaults, so the position would not be the caller's.
+                    error('stimgen:StimType:badConstructorArgs', ...
+                        ['Constructor arguments must be Name,Value pairs, ' ...
+                         'but a %s was given where a property name was expected.'], ...
+                        class(name));
                 end
+                p = findprop(obj, char(name));
+                if isempty(p) || ~isequal(p.SetAccess, 'public')
+                    error('stimgen:StimType:unknownProperty', ...
+                        ['"%s" is not a settable property of %s. ' ...
+                         'Property names are matched exactly.'], name, class(obj));
+                end
+            end
+
+            if ~isempty(varargin)
+                set(obj, varargin{:});
             end
 
             obj.create_listeners;

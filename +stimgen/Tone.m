@@ -28,11 +28,11 @@ classdef Tone < stimgen.StimType
     
     methods
         function obj = Tone(varargin)
-            obj = obj@stimgen.StimType(varargin{:});
-
-            obj.DisplayName = 'Tone';
-
-            obj.UserProperties = ["Frequency","SoundLevel","Duration","WindowDuration","ApplyWindow","OnsetPhase","WindowMethod"];
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj = obj@stimgen.StimType( ...
+                'DisplayName', 'Tone', ...
+                'UserProperties', ["Frequency","SoundLevel","Duration","WindowDuration","ApplyWindow","OnsetPhase","WindowMethod"], ...
+                varargin{:});
         end
         
         function update_signal(obj)

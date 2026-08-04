@@ -22,11 +22,12 @@ function calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration)
 %   duration - (1,1) double chirp length in seconds (default: 1)
 %   freqs    - (1,:) double frequency vector in Hz where calibration
 %              is sampled (default: 50-point log sweep from 100 Hz to
-%              min(0.95*Nyquist, 20000) Hz). When supplied, min(freqs) and
-%              max(freqs) also set the excitation chirp's actual sweep
-%              band (clamped to 0.95*Nyquist if the sample rate can't
-%              support the requested top frequency). Points outside the
-%              resulting band carry no excitation energy and are dropped.
+%              min(0.95*Nyquist, 20000) Hz). Points above 0.95*Nyquist are
+%              dropped; the sample rate cannot support them. The excitation
+%              chirp sweeps a sixth of an octave past both ends of whatever
+%              band survives, so every reported point sits inside the sweep
+%              rather than on its roll-off -- see the SWEEP_MARGIN_OCT note
+%              below.
 %   repeatCount - (1,1) double positive integer number of
 %                 chirp captures to average (default: 4)
 %   tailDuration - (1,1) double seconds of silence appended to the chirp so
@@ -40,6 +41,15 @@ arguments
     repeatCount (1,1) double {mustBeInteger,mustBePositive,mustBeFinite} = 4
     tailDuration (1,1) double {mustBeNonnegative,mustBeFinite} = 0.5
 end
+% The excitation sweeps past both ends of the reported band. A chirp's spectrum
+% does not stop at its stop frequency, it rolls off over a transition region
+% (~sqrt(df/dt) wide) and takes the deconvolution's usable SNR down with it, so
+% a point sampled *at* the stop frequency is read half off the cliff. Reporting
+% strictly inside the sweep costs a few percent of sweep time and removes the
+% band-edge lift entirely; sweep_transfer_rms_ guards the case where the sample
+% rate leaves no room for the margin.
+SWEEP_MARGIN_OCT = 1/6;
+
 obj.assert_adapter_();
 obj.reset_cancel_();
 fs = obj.Fs;
@@ -47,42 +57,39 @@ nyquist = fs / 2;
 maxUsable = nyquist * 0.95;
 
 if isempty(freqs)
-    % Default frequency points: log-distributed across a default sweep band.
-    startFreq = 100;
-    stopFreq  = min(maxUsable, 20000);
-    if startFreq >= stopFreq
+    % Default frequency points: log-distributed across a default reported band.
+    lowFreq  = 100;
+    highFreq = min(maxUsable, 20000);
+    if lowFreq >= highFreq
         error('stimgen:calibration:Engine:sampleRateTooLow', ...
-              'Sample rate %g Hz leaves no usable sweep band above %g Hz.', fs, startFreq);
+              'Sample rate %g Hz leaves no usable sweep band above %g Hz.', fs, lowFreq);
     end
-    freqs = startFreq .* 2.^(linspace(0, log2(stopFreq/startFreq), 50));
-else
-    % The requested points define the excitation's actual sweep band, so the
-    % chirp covers what was asked for rather than a fixed 100-20000 Hz band.
-    startFreq = min(freqs);
-    stopFreq  = max(freqs);
-    if stopFreq > maxUsable
-        stimgen.util.vprintf(1, 'Requested stop frequency %g Hz exceeds the usable band at Fs=%g Hz; clamping sweep to %g Hz.', ...
-            stopFreq, fs, maxUsable);
-        stopFreq = maxUsable;
-    end
-    if startFreq >= stopFreq
-        error('stimgen:calibration:Engine:sampleRateTooLow', ...
-              'Requested frequency range leaves no usable sweep band below %g Hz at Fs=%g Hz.', maxUsable, fs);
-    end
+    freqs = lowFreq .* 2.^(linspace(0, log2(highFreq/lowFreq), 50));
 end
 
-% The transfer function is only defined where the chirp puts energy; outside
-% the swept band the response is noise floor and the LUT would be garbage.
+% Nothing above 0.95*Nyquist can be measured at this sample rate.
 requested = numel(freqs);
-freqs = unique(freqs(freqs >= startFreq & freqs <= stopFreq));
+freqs = unique(freqs(freqs > 0 & freqs <= maxUsable));
 if isempty(freqs)
     error('stimgen:calibration:Engine:noValidFreqs', ...
-          'No requested frequency falls inside the swept band [%g, %g] Hz.', ...
-          startFreq, stopFreq);
+          'No requested frequency falls at or below %g Hz, the usable limit at Fs=%g Hz.', ...
+          maxUsable, fs);
 end
 if numel(freqs) < requested
-    stimgen.util.vprintf(1, 'Dropped %d frequency point(s) outside the swept band [%g, %g] Hz.', ...
-        requested - numel(freqs), startFreq, stopFreq);
+    stimgen.util.vprintf(1, 'Dropped %d frequency point(s) above the usable limit of %g Hz at Fs=%g Hz.', ...
+        requested - numel(freqs), maxUsable, fs);
+end
+
+% Sweep wider than we report, as far as the sample rate allows.
+startFreq = max(min(freqs) * 2^(-SWEEP_MARGIN_OCT), eps);
+stopFreq  = min(max(freqs) * 2^( SWEEP_MARGIN_OCT), maxUsable);
+if startFreq >= stopFreq
+    error('stimgen:calibration:Engine:sampleRateTooLow', ...
+          'Requested frequency range leaves no usable sweep band below %g Hz at Fs=%g Hz.', maxUsable, fs);
+end
+if stopFreq <= max(freqs)
+    stimgen.util.vprintf(1, ['Sample rate %g Hz leaves no headroom above %g Hz; the top calibration ' ...
+        'point sits on the sweep''s roll-off and is the least reliable of the set.'], fs, max(freqs));
 end
 
 so = stimgen.SweptSine;
@@ -120,13 +127,13 @@ try
         stimgen.util.vprintf(1, '[%d/%d] Capturing swept sine response', rep, repeatCount);
         raw = obj.Adapter.play_and_record(y);
 
-        % Keep the onset: deconvolution consumes the whole record, and the
-        % leading window holds the low-frequency start of the sweep.
-        response = obj.trim_response_(raw, false);
+        % trim_response_ only strips trailing padding; deconvolution needs
+        % the intact onset, which holds the low-frequency start of the sweep.
+        response = obj.trim_response_(raw);
         responses{rep} = response;
         obj.ResponseSignal = response;
 
-        measAll(rep, :) = obj.sweep_transfer_rms_(y, response, freqs, fs);
+        measAll(rep, :) = obj.sweep_transfer_rms_(y, response, freqs, fs, [startFreq stopFreq]);
 
         if obj.ShowLivePlots
             for i = 1:n

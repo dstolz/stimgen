@@ -1,6 +1,7 @@
 classdef SoundFile < stimgen.StimType
 
     % obj = stimgen.SoundFile
+    % obj = stimgen.SoundFile(Name,Value,...)
     % Playback of pregenerated sound files (vocalizations, phonemes, natural
     % scenes) from a labelled catalog.
     %
@@ -87,21 +88,23 @@ classdef SoundFile < stimgen.StimType
     methods
 
         function obj = SoundFile(varargin)
-            obj = obj@stimgen.StimType(varargin{:});
-
-            obj.DisplayName = 'Sound File';
-
-            obj.Catalog = stimgen.SoundFile.empty_catalog();
-
-            % Catalog is listed FIRST: load_bank and fromStruct assign
-            % UserProperties in order, and every one of them triggers a
-            % regeneration, so the catalog must exist before FileIndex is
-            % restored. Duration is omitted because it is derived from the
-            % selected file.
-            obj.UserProperties = ["Catalog","FileIndex","Channel", ...
-                                  "CalibrationMode","AnchorFrequency", ...
-                                  "LevelReference","SoundLevel", ...
-                                  "WindowDuration","ApplyWindow"];
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            % The empty catalog is prepended for the same reason it is listed
+            % first in UserProperties: a caller passing FileIndex needs a
+            % catalog to already exist.
+            obj = obj@stimgen.StimType( ...
+                'DisplayName', 'Sound File', ...
+                'Catalog', stimgen.SoundFile.empty_catalog(), ...
+                ... % Catalog is listed FIRST: load_bank and fromStruct assign
+                ... % UserProperties in order, and every one of them triggers a
+                ... % regeneration, so the catalog must exist before FileIndex is
+                ... % restored. Duration is omitted because it is derived from the
+                ... % selected file.
+                'UserProperties', ["Catalog","FileIndex","Channel", ...
+                                   "CalibrationMode","AnchorFrequency", ...
+                                   "LevelReference","SoundLevel", ...
+                                   "WindowDuration","ApplyWindow"], ...
+                varargin{:});
         end
 
 

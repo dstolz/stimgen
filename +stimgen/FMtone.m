@@ -1,8 +1,9 @@
 classdef FMtone < stimgen.StimType
     %FMtone  Frequency-modulated tone stimulus.
-    %   obj = stimgen.FMtone(Fs, Calibration) creates an FM tone stimulus
-    %   object with sampling rate Fs (Hz) and optional stimgen.StimCalibration
-    %   object. Frequency modulation is defined by:
+    %   obj = stimgen.FMtone(Name,Value,...) creates an FM tone stimulus
+    %   object, assigning any public property by name, e.g.
+    %   stimgen.FMtone('Fs', 48000, 'Calibration', cal). Frequency
+    %   modulation is defined by:
     %
     %     CarrierFrequency      - carrier frequency (Hz)
     %     ModulationFrequency   - modulation frequency (Hz)
@@ -30,11 +31,11 @@ classdef FMtone < stimgen.StimType
         function obj = FMtone(varargin)
             %FMtone  Construct an FM tone stimulus.
 
-            obj@stimgen.StimType(varargin{:});
-
-            obj.DisplayName = 'FM Tone';
-            obj.UserProperties = ["SoundLevel","Duration","WindowDuration","ApplyWindow","CarrierFrequency","ModulationFrequency","ModulationDepth","OnsetPhase"];
-
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj@stimgen.StimType( ...
+                'DisplayName', 'FM Tone', ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","CarrierFrequency","ModulationFrequency","ModulationDepth","OnsetPhase"], ...
+                varargin{:});
 
         end
 

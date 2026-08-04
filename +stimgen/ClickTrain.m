@@ -30,18 +30,16 @@ classdef ClickTrain < stimgen.StimType
         
         function obj = ClickTrain(varargin)
             
-            obj = obj@stimgen.StimType(varargin{:});
+            % Defaults first, caller's pairs last, so a caller's value wins.
+            obj = obj@stimgen.StimType( ...
+                'DisplayName', 'Click Train', ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","Rate","Polarity","ClickDuration","OnsetDelay","Truncate"], ...
+                ... % override some default StimType property values
+                'Duration', 1, ...
+                'ApplyWindow', false, ...
+                'WindowFcn', "", ...
+                varargin{:});
 
-            obj.DisplayName = 'Click Train';
-
-            obj.UserProperties = ["SoundLevel","Duration","WindowDuration","ApplyWindow","Rate","Polarity","ClickDuration","OnsetDelay","Truncate"];
-
-            % override some default StimType property values
-            obj.Duration = 1;
-            obj.ApplyWindow = false;
-            obj.WindowFcn = "";
-            
-            
         end
         
         

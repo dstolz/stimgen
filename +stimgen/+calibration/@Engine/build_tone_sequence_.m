@@ -35,19 +35,20 @@ so                  = stimgen.Tone;
 so.Fs               = fs;
 so.Duration         = burstDur;
 so.WindowMethod     = "Duration";
+so.WindowFcn        = "cos2";
 so.ApplyCalibration = false;   % the excitation must stay raw; scaling it by an
                                % existing LUT would fold that LUT into the result
+
+% Fixed 5 ms cos^2 (raised-cosine) onset/offset ramp to suppress broadband
+% click transients at the burst edges. Clamped to half the burst duration
+% so the ramps never overlap on a very short burst.
+so.WindowDuration = min(0.005, burstDur / 2);
 
 n      = numel(freqs);
 bursts = cell(1, n);
 rampN  = zeros(1, n);
 for i = 1:n
     so.Frequency = freqs(i);
-    % Four carrier periods of total gate, as the per-burst version used: long
-    % enough to keep splatter off the neighbouring analysis bands, short
-    % enough to leave a steady-state middle even at the bottom of the sweep.
-    % The clamp matters only for burst lengths under eight periods.
-    so.WindowDuration = min(4 / freqs(i), burstDur / 2);
     so.update_signal();
     bursts{i} = so.Signal(:).';
     rampN(i)  = round(so.WindowDuration / 2 * fs);

@@ -48,7 +48,7 @@ obj.handles.RunCalibrationTool = h;
 % Build grid layout.
 sg               = uigridlayout(parent);
 sg.ColumnWidth   = {'1x','1x'};
-sg.RowHeight     = [repmat({30},1,8) {'1x'}];
+sg.RowHeight     = [repmat({30},1,7) {'1x'}];
 sg.Scrollable    = 'on';
 obj.handles.SideGrid = sg;
 
@@ -137,21 +137,6 @@ h.Limits = [0 10];
 h.LowerLimitInclusive = 'off';
 h.ValueChangedFcn = @obj.set_prop;
 obj.handles.ExcitationSignalVoltage = h;   % bug fix: was handles.NormativeValue
-R = R + 1;
-
-% --- Onset Ignore Duration ---
-h = uilabel(sg);
-h.Layout.Column = 1; h.Layout.Row = R;
-h.Text = 'Onset Ignore:'; h.HorizontalAlignment = 'right';
-
-h = uieditfield(sg, 'numeric');
-h.Tag = 'OnsetIgnoreDuration';
-h.Layout.Column = 2; h.Layout.Row = R;
-h.ValueDisplayFormat = '%.1f ms';
-h.Value  = obj.Engine.OnsetIgnoreDuration;
-h.Limits = [0 1000];
-h.ValueChangedFcn = @obj.set_prop;
-obj.handles.OnsetIgnoreDuration = h;
 R = R + 1;
 
 % --- Run Calibration button ---

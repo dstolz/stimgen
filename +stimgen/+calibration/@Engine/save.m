@@ -1,10 +1,14 @@
-function save(obj, ffn)
+function ffn = save(obj, ffn)
 % obj.save()
+% ffn = obj.save()
 % obj.save(ffn)
 % Save calibration to a .esgc file.
 %
 % Parameters:
 %   ffn - full file path (char, optional); prompts if omitted
+%
+% Returns:
+%   ffn - resolved file path; empty if the save dialog was cancelled
 arguments
     obj
     ffn (1,:) char = ''
@@ -34,7 +38,6 @@ s.NormativeValue      = obj.NormativeValue;
 s.ReferenceLevel      = obj.ReferenceLevel;
 s.ReferenceFrequency  = obj.ReferenceFrequency;
 s.ExcitationVoltage   = obj.ExcitationVoltage;
-s.OnsetIgnoreDuration = obj.OnsetIgnoreDuration;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

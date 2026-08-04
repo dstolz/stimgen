@@ -46,7 +46,6 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         NormativeValue
         ExcitationSignalVoltage
         CalibrationTimestamp
-        OnsetIgnoreDuration
         Fs
     end
 
@@ -93,7 +92,6 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             S.ReferenceFrequency      = obj.ReferenceFrequency;
             S.ExcitationSignalVoltage = obj.ExcitationSignalVoltage;
             S.CalibrationTimestamp    = obj.CalibrationTimestamp;
-            S.OnsetIgnoreDuration     = obj.OnsetIgnoreDuration;
             S.Fs                      = obj.Fs;
         end
 
@@ -146,14 +144,6 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
 
         function v = get.CalibrationTimestamp(obj)
             v = obj.Engine.CalibrationTimestamp;
-        end
-
-        function v = get.OnsetIgnoreDuration(obj)
-            v = obj.Engine.OnsetIgnoreDuration;
-        end
-        function set.OnsetIgnoreDuration(obj, r)
-            obj.Engine.set_configuration(OnsetIgnoreDuration=r);
-            obj.sync_gui_field_('OnsetIgnoreDuration', r);
         end
 
         function v = get.Fs(obj)
@@ -295,7 +285,6 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             obj.sync_gui_field_('ReferenceFrequency',  obj.Engine.ReferenceFrequency);
             obj.sync_gui_field_('NormativeValue',      obj.Engine.NormativeValue);
             obj.sync_gui_field_('ExcitationSignalVoltage', obj.Engine.ExcitationVoltage);
-            obj.sync_gui_field_('OnsetIgnoreDuration', obj.Engine.OnsetIgnoreDuration);
 
             f = ancestor(obj.handles.parent, 'figure');
             if ~isempty(f), figure(f); end
@@ -339,7 +328,6 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             s.ReferenceFrequency     = obj.Engine.ReferenceFrequency;
             s.ExcitationSignalVoltage = obj.Engine.ExcitationVoltage;
             s.CalibrationTimestamp   = obj.Engine.CalibrationTimestamp;
-            s.OnsetIgnoreDuration    = obj.Engine.OnsetIgnoreDuration;
         end
     end
 
