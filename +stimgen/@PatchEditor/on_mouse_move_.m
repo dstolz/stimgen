@@ -20,11 +20,14 @@ switch obj.dragMode
         pos(1) = min(max(pos(1), 0.005), 1 - obj.NODE_W - 0.06);
         pos(2) = min(max(pos(2), h + 0.005), 0.995);
         obj.dragPos = pos;
+        % dragPos is only maintained during a node drag; rebuilding the
+        % geometry with it in wire mode would teleport the wire's source
+        % node to wherever the previous node drag ended.
+        obj.geom = stimgen.PatchEditor.node_geometry_for_(obj.Patch, obj.dragIdx, obj.dragPos);
 
     case "wire"
         obj.dragPoint = pt;
 end
 
-obj.geom = stimgen.PatchEditor.node_geometry_for_(obj.Patch, obj.dragIdx, obj.dragPos);
 obj.redraw_canvas_();
 end

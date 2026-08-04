@@ -37,7 +37,12 @@ canvasPanel = uipanel(g, 'Title', 'Signal Graph');
 canvasPanel.Layout.Row = 1;
 canvasPanel.Layout.Column = 2;
 
-obj.ax = uiaxes(canvasPanel, 'Units', 'normalized', 'Position', [0 0 1 1]);
+% Grid-managed, not a normalized Position: a uipanel's default
+% AutoResizeChildren does not track normalized-units children, so the axes
+% would keep its creation size when the figure is resized.
+cg = uigridlayout(canvasPanel, [1 1]);
+cg.Padding = [0 0 0 0];
+obj.ax = uiaxes(cg);
 obj.ax.XLim = [0 1];
 obj.ax.YLim = [0 1];
 obj.ax.XTick = [];
@@ -78,7 +83,9 @@ lower.ColumnSpacing = 8;
 lower.Padding = [0 0 0 0];
 
 prev = uipanel(lower, 'Title', 'Preview');
-obj.h.PreviewAx = uiaxes(prev, 'Units', 'normalized', 'Position', [0 0 1 1]);
+pvg = uigridlayout(prev, [1 1]);
+pvg.Padding = [0 0 0 0];
+obj.h.PreviewAx = uiaxes(pvg);
 disableDefaultInteractivity(obj.h.PreviewAx);
 obj.h.PreviewAx.Toolbar.Visible = 'off';
 
