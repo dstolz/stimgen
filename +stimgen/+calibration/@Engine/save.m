@@ -34,6 +34,7 @@ s.NormativeValue      = obj.NormativeValue;
 s.ReferenceLevel      = obj.ReferenceLevel;
 s.ReferenceFrequency  = obj.ReferenceFrequency;
 s.ExcitationVoltage   = obj.ExcitationVoltage;
+s.OnsetIgnoreDuration = obj.OnsetIgnoreDuration;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

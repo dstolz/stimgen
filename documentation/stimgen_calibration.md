@@ -82,7 +82,7 @@ These are not required for basic tone delivery but improve accuracy for speciali
 
 - **Calibrate Clicks** — sweep across click durations. Dialog collects a duration vector and repeat count.
 - **Calibrate Swept Sine** — broadband transfer function measurement. Dialog collects chirp duration and repeat count.
-- **Design Filter** — designs an equalization FIR filter from the tone LUT. Requires tone calibration to have already completed.
+- **Design Filter** — designs an equalization FIR filter from the tone LUT, or from the swept sine LUT if no tone calibration exists. Requires one of those two calibrations to have already completed. A dialog collects the design options (filter length, design method, interpolation, smoothing, correction limit, band — see [Reference: Filter Design Options](#reference-filter-design-options)), and the result opens in `fvtool`.
 
 ### Step 7 — Save
 
@@ -133,7 +133,8 @@ eng.set_configuration( ...
     ReferenceFrequency=1000, ...% Hz (default 1000)
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
-    ShowLivePlots=true);        % show plots during sweeps (default false)
+    ShowLivePlots=true, ...     % show plots during sweeps (default false)
+    OnsetIgnoreDuration=10);    % ms of leading response to skip before RMS/peak/spectral measurement (default 10)
 ```
 
 ### Step 4 — Measure The Microphone Reference
@@ -149,13 +150,49 @@ This plays a tone at `ReferenceFrequency` and uses the recorded level plus `Refe
 ### Step 5 — Calibrate Tones
 
 ```matlab
-% Default: 50-point log sweep from 100 Hz to Nyquist, 1 average per point:
+% Default: 50-point log sweep from 100 Hz to Nyquist, 1 pass:
 eng.calibrate_tones();
 
-% Custom frequency vector, 3 averages per point:
+% Custom frequency vector, 3 passes (measurements averaged per point):
 freqs = logspace(log10(500), log10(20000), 40);
 eng.calibrate_tones(freqs, 3);
+
+% Longer bursts and gaps, and a shorter train for a small output buffer:
+eng.calibrate_tones(freqs, 3, BurstDuration=0.2, GapDuration=0.1, ...
+    MaxSequenceDuration=1);
 ```
+
+The whole sweep is pregenerated as a train of gated tone bursts separated by
+silence and played with **one `play_and_record` per pass**, rather than one
+hardware transaction per frequency. Each burst is then cut back out of the
+recording at its known position — offset by the bulk acquisition delay, which
+is measured once per train by cross-correlating excitation against response —
+and measured spectrally over its steady-state middle. That per-burst estimate
+is the same flat-top periodogram the per-frequency version used, so the LUT
+stays on its original scale and remains directly comparable to the swept-sine
+LUT.
+
+Bursts are separated in *time*, not in frequency, so the analysis holds for any
+frequency list: adjacent points may sit closer together than their spectral
+lobes are wide.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `BurstDuration` | 0.1 s | Length of each tone burst. The gate is four carrier periods, so the steady-state middle shrinks toward the bottom of the sweep |
+| `GapDuration` | 0.05 s | Silence before, between, and after bursts. Also bounds the delay search — raise it if the device's round-trip latency exceeds it |
+| `MaxSequenceDuration` | 2 s | Longest single train. Sweeps longer than this are split into consecutive trains, which keeps the excitation inside a fixed hardware output buffer such as an RPvds serial buffer |
+
+`OnsetIgnoreDuration` applies here too, guarding *both* edges of every burst
+against alignment error and transducer settling that outlasts the electrical
+ramp. If ramps and guards would leave too little to estimate a level from, the
+whole burst is measured instead.
+
+Two error paths are specific to this arrangement:
+
+- `stimgen:calibration:Engine:sequenceTooLong` — `MaxSequenceDuration` cannot
+  hold even one burst with its gaps.
+- A warning that the response delay reached the search bound, meaning burst
+  segmentation may be misaligned. Increase `GapDuration`.
 
 ### Step 6 — Optional Additional Calibrations
 
@@ -167,9 +204,16 @@ eng.calibrate_clicks(durs, 3);
 % Swept-sine (broadband transfer function, 1-second chirp, 4 averages):
 eng.calibrate_swept_sine(1, [], 4);
 
-% Equalization filter design (requires tone calibration):
-eng.design_filter();
+% Equalization filter design (requires tone or swept sine calibration):
+eng.design_filter();              % "auto": tone LUT, else swept sine
+eng.design_filter("swept_sine");  % force the swept sine LUT
+
+% Longer filter, 1/6-octave smoothing, correction capped at 20 dB, band limited:
+eng.design_filter("swept_sine", NumCoefficients=257, SmoothingOctaves=1/6, ...
+    MaxCorrectionDb=20, FrequencyRange=[500 32000]);
 ```
+
+See [Reference: Filter Design Options](#reference-filter-design-options) for the full option list.
 
 ### Step 7 — Save
 
@@ -207,6 +251,7 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `ShowLivePlots` | false | Show waveform and spectrum plots during sweeps |
+| `OnsetIgnoreDuration` | 10 ms | Leading response window skipped before computing RMS/peak/spectral measurements, to exclude acoustic propagation delay and transducer/mic onset transient |
 
 These are all `SetAccess = protected` — they are readable from anywhere but can only
 be written through `eng.set_configuration(Name=value)`, which is what runs their
@@ -224,13 +269,57 @@ otherwise written only by the calibration runs themselves.
 
 | Field | Populated by | Contents |
 |---|---|---|
-| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct |
+| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); burst_duration, gap_duration; metrics sub-struct |
 | `click` | `calibrate_clicks` | duration, measurement, spl_db, voltage (Nx1); metrics sub-struct |
 | `swept_sine` | `calibrate_swept_sine` | frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct |
 | `filter` | `design_filter` | `digitalFilter` object, or `[]` |
 | `filterGrpDelay` | `design_filter` | filter group delay in samples (0 until filter is designed) |
+| `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
+| `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
 
-The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`.
+The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
+
+---
+
+## Reference: Filter Design Options
+
+`design_filter` builds the equalizer in these steps:
+
+1. Pick the LUT (`source`), keep the in-band points, and convert the voltage column to dB.
+2. Resample it onto a dense design grid — `GridPoints` points spread over `FrequencyRange` on a `FrequencyScale` axis, joined by `Interpolation`.
+3. Optionally smooth the target with a `SmoothingOctaves`-wide fractional-octave window.
+4. Reference the peak to 0 dB and clamp the result at `MaxCorrectionDb` below it.
+5. Fit an `NumCoefficients`-tap linear-phase FIR to that target with `DesignMethod`, hold it flat from DC to the low edge and from the high edge to Nyquist, and store the filter with its group delay.
+
+Only the *shape* of the response matters: `stimgen.StimType.apply_calibration` renormalizes the filtered waveform before scaling it to the LUT voltage for the requested level.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `source` | `"auto"` | `"auto"` prefers the tone LUT and falls back to swept sine; `"tone"` or `"swept_sine"` forces one |
+| `NumCoefficients` | `0` (auto) | Filter length in taps. Auto derives it from the number of LUT points. Always forced odd — an odd-order (even tap count) linear-phase FIR is silently pinned to zero gain at Nyquist |
+| `DesignMethod` | `"freqsamp"` | `"freqsamp"` (frequency sampling) or `"ls"` (least squares). `"ls"` tracks the target more tightly at a given length but rings more at sharp transitions |
+| `Interpolation` | `"pchip"` | `"pchip"`, `"linear"`, `"spline"`, or `"makima"`. `"pchip"` will not overshoot between measured points; `"spline"` is smoother but can |
+| `FrequencyScale` | `"log"` | Axis the grid and interpolation use. Log spends resolution where transducers actually vary |
+| `AmplitudeScale` | `"db"` | Axis the interpolation and smoothing operate on. Linear amplitude lets the loud end of the LUT dominate the fitted shape |
+| `GridPoints` | `0` (auto) | Design grid resolution; auto scales it with the filter length |
+| `SmoothingOctaves` | `0` | Fractional-octave smoothing width, e.g. `1/3`. Keeps measurement noise and single-point notches out of the filter |
+| `MaxCorrectionDb` | `Inf` | Maximum correction depth in dB below the peak of the target. Caps how much of a short filter a deep notch can claim |
+| `FrequencyRange` | LUT span | `[lo hi]` Hz to equalize. The target is held flat at the edge value outside it |
+| `ShowResponse` | `true` | Open the design in `fvtool`, replacing the window from the previous design |
+
+Results are recorded in `CalibrationData.filterDesign`, so a saved `.esgc` says how its filter was made — including `correctionDb`, the correction span the design actually asked for.
+
+### How The Filter Is Applied
+
+`stimgen.StimType.apply_calibration` and `stimgen.SoundFile.apply_calibration` both equalize through `stimgen.util.filter_aligned(Hd, x, gd)`, which appends `gd` zeros to the signal, filters, and drops the first `gd` output samples. The result is the same length as the input and aligned with it sample for sample, so equalization does not move a stimulus in time or shorten it. Gating runs after calibration, so the ramp lands on the samples it was meant for.
+
+Filter length is therefore a free choice acoustically, but not a free choice in latency: a linear-phase FIR cannot be aligned in real time, only after the fact. `filterGrpDelay` is `(NumCoefficients-1)/2` samples — 128 samples (1.3 ms at 97.6 kHz) for a 257-tap design — and that is how much of the filter's output has to exist before the aligned signal can start. This is not an issue for stimuli generated ahead of playback, which is how stimgen works, but it is the reason a filter is not free to make arbitrarily long.
+
+Three notes on behaviour:
+
+- The LUT is resampled onto a dense grid before fitting, rather than being handed to `designfilt` point by point as in earlier versions. Filters designed now differ slightly from filters designed before, most visibly where the measured points are sparse.
+- With `DesignMethod="ls"` the frequency specification has to have an even number of points (`firls` reads it as band-edge pairs); one interior grid point is dropped automatically when needed.
+- Equalized stimuli generated before this change were delayed by `filterGrpDelay` samples relative to their gate, and lost the last `filterGrpDelay` samples of their content, because the alignment step removed the wrong window. Anything comparing old and new recordings of the same protocol should expect that shift — at the previous auto filter length it was ~24 samples (0.25 ms at 97.6 kHz).
 
 ---
 

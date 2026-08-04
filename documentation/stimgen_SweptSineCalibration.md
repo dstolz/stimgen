@@ -87,7 +87,8 @@ eng.calibrate_swept_sine(2);
 The `stimgen.CalibrationGui` includes:
 - **Swept Sine Duration (ms)** — default 1000 ms (converted to seconds before
   it reaches `Engine.calibrate_swept_sine`, which still takes seconds)
-- **Swept Sine Freqs (Hz)** — default empty (auto: 50-point log from 100 Hz to Nyquist)
+- **Swept Sine Freqs (Hz)** — default empty (auto: 50-point log across the swept band,
+  100 Hz to `min(0.95·Nyquist, 20 kHz)`)
 - **Calibrate Swept Sine** — button to run the measurement
 
 All three calibration methods (reference → tones, clicks, swept sine) can be run independently and combined in the same `.esgc` file. The GUI plots all available calibration curves overlaid.
@@ -97,19 +98,50 @@ All three calibration methods (reference → tones, clicks, swept sine) can be r
 ## Measurement Flow
 
 1. **Generate signal:** Log-sine chirp from 100 Hz to ~95% Nyquist over specified duration
-2. **Play & record:** Hardware plays excitation, microphone returns response
-3. **Spectral analysis:** For each frequency point $f_i$:
-   - Extract spectral RMS at $f_i$ using windowed FFT or bandpass analysis
-   - Convert to dB SPL using calibrated mic sensitivity
-   - Compute normalized voltage to produce NormativeValue SPL
-4. **Store LUT:** Frequency → SPL/voltage table, interpolable via `makima` spline
+2. **Play & record:** Hardware plays excitation, microphone returns response. Only trailing
+   buffer padding is stripped — the onset window is kept, because it carries the
+   low-frequency start of the sweep
+3. **Deconvolve:** Recover the transfer function from the excitation/response pair
+4. **Sample:** At each frequency point $f_i$, convert $|H(f_i)|$ to an equivalent
+   steady-tone level, then to dB SPL and normalized voltage
+5. **Store LUT:** Frequency → SPL/voltage table, interpolable via `makima` spline
 
-### Two-channel FFT reference (research applications)
+### Why the level comes from the transfer function
 
-For distortion separation (not currently implemented in calibration engine):
-$$H_{\text{DUT}}(f) = \frac{Y(f)}{X(f)}$$
+A chirp visits each frequency for only a few milliseconds, so the response periodogram
+read at one frequency is **not** a level. It sits far below the true steady-tone level,
+and drops another 3 dB every time the sweep duration doubles. The transfer function is
+duration-invariant:
 
-where $X(f)$ is the reference excitation FFT and $Y(f)$ is the measured response. Group delay is computed and subtracted, placing all $N$-th harmonic distortion products at time $\Delta t_N = -T \ln(N) / \ln(f_2/f_1)$ *before* the fundamental, enabling time-gating.
+$$H(f) = \frac{Y(f)}{X(f)}$$
+
+$H$ is microphone volts per drive volt, so a steady sinusoid of peak `ExcitationVoltage`
+would measure
+
+$$m(f) = |H(f)| \cdot \frac{V_{\text{exc}}}{\sqrt{2}}$$
+
+which is exactly what `calibrate_tones` measures directly. Feeding $m(f)$ through the same
+`compute_spl_voltage_` puts the swept-sine and tone LUTs on one scale — they agree to
+within 0.01 dB on a synthetic system of known response.
+
+Two implementation details matter:
+
+- **Kirkeby regularization.** $H = Y\overline{X} / (|X|^2 + \lambda\,\overline{|X|^2})$ with
+  $\lambda = 10^{-6}$. A plain $Y/X$ diverges outside the swept band where $|X| \to 0$.
+- **1/12-octave power smoothing** of $|H|$. Single-bin estimates are unbiased but noisy;
+  the band average costs no accuracy on a smooth response and cuts measurement-noise error
+  roughly tenfold at 20 dB SNR.
+
+Analysis frequencies outside the swept band carry no excitation energy and are dropped with
+a log message rather than being filled with noise-floor readings.
+
+### Distortion separation (not implemented)
+
+The log sweep places all $N$-th harmonic distortion products at time
+$\Delta t_N = -T \ln(N) / \ln(f_2/f_1)$ *before* the fundamental in the impulse response,
+which permits time-gating them out. That is not implemented here, so `metrics.thd_db`,
+`h2_db` and `h3_db` are `NaN` for swept-sine runs — MATLAB's `thd()` assumes a stationary
+sinusoid and returns a meaningless number on a chirp.
 
 ---
 
@@ -126,7 +158,8 @@ where $X(f)$ is the reference excitation FFT and $Y(f)$ is the measured response
 
 ### Quality metrics
 
-- **THD** — displayed at end of sweep; <1% indicates clean measurement
+- **SNR** — reported at end of sweep; broadband 95th-percentile-over-median of the response spectrum
+- **THD** — `NaN` for swept sine (see *Distortion separation* above); use a tone sweep when you need it
 - **Peak-to-RMS ratio** — inherent 4 dB crest factor; avoid clipping
 - **Repeatability** — compare with repeated 1-second runs; <0.5 dB variation expected
 
@@ -169,8 +202,9 @@ calibrate_swept_sine(obj, duration, freqs)
 
 **Behavior:**
 - Creates a SweptSine stimulus and plays it through the adapter
-- Records response and trims propagation delay
-- Analyzes spectral content at each frequency point
+- Records the response, stripping only trailing buffer padding
+- Deconvolves excitation against response and samples the transfer function at each
+  frequency point, dropping any that fall outside the swept band
 - Builds a `swept_sine` struct in `CalibrationData` with fields:
   - `frequency` — analysis frequencies
   - `measurement` — measured RMS at each frequency
@@ -198,16 +232,22 @@ Uses MATLAB `makima` spline interpolation (shape-preserving, no overshoot) over 
 - **Increase ExcitationVoltage** (if not clipping)
 - **Check mic placement** — should be at acoustic reference (usually ~30 cm from speaker)
 
-### Distorted response (THD > 3%)
+### Distorted response
 
 - **Reduce ExcitationVoltage** — avoid amplifier/driver saturation
 - **Check acoustic environment** — room reflections or loudspeaker nonlinearity
 - **Increase start frequency** (e.g., 200 Hz instead of 100 Hz) if low-frequency clipping
+- Check `metrics.clipping_headroom`; `thd_db` is not available for swept sine
 
 ### Comparison with tone sweep shows discrepancies
 
 - **Expected**: ±1–2 dB near measurement boundaries (Nyquist, very low frequencies)
 - **Investigate if >3 dB:** Room reflections, microphone positioning, or nonlinear distortion at high levels
+- **A large, systematic offset that grows with sweep duration** means the level is being
+  read off the response spectrum rather than the transfer function — the failure mode
+  described in *Why the level comes from the transfer function*. Any `.esgc` swept-sine
+  data measured that way must be re-measured; it cannot be corrected after the fact,
+  because the offset depends on sweep duration and on the analysis FFT length.
 
 ### Save/load .esgc files with swept sine
 

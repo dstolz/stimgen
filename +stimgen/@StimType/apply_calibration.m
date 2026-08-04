@@ -46,16 +46,9 @@ if type == "filter" && isfield(C.CalibrationData,'filter')
 
     Hd = C.CalibrationData.filter;
 
-    % Robust group-delay compensation (pre/post pad avoids start-up transient)
-    gd = round(C.CalibrationData.filterGrpDelay);
-
-    if gd > 0
-        xpad = [zeros(1,gd) obj.Signal zeros(1,gd)];
-        ypad = filter(Hd,xpad);
-        y = ypad(gd+1:gd+numel(obj.Signal));
-    else
-        y = filter(Hd,obj.Signal);
-    end
+    % Equalize in place: same length, same onset sample as the ungated signal.
+    y = stimgen.util.filter_aligned(Hd, obj.Signal, ...
+        round(C.CalibrationData.filterGrpDelay));
 end
 
 switch obj.Normalization

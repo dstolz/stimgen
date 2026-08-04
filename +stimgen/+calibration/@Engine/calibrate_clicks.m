@@ -17,6 +17,7 @@ arguments
     repeatCount (1,1) double {mustBeInteger,mustBePositive,mustBeFinite} = 1
 end
 obj.assert_adapter_();
+obj.reset_cancel_();
 fs = obj.Fs;
 
 if isempty(durs)
@@ -52,6 +53,7 @@ end
 
 try
     for i = 1:n
+        obj.throw_if_cancelled_();
         stimgen.util.vprintf(1, '[%d/%d] Calibrating click %.2f μs', i, n, durs(i)*1e6);
         so.ClickDuration = durs(i);
         so.update_signal();
@@ -61,6 +63,7 @@ try
 
         m = 0;
         for rep = 1:repeatCount
+            obj.throw_if_cancelled_();
             mRep = obj.measure_(y, "peak");
             m = m + mRep;
             clickMeasAll(rep, i) = mRep;

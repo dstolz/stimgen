@@ -149,7 +149,7 @@ When Calibrate Tones, Calibrate Clicks, or Calibrate Swept Sine is invoked, the 
 
 For tones and clicks, the dialog collects:
 - Frequency vector in Hz / click-duration vector in **milliseconds** (as a comma-separated or `linspace`/`logspace` expression)
-- Repeat count (number of averages per point; default 1)
+- Repeat count (default 1). For clicks this is averages per point; for tones it is passes over the pregenerated burst train, which amounts to the same thing per frequency
 
 For swept sine, the dialog collects:
 - Chirp duration in **milliseconds** (default 1000)
@@ -160,10 +160,27 @@ Durations are entered in milliseconds and converted to seconds before reaching t
 
 The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibrate_clicks`, or `Engine.calibrate_swept_sine` as the `repeatCount` argument.
 
+## Filter Design Dialog
+
+Design Filter prompts for the equalizer design options before running, and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
+
+| Field | Argument | Default |
+|---|---|---|
+| LUT source | `source` | `auto` |
+| Number of coefficients | `NumCoefficients` (omitted when 0) | `0` |
+| Design method | `DesignMethod` | `freqsamp` |
+| Interpolation | `Interpolation` | `pchip` |
+| Frequency scale | `FrequencyScale` | `log` |
+| Fractional-octave smoothing | `SmoothingOctaves` | `0` |
+| Maximum correction depth | `MaxCorrectionDb` | `Inf` |
+| Frequency range | `FrequencyRange` (empty = LUT span) | empty |
+
+The status line reports the resulting tap count and correction span, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
+
 ## Button Enable Rules
 
 1. Measure Reference, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
-2. Design Filter: enabled only when tone calibration data exists.
+2. Design Filter: enabled when tone **or** swept sine calibration data exists. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
 
 ## Runtime Ownership And Independence
 

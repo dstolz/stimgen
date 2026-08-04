@@ -153,7 +153,9 @@
     "BtnTones": "Step 2: Run tone frequency sweep to build tone calibration table.",
     "BtnClicks": "Optional: Build click-duration calibration table.",
     "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp.",
-    "BtnFilter": "Step 3 (optional): Design equalization filter after tone calibration."
+    "BtnFilter": "Step 3 (optional): Design equalization filter after tone or swept sine calibration. Prompts for filter length, design method, interpolation, smoothing, correction limit and band, then opens the result in fvtool.",
+    "BtnStop": "Interrupt a running tone, click, or swept-sine calibration. Takes effect at the next measurement, not instantly; partial data is discarded.",
+    "OnsetIgnoreField": "Leading response window (ms) skipped before computing RMS/peak/spectral measurements, to exclude acoustic propagation delay and transducer/mic onset transient."
   },
 
   "StimInspector": {

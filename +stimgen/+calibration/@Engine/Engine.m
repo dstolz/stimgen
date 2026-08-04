@@ -9,15 +9,28 @@ classdef Engine < handle
     % Uses a unified SPL/voltage model for both tones and clicks: peak
     % measurements are converted to RMS equivalent before computing dB SPL.
     % All calibration runs are atomic - a failure aborts the run and no
-    % partial data is retained.
+    % partial data is retained. calibrate_tones/calibrate_clicks/
+    % calibrate_swept_sine poll cancel() between measurements and abort the
+    % same way when it has been called.
     %
     % CalibrationData is empty ([]) until a successful run completes.
     % After a successful run it is a struct with fields:
     %   tone             - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct
     %   click            - struct: duration, measurement, spl_db, voltage (Nx1); metrics sub-struct
-    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct
+    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct.
+    %                      Its metrics also carry a full acoustic characterization
+    %                      derived from the deconvolved impulse response: phase and
+    %                      group delay (with the minimum-phase/excess split),
+    %                      reflection arrival times and levels, reverberation time
+    %                      per octave band, clarity/definition, and time-gated
+    %                      harmonic distortion. See
+    %                      documentation/stimgen_SweptSineCalibration.md
     %   filter           - digitalFilter | [] (populated by design_filter)
     %   filterGrpDelay   - int (group delay samples; 0 until design_filter runs)
+    %   filterSource     - "tone" | "swept_sine" (which LUT the filter came from)
+    %   filterDesign     - struct of the design options and the achieved
+    %                      correction span, so a saved filter records how it
+    %                      was made (see design_filter)
     %
     % Usage:
     %   adapter = stimgen.calibration.WindowsSoundCardAdapter();
@@ -25,9 +38,10 @@ classdef Engine < handle
     %   eng.set_configuration(ReferenceFrequency=1000);  % parameters are
     %                                    % SetAccess = protected; use this
     %   eng.calibrate_reference();
-    %   eng.calibrate_tones([], 3);     % 3 averages per frequency
+    %   eng.calibrate_tones([], 3);     % 3 passes over the burst train
     %   eng.calibrate_clicks([], 3);
-    %   eng.design_filter();            % optional
+    %   eng.design_filter();            % optional; see design_filter for
+    %                                   % length/interpolation/smoothing options
     %   eng.save('my_cal.esgc');
     %
     %   % offline use (no adapter needed):
@@ -46,6 +60,7 @@ classdef Engine < handle
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         ShowLivePlots       (1,1) logical                                   = false
+        OnsetIgnoreDuration (1,1) double {mustBeNonnegative,mustBeFinite}   = 10    % ms; leading response window skipped before RMS/peak/spectral measurement (propagation delay + transducer/mic onset transient)
         CalibrationTimestamp (1,1) datetime = datetime("")
     end
 
@@ -56,6 +71,10 @@ classdef Engine < handle
         ExcitationSignal (1,:) double = []
         ResponseSignal   (1,:) double = []
         ResponseTHD      (1,1) double = nan
+    end
+
+    properties (Access = private)
+        CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
     end
 
     properties (Dependent)
@@ -89,13 +108,14 @@ classdef Engine < handle
         set_configuration(obj, options) % Update engine calibration parameters.
         set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
         calibrate_reference(obj) % Measure microphone sensitivity from reference tone.
-        calibrate_tones(obj, freqs, repeatCount) % Build tone calibration LUT.
+        calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
-        calibrate_swept_sine(obj, duration, freqs, repeatCount) % Run swept-sine calibration.
-        design_filter(obj) % Design equalization filter from tone LUT.
+        calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
+        design_filter(obj, source, options) % Design equalization filter from a frequency LUT.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         save(obj, ffn) % Save calibration to .esgc file.
         restore(obj, s) % Restore engine state from a serialized struct.
+        cancel(obj) % Request cancellation of an in-progress calibration run.
 
         function Fs = get.Fs(obj)
             % Return adapter sample rate or 0 when no adapter is attached.
@@ -134,15 +154,29 @@ classdef Engine < handle
         end
 
         r = measure_(obj, signal, mode, options) % Acquire and compute measurement metric.
+        [y, schedule] = build_tone_sequence_(obj, freqs, burstDur, gapDur) % Assemble one gated tone-burst train.
+        [lag, atBound] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
         [spl_db, voltage] = compute_spl_voltage_(obj, measurement, mode) % Convert measurement to SPL and normative voltage.
         [noiseFloorDb, snrDb] = estimate_noise_snr_(obj, y, fs, toneFreq) % Estimate noise floor and SNR.
         [thdDb, h2Db, h3Db] = estimate_harmonics_(obj, y, fs, fundamentalFreq) % Estimate THD and harmonic levels.
-        metrics = estimate_transfer_metrics_(obj, x, y, fs) % Estimate transfer-function metrics.
+        A = analyze_sweep_response_(obj, x, y, fs, sweep) % Full swept-sine analysis from one deconvolution.
+        [H, freqHz, h, nfft] = deconvolve_sweep_(obj, x, y, fs) % Regularized sweep deconvolution.
+        loc = locate_impulse_(obj, h, fs, searchLast) % Direct arrival, usable extent, noise crossing.
+        metrics = estimate_transfer_metrics_(obj, hg, fs, band, bulkDelaySamples, perOctave) % Magnitude, phase, group delay.
+        m = estimate_impulse_metrics_(obj, h, fs, loc, band, searchLast) % Reflections, decay, clarity.
+        m = estimate_sweep_harmonics_(obj, h, fs, loc, sweep, geom) % Time-gated harmonic distortion.
+        g = harmonic_geometry_(obj, sweep, maxOrder) % Where the harmonic products wrap, and where the linear response ends.
+        r = estimate_reflections_(obj, h, fs, loc, maxCount) % Discrete arrivals after the direct sound.
+        d = decay_times_(obj, h, fs, noisePower) % Schroeder EDC, EDT/T20/T30.
+        out = smooth_to_log_grid_(obj, fax, vals, grid, fracOct, mode) % Fractional-octave average onto a log grid.
         stats = repeatability_stats_(obj, values) % Summarize repeatability statistics.
         m = estimate_headroom_(obj, excitation, response) % Estimate clipping and headroom margins.
         out = aggregate_headroom_(obj, metricsArray) % Aggregate headroom metrics over repeats.
-        y = trim_response_(obj, y) % Trim response padding and delay.
+        m = sweep_transfer_rms_(obj, x, y, freqs, fs) % Equivalent steady-tone RMS from a swept-sine pair.
+        y = trim_response_(obj, y, trimOnset) % Trim response padding and, optionally, onset window.
         cd = commit_cal_data_(obj) % Build calibration output struct.
+        reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
+        throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.
 
         function t = empty_table_(~, n)
             % Allocate a calibration table struct for in-progress runs.

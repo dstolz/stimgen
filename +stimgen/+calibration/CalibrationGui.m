@@ -51,6 +51,7 @@ classdef CalibrationGui < handle
         NormativeField
         ExcitationField
         ShowLivePlotsCheck
+        OnsetIgnoreField
         StatusLabel
 
         % Buttons
@@ -59,6 +60,7 @@ classdef CalibrationGui < handle
         BtnClicks
         BtnSweptSine
         BtnFilter
+        BtnStop
 
         % Axes
         AxTime
@@ -189,8 +191,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [14 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 16, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [16 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 16, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -246,38 +248,56 @@ classdef CalibrationGui < handle
             obj.ShowLivePlotsCheck.Layout.Row = 6;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
 
+            onsetIgnoreLabel = uilabel(g, Text='Onset Ignore (ms)', HorizontalAlignment='right');
+            onsetIgnoreLabel.Layout.Row = 7;
+            onsetIgnoreLabel.Layout.Column = 1;
+            obj.OnsetIgnoreField = uieditfield(g, 'numeric');
+            obj.OnsetIgnoreField.Layout.Row = 7;
+            obj.OnsetIgnoreField.Layout.Column = 2;
+            obj.OnsetIgnoreField.Limits = [0, 1000];
+            obj.OnsetIgnoreField.ValueDisplayFormat = '%.1f';
+            obj.OnsetIgnoreField.Tooltip = stimgen.util.tooltip('CalibrationGui', 'OnsetIgnoreField');
+
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 8;
+            obj.BtnReference.Layout.Row = 9;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 9;
+            obj.BtnTones.Layout.Row = 10;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 10;
+            obj.BtnClicks.Layout.Row = 11;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 11;
+            obj.BtnSweptSine.Layout.Row = 12;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 12;
+            obj.BtnFilter.Layout.Row = 13;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
+            obj.BtnStop = uibutton(g, Text='Stop', ...
+                BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
+                Enable='off', ...
+                ButtonPushedFcn=@(~,~) obj.on_stop_());
+            obj.BtnStop.Layout.Row = 14;
+            obj.BtnStop.Layout.Column = [1 2];
+            obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
+
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 13;
+            obj.StatusLabel.Layout.Row = 15;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -334,7 +354,7 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_tones_(), 'Running tone calibration...');
+            obj.with_busy_state_(@() obj.run_calibrate_tones_(), 'Running tone calibration...', true);
         end
 
         function run_calibrate_tones_(obj)
@@ -363,7 +383,7 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_clicks_(), 'Running click calibration...');
+            obj.with_busy_state_(@() obj.run_calibrate_clicks_(), 'Running click calibration...', true);
         end
 
         function run_calibrate_clicks_(obj)
@@ -393,7 +413,7 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_swept_sine_(), 'Running swept sine calibration...');
+            obj.with_busy_state_(@() obj.run_calibrate_swept_sine_(), 'Running swept sine calibration...', true);
         end
 
         function run_calibrate_swept_sine_(obj)
@@ -417,8 +437,17 @@ classdef CalibrationGui < handle
         end
 
         function run_design_filter_(obj)
-            obj.Engine.design_filter();
-            obj.set_status_('Equalization filter designed.', false);
+            [source, opts, wasCancelled] = obj.prompt_filter_parameters_();
+            if wasCancelled
+                obj.set_status_('Filter design cancelled.', false);
+                return
+            end
+            args = namedargs2cell(opts);
+            obj.Engine.design_filter(source, args{:});
+            D = obj.Engine.CalibrationData.filterDesign;
+            obj.set_status_(sprintf( ...
+                'Equalization filter designed: %d taps, %.1f dB correction span.', ...
+                D.numCoefficients, D.correctionDb), false);
         end
 
         function on_save_(obj)
@@ -520,9 +549,9 @@ classdef CalibrationGui < handle
                 '1) File > Initialize Runtime From Protocol..., then File > Attach Adapter (if needed).\n\n', ...
                 '2) Verify parameters (reference level/frequency, mic sensitivity, excitation).\n\n', ...
                 '3) Click "Measure Reference" to update microphone sensitivity.\n\n', ...
-                '4) Click "Calibrate Tones" (required for tone lookup and filter design).\n\n', ...
+                '4) Click "Calibrate Tones" (required for tone lookup).\n\n', ...
                 '5) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
-                '6) Optional: click "Design Filter" (enabled after tone calibration).\n\n', ...
+                '6) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
                 '7) Save calibration with File > Save .esgc.']);
             uialert(obj.Figure, msg, 'Calibration Quick Start', Icon='info');
         end
@@ -536,7 +565,8 @@ classdef CalibrationGui < handle
                     MicSensitivity=obj.MicSensField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
-                    ShowLivePlots=obj.ShowLivePlotsCheck.Value);
+                    ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
+                    OnsetIgnoreDuration=obj.OnsetIgnoreField.Value);
                 ok = true;
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
@@ -551,6 +581,7 @@ classdef CalibrationGui < handle
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
+            obj.OnsetIgnoreField.Value = obj.Engine.OnsetIgnoreDuration;
         end
 
         function refresh_all_plots_(obj)
@@ -644,7 +675,12 @@ classdef CalibrationGui < handle
                 obj.BtnSweptSine.Enable = 'off';
             end
 
-            if obj.Engine.IsCalibrated && isfield(obj.Engine.CalibrationData, 'tone')
+            % Either LUT can drive the equalizer; Engine.design_filter picks.
+            C = obj.Engine.CalibrationData;
+            hasLut = obj.Engine.IsCalibrated && ...
+                ((isfield(C, 'tone') && ~isempty(C.tone)) || ...
+                 (isfield(C, 'swept_sine') && ~isempty(C.swept_sine)));
+            if hasLut
                 obj.BtnFilter.Enable = 'on';
             else
                 obj.BtnFilter.Enable = 'off';
@@ -764,6 +800,109 @@ classdef CalibrationGui < handle
             wasCancelled = false;
         end
 
+        function [source, opts, wasCancelled] = prompt_filter_parameters_(obj)
+            % Collect equalizer design options. Everything except the source is
+            % returned as a name-value struct for Engine.design_filter, so the
+            % dialog stays a thin front end to that argument list.
+            source = "auto";
+            opts = struct();
+            wasCancelled = false;
+
+            prompts = {
+                'LUT source (auto | tone | swept_sine):', ...
+                'Number of coefficients (taps; 0 = auto from LUT size):', ...
+                'Design method (freqsamp | ls):', ...
+                'Interpolation (pchip | linear | spline | makima):', ...
+                'Frequency scale (log | linear):', ...
+                'Fractional-octave smoothing (octaves, e.g. 0.333; 0 = none):', ...
+                'Maximum correction depth (dB below peak; Inf = unlimited):', ...
+                'Frequency range (Hz, "lo hi"; empty = LUT span):'
+            };
+            defaults = {
+                obj.get_pref_('filterSource', 'auto'), ...
+                obj.get_pref_('filterNumCoefficients', '0'), ...
+                obj.get_pref_('filterDesignMethod', 'freqsamp'), ...
+                obj.get_pref_('filterInterpolation', 'pchip'), ...
+                obj.get_pref_('filterFrequencyScale', 'log'), ...
+                obj.get_pref_('filterSmoothingOctaves', '0'), ...
+                obj.get_pref_('filterMaxCorrectionDb', 'Inf'), ...
+                obj.get_pref_('filterFrequencyRange', '')
+            };
+
+            answer = inputdlg(prompts, 'Design Equalization Filter', ...
+                repmat([1 90], numel(prompts), 1), defaults);
+            if isempty(answer)
+                wasCancelled = true;
+                return
+            end
+
+            raw = strtrim(string(answer));
+            source           = obj.parse_choice_(raw(1), ["auto" "tone" "swept_sine"], 'LUT source');
+            nCoef            = obj.parse_nonnegative_integer_(raw(2), 'number of coefficients');
+            designMethod     = obj.parse_choice_(raw(3), ["freqsamp" "ls"], 'design method');
+            interpolation    = obj.parse_choice_(raw(4), ["pchip" "linear" "spline" "makima"], 'interpolation');
+            frequencyScale   = obj.parse_choice_(raw(5), ["log" "linear"], 'frequency scale');
+            smoothingOctaves = obj.parse_nonnegative_scalar_(raw(6), 'smoothing width', 0, false);
+            maxCorrectionDb  = obj.parse_nonnegative_scalar_(raw(7), 'maximum correction depth', Inf, true);
+            if maxCorrectionDb <= 0
+                error('stimgen:calibration:CalibrationGui:badCorrection', ...
+                    'Maximum correction depth must be greater than zero, or Inf for unlimited.');
+            end
+
+            freqRange = obj.parse_numeric_vector_(raw(8), 'frequency range');
+            if ~isempty(freqRange) && numel(freqRange) ~= 2
+                error('stimgen:calibration:CalibrationGui:badFrequencyRange', ...
+                    'Frequency range must be two values, "lo hi", or empty for the LUT span.');
+            end
+
+            opts.DesignMethod     = designMethod;
+            opts.Interpolation    = interpolation;
+            opts.FrequencyScale   = frequencyScale;
+            opts.SmoothingOctaves = smoothingOctaves;
+            opts.MaxCorrectionDb  = maxCorrectionDb;
+            opts.FrequencyRange   = freqRange;
+            if nCoef > 0
+                opts.NumCoefficients = nCoef;
+            end
+
+            prefNames = {'filterSource', 'filterNumCoefficients', 'filterDesignMethod', ...
+                         'filterInterpolation', 'filterFrequencyScale', ...
+                         'filterSmoothingOctaves', 'filterMaxCorrectionDb', ...
+                         'filterFrequencyRange'};
+            for k = 1:numel(prefNames)
+                obj.set_pref_(prefNames{k}, char(raw(k)));
+            end
+        end
+
+        function value = parse_choice_(~, textValue, allowed, label)
+            value = lower(strtrim(string(textValue)));
+            if ~ismember(value, allowed)
+                error('stimgen:calibration:CalibrationGui:badChoice', ...
+                    '%s must be one of: %s.', label, strjoin(allowed, ', '));
+            end
+        end
+
+        function value = parse_nonnegative_integer_(~, textValue, label)
+            value = str2double(strtrim(string(textValue)));
+            if isnan(value) || ~isfinite(value) || value < 0 || value ~= round(value)
+                error('stimgen:calibration:CalibrationGui:badInteger', ...
+                    '%s must be a non-negative integer.', label);
+            end
+        end
+
+        function value = parse_nonnegative_scalar_(~, textValue, label, emptyValue, allowInf)
+            raw = strtrim(string(textValue));
+            if raw == ""
+                value = emptyValue;
+                return
+            end
+            value = str2double(raw);
+            if isnan(value) || value < 0 || (~allowInf && ~isfinite(value))
+                error('stimgen:calibration:CalibrationGui:badScalar', ...
+                    '%s must be a non-negative number.', label);
+            end
+        end
+
         function value = parse_positive_integer_(~, textValue, label)
             raw = strtrim(string(textValue));
             value = str2double(raw);
@@ -789,17 +928,56 @@ classdef CalibrationGui < handle
             setpref(groupName, prefName, char(string(value)));
         end
 
-        function with_busy_state_(obj, fcn, busyMessage)
+        function on_stop_(obj)
+            % Request cancellation of the running calibration. Takes effect at
+            % the next measurement boundary, not immediately.
+            obj.Engine.cancel();
+            obj.set_status_('Stopping...', false);
+            obj.BtnStop.Enable = 'off';
+        end
+
+        function set_busy_(obj, tf, cancellable)
+            % Disable calibration actions while an operation is running.
+            % Stop is only enabled for operations that actually poll cancel().
+            if tf
+                obj.BtnReference.Enable = 'off';
+                obj.BtnTones.Enable = 'off';
+                obj.BtnClicks.Enable = 'off';
+                obj.BtnSweptSine.Enable = 'off';
+                obj.BtnFilter.Enable = 'off';
+                if cancellable
+                    obj.BtnStop.Enable = 'on';
+                else
+                    obj.BtnStop.Enable = 'off';
+                end
+            else
+                obj.BtnStop.Enable = 'off';
+            end
+        end
+
+        function with_busy_state_(obj, fcn, busyMessage, cancellable)
+            arguments
+                obj
+                fcn
+                busyMessage
+                cancellable (1,1) logical = false
+            end
             obj.set_status_(busyMessage, false);
             obj.Figure.Pointer = 'watch';
+            obj.set_busy_(true, cancellable);
             drawnow;
             try
                 fcn();
             catch ME
-                obj.set_status_(ME.message, true);
-                uialert(obj.Figure, ME.message, 'Calibration Error', Icon='error');
+                if isequal(ME.identifier, 'stimgen:calibration:Engine:cancelled')
+                    obj.set_status_('Calibration cancelled.', false);
+                else
+                    obj.set_status_(ME.message, true);
+                    uialert(obj.Figure, ME.message, 'Calibration Error', Icon='error');
+                end
             end
             obj.Figure.Pointer = 'arrow';
+            obj.set_busy_(false, false);
             obj.update_runtime_state_();
             drawnow;
         end

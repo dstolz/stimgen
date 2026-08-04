@@ -646,16 +646,10 @@ classdef SoundFile < stimgen.StimType
                     end
 
                     Hd = C.CalibrationData.filter;
-                    gd = round(C.CalibrationData.filterGrpDelay);
-                    if gd > 0
-                        % Pre/post pad so the filter start-up transient does not
-                        % eat the onset of the recording.
-                        xpad = [zeros(1,gd) y zeros(1,gd)];
-                        ypad = filter(Hd, xpad);
-                        y    = ypad(gd+1:gd+numel(obj.Signal));
-                    else
-                        y = filter(Hd, y);
-                    end
+                    % Equalize in place so the recording keeps its length and
+                    % its onset sample.
+                    y = stimgen.util.filter_aligned(Hd, y, ...
+                        round(C.CalibrationData.filterGrpDelay));
 
                     % NaN -> Engine anchors the scalar level to ReferenceFrequency,
                     % which is the right anchor once the spectrum is flat.

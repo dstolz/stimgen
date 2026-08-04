@@ -7,5 +7,8 @@ obj.NormativeValue       = s.NormativeValue;
 obj.ReferenceLevel       = s.ReferenceLevel;
 obj.ReferenceFrequency   = s.ReferenceFrequency;
 obj.ExcitationVoltage    = s.ExcitationVoltage;
+if isfield(s, 'OnsetIgnoreDuration')
+    obj.OnsetIgnoreDuration = s.OnsetIgnoreDuration;
+end
 obj.CalibrationTimestamp = s.CalibrationTimestamp;
 end
