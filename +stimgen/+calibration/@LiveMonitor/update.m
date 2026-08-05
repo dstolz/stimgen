@@ -6,6 +6,12 @@ function update(obj, d)
 % "start" and "done" always render, so the panels are correct at every run
 % boundary no matter how fast the measurements came in.
 %
+% Rendering is guarded: a listener that throws is caught by MATLAB and
+% re-warned on every notify, which for a per-measurement event means a console
+% full of the same stack by the end of a sweep. A render error is instead
+% logged once and rendering is suspended until the next run's "start" re-arms
+% it -- the sweep itself is never at risk either way.
+%
 % Parameters:
 %   d - stimgen.calibration.LiveUpdate
 arguments
@@ -22,23 +28,30 @@ if d.Phase == "start"
     obj.LastStage_ = d.Stage;
     obj.PrevSpectrum_ = {[], []};
     obj.drop_('spec_ghost');
+    obj.RenderFailed_ = false;
+elseif obj.RenderFailed_
+    return
+else
+    now_ = toc(obj.Timer_);
+    if d.Phase == "measure" && (now_ - obj.LastDraw_) < obj.MinInterval
+        return
+    end
+end
+
+try
     obj.render_(d);
-    drawnow;
-    obj.LastDraw_ = toc(obj.Timer_);
+catch ME
+    obj.RenderFailed_ = true;
+    stimgen.util.vprintf(0, 1, ...
+        'LiveMonitor render failed; live plotting is suspended for this run.');
+    stimgen.util.vprintf(0, 1, ME);
     return
 end
-
-now_ = toc(obj.Timer_);
-if d.Phase == "measure" && (now_ - obj.LastDraw_) < obj.MinInterval
-    return
-end
-
-obj.render_(d);
 obj.LastDraw_ = toc(obj.Timer_);
 
-if d.Phase == "done"
-    drawnow;
-else
+if d.Phase == "measure"
     drawnow limitrate;
+else
+    drawnow;
 end
 end

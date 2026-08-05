@@ -10,6 +10,11 @@ classdef CalibrationGui < handle
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
+    % All drawing is done by a stimgen.calibration.LiveMonitor attached to this
+    % window's axes: during a run it renders the engine's LiveUpdate stream
+    % (gated by the Show Engine Live Plots checkbox), and between runs the same
+    % renderer draws the committed calibration and the last response.
+    %
     % Arguments are identified by type, so an Engine and a HardwareHost may be
     % passed in either order, either one alone, or as Engine=/Host= pairs.
     %
@@ -45,6 +50,7 @@ classdef CalibrationGui < handle
 
     properties (SetAccess = private)
         Engine stimgen.calibration.Engine
+        Monitor stimgen.calibration.LiveMonitor  % renders all three axes
     end
 
     properties (Access = private)
@@ -62,6 +68,7 @@ classdef CalibrationGui < handle
         MicSensField
         NormativeField
         ExcitationField
+        MaxOutputField
         ShowLivePlotsCheck
         TransferLogXCheck
         SampleRateLabel
@@ -118,6 +125,16 @@ classdef CalibrationGui < handle
             end
         end
 
+        function delete(obj)
+            % Release the monitor's registration on the engine. The engine may
+            % outlive this window -- it might be saved, or shared with a
+            % StimType -- and must not keep notifying a renderer whose axes
+            % died with the figure.
+            if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
+                delete(obj.Monitor);
+            end
+        end
+
         function set_adapter(obj, adapter)
             % set_adapter(obj, adapter)
             % Attach/replace the hardware adapter used for live calibration.
@@ -135,7 +152,8 @@ classdef CalibrationGui < handle
         function build_ui_(obj)
             obj.Figure = uifigure( ...
                 Name='Stim Calibration', ...
-                Position=[120 80 1320 760]);
+                Position=[120 80 1320 760], ...
+                CloseRequestFcn=@(src,~) obj.on_close_(src));
 
             obj.Grid = uigridlayout(obj.Figure, [1 2]);
             obj.Grid.ColumnWidth = {360, '1x'};
@@ -207,8 +225,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [16 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [17 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -257,55 +275,66 @@ classdef CalibrationGui < handle
             obj.ExcitationField.Limits = [eps, 10];
             obj.ExcitationField.ValueDisplayFormat = '%.3f';
 
+            maxOutputLabel = uilabel(g, Text='Max Output Voltage (V)', HorizontalAlignment='right');
+            maxOutputLabel.Layout.Row = 6;
+            maxOutputLabel.Layout.Column = 1;
+            obj.MaxOutputField = uieditfield(g, 'numeric');
+            obj.MaxOutputField.Layout.Row = 6;
+            obj.MaxOutputField.Layout.Column = 2;
+            obj.MaxOutputField.Limits = [eps, 1000];
+            obj.MaxOutputField.ValueDisplayFormat = '%.1f';
+            obj.MaxOutputField.Tooltip = stimgen.util.tooltip('StimCalibration', 'MaxOutputVoltage');
+
             sampleRateLabelCaption = uilabel(g, Text='Hardware Sample Rate', HorizontalAlignment='right');
-            sampleRateLabelCaption.Layout.Row = 6;
+            sampleRateLabelCaption.Layout.Row = 7;
             sampleRateLabelCaption.Layout.Column = 1;
             obj.SampleRateLabel = uilabel(g, Text='No adapter', HorizontalAlignment='left');
-            obj.SampleRateLabel.Layout.Row = 6;
+            obj.SampleRateLabel.Layout.Row = 7;
             obj.SampleRateLabel.Layout.Column = 2;
 
             showPlotsLabel = uilabel(g, Text='Show Engine Live Plots', HorizontalAlignment='right');
-            showPlotsLabel.Layout.Row = 7;
+            showPlotsLabel.Layout.Row = 8;
             showPlotsLabel.Layout.Column = 1;
             obj.ShowLivePlotsCheck = uicheckbox(g, Text='');
-            obj.ShowLivePlotsCheck.Layout.Row = 7;
+            obj.ShowLivePlotsCheck.Layout.Row = 8;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
+            obj.ShowLivePlotsCheck.Tooltip = stimgen.util.tooltip('StimCalibration', 'ShowLivePlots');
 
             transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
-            transferLogXLabel.Layout.Row = 8;
+            transferLogXLabel.Layout.Row = 9;
             transferLogXLabel.Layout.Column = 1;
             obj.TransferLogXCheck = uicheckbox(g, Text='', Value=true, ...
-                ValueChangedFcn=@(~,~) obj.refresh_transfer_plot_());
-            obj.TransferLogXCheck.Layout.Row = 8;
+                ValueChangedFcn=@(~,~) obj.on_transfer_log_x_());
+            obj.TransferLogXCheck.Layout.Row = 9;
             obj.TransferLogXCheck.Layout.Column = 2;
 
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 9;
+            obj.BtnReference.Layout.Row = 10;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 10;
+            obj.BtnTones.Layout.Row = 11;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 11;
+            obj.BtnClicks.Layout.Row = 12;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 12;
+            obj.BtnSweptSine.Layout.Row = 13;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 13;
+            obj.BtnFilter.Layout.Row = 14;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
@@ -313,16 +342,18 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 14;
+            obj.BtnStop.Layout.Row = 15;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 15;
+            obj.StatusLabel.Layout.Row = 16;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
         function build_plots_panel_(obj)
+            % Create the three axes and hand them to a LiveMonitor, which does
+            % all the drawing -- live during a run, static between runs.
             panel = uipanel(obj.Grid, Title='Visualization');
             panel.Layout.Row = 1;
             panel.Layout.Column = 2;
@@ -334,27 +365,39 @@ classdef CalibrationGui < handle
             obj.AxTime = uiaxes(g);
             obj.AxTime.Layout.Row = 1;
             obj.AxTime.Layout.Column = 1;
-            title(obj.AxTime, 'Temporal Response');
-            xlabel(obj.AxTime, 'Time (ms)');
-            ylabel(obj.AxTime, 'V');
             grid(obj.AxTime, 'on');
 
             obj.AxSpectrum = uiaxes(g);
             obj.AxSpectrum.Layout.Row = 1;
             obj.AxSpectrum.Layout.Column = 2;
-            title(obj.AxSpectrum, 'Spectral Response');
-            xlabel(obj.AxSpectrum, 'Frequency (Hz)');
-            ylabel(obj.AxSpectrum, 'Power/Frequency');
-            set(obj.AxSpectrum, 'XScale', 'log', 'YScale', 'log');
             grid(obj.AxSpectrum, 'on');
 
             obj.AxTransfer = uiaxes(g);
             obj.AxTransfer.Layout.Row = 2;
             obj.AxTransfer.Layout.Column = [1 2];
-            title(obj.AxTransfer, 'Calibration Transfer Curves');
-            xlabel(obj.AxTransfer, 'Parameter');
-            ylabel(obj.AxTransfer, 'dB SPL');
             grid(obj.AxTransfer, 'on');
+
+            obj.Monitor = stimgen.calibration.LiveMonitor(obj.Engine, ...
+                Axes=[obj.AxTime obj.AxSpectrum obj.AxTransfer]);
+            obj.Monitor.LogX = obj.TransferLogXCheck.Value;
+        end
+
+        function on_transfer_log_x_(obj)
+            % Toggle log/linear frequency on the transfer panel and redraw.
+            obj.Monitor.LogX = obj.TransferLogXCheck.Value;
+            obj.refresh_all_plots_();
+        end
+
+        function on_close_(obj, fig)
+            % Release the monitor before the axes it draws into are deleted.
+            % The engine may outlive this window -- it might be shared with a
+            % host application -- and must not keep notifying a renderer whose
+            % axes died with the figure.
+            if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
+                obj.Monitor.detach();
+                delete(obj.Monitor);
+            end
+            delete(fig);
         end
 
         function on_measure_reference_(obj)
@@ -367,7 +410,7 @@ classdef CalibrationGui < handle
         function run_measure_reference_(obj)
             obj.Engine.calibrate_reference();
             obj.sync_controls_();
-            obj.refresh_response_plots_();
+            obj.Monitor.show_engine_state(obj.Engine);
             obj.set_status_('Reference measurement complete.', false);
         end
 
@@ -514,6 +557,10 @@ classdef CalibrationGui < handle
                 eng.set_adapter(prevAdapter);
             end
             obj.Engine = eng;
+            % The monitor follows an engine, not this object; a load that
+            % swaps the engine has to move it across or it would keep
+            % rendering the discarded one.
+            obj.Monitor.attach(eng);
             obj.sync_controls_();
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
@@ -712,6 +759,7 @@ classdef CalibrationGui < handle
                     MicSensitivity=obj.MicSensField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
+                    MaxOutputVoltage=obj.MaxOutputField.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value);
                 ok = true;
             catch ME
@@ -726,90 +774,17 @@ classdef CalibrationGui < handle
             obj.MicSensField.Value = obj.Engine.MicSensitivity;
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
+            obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
         end
 
         function refresh_all_plots_(obj)
-            obj.refresh_response_plots_();
-            obj.refresh_transfer_plot_();
-        end
-
-        function refresh_response_plots_(obj)
-            cla(obj.AxTime);
-            cla(obj.AxSpectrum);
-
-            y = obj.Engine.ResponseSignal;
-            fs = obj.Engine.Fs;
-            if isempty(y) || fs <= 0
-                title(obj.AxTime, 'Temporal Response (no data)');
-                title(obj.AxSpectrum, 'Spectral Response (no data)');
-                return
-            end
-
-            t = (0:numel(y)-1) ./ fs .* 1e3; % ms
-            plot(obj.AxTime, t, y, 'b-');
-            grid(obj.AxTime, 'on');
-            xlabel(obj.AxTime, 'Time (ms)');
-            ylabel(obj.AxTime, 'V');
-            title(obj.AxTime, sprintf('Temporal Response (N=%d)', numel(y)));
-
-            n = numel(y);
-            w = flattopwin(n);
-            [pxx, f] = periodogram(y, w, 2^nextpow2(n), fs, 'power');
-            pxx = max(pxx, eps);
-            plot(obj.AxSpectrum, f, pxx, 'r-');
-            set(obj.AxSpectrum, 'XScale', 'log', 'YScale', 'log');
-            grid(obj.AxSpectrum, 'on');
-            xlabel(obj.AxSpectrum, 'Frequency (Hz)');
-            ylabel(obj.AxSpectrum, 'Power/Frequency');
-            title(obj.AxSpectrum, 'Spectral Response (periodogram)');
-        end
-
-        function refresh_transfer_plot_(obj)
-            cla(obj.AxTransfer);
-            grid(obj.AxTransfer, 'on');
-            hold(obj.AxTransfer, 'on');
-
-            hasData = false;
-            if obj.Engine.IsCalibrated
-                C = obj.Engine.CalibrationData;
-
-                if isfield(C, 'tone') && ~isempty(C.tone)
-                    plot(obj.AxTransfer, C.tone.frequency, C.tone.spl_db, 'o-b', ...
-                        DisplayName='Tone SPL');
-                    hasData = true;
-                end
-
-                if isfield(C, 'click') && ~isempty(C.click)
-                    plot(obj.AxTransfer, C.click.duration * 1e6, C.click.spl_db, 's-r', ...
-                        DisplayName='Click SPL');
-                    hasData = true;
-                end
-
-                if isfield(C, 'swept_sine') && ~isempty(C.swept_sine)
-                    plot(obj.AxTransfer, C.swept_sine.frequency, C.swept_sine.spl_db, '^-g', ...
-                        DisplayName='Swept Sine SPL');
-                    hasData = true;
-                end
-            end
-
-            if obj.TransferLogXCheck.Value
-                obj.AxTransfer.XScale = 'log';
-            else
-                obj.AxTransfer.XScale = 'linear';
-            end
-
-            if hasData
-                xlabel(obj.AxTransfer, 'Frequency (Hz) / Duration (\mus)');
-                ylabel(obj.AxTransfer, 'Measured Level (dB SPL)');
-                title(obj.AxTransfer, 'Calibration Transfer Curves');
-                legend(obj.AxTransfer, 'Location', 'best');
-            else
-                title(obj.AxTransfer, 'Calibration Transfer Curves (no data)');
-                xlabel(obj.AxTransfer, 'Parameter');
-                ylabel(obj.AxTransfer, 'dB SPL');
-            end
-            hold(obj.AxTransfer, 'off');
+            % Redraw all three panels from the Engine's current state, via the
+            % monitor. Order matters: show_calibration resets the monitor's
+            % graphics cache before drawing the lookup tables, so the response
+            % panels have to be drawn after it, not before.
+            obj.Monitor.show_calibration(obj.Engine);
+            obj.Monitor.show_engine_state(obj.Engine);
         end
 
         function update_runtime_state_(obj)

@@ -16,10 +16,29 @@ It has no knowledge of any particular hardware or experiment framework. Protocol
 CalibrationGui.m implements:
 
 1. Constructor wiring (offline default, pre-built Engine, or host-driven).
-2. GUI creation (controls, plots, menu actions).
+2. GUI creation (controls, plot axes, menu actions).
 3. Delegation of runtime lifecycle to the host.
 4. Calibration execution and state/status updates.
 5. Load/save for .esgc calibration files.
+
+## Plots
+
+The three axes (waveform, spectrum, transfer curve) are drawn exclusively by a
+[`stimgen.calibration.LiveMonitor`](stimgen_calibration.md#watching-a-run)
+attached to them at construction. During a run with **Show Engine Live Plots**
+checked, the monitor renders the engine's `LiveUpdate` stream measurement by
+measurement — analysed-span shading and clipping limits on the waveform, dB SPL
+spectrum with harmonic markers and a previous-measurement ghost, and the
+transfer curve filling in with a ±1 SD repeat ribbon, required drive voltage
+against the `MaxOutputVoltage` ceiling, and a progress/ETA title. Between runs
+the same monitor draws the committed lookup tables and the last response, so
+the live and static views are one rendering, not two.
+
+**Transfer Plot Log X-Axis** sets the monitor's `LogX`; **Max Output Voltage**
+feeds both the clipping test and the unreachable-voltage line. Loading a .esgc
+re-attaches the monitor to the loaded engine, and closing the window detaches
+and deletes the monitor so the engine does not keep notifying a renderer whose
+axes are gone.
 
 ## Constructor
 

@@ -50,11 +50,12 @@ delegates every property to an Engine; it exists so `StimType` sees stable prope
 The engine never draws. Gated by `ShowLivePlots`, it broadcasts a `LiveUpdate` event carrying a
 `stimgen.calibration.LiveUpdate` payload for every measurement; `stimgen.calibration.LiveMonitor`
 renders that stream, either into its own window or into axes a host GUI supplies (which is how
-`StimCalibration` embeds it). A listener that throws is logged and skipped — `notify` propagates
-listener errors to its caller, and every `calibrate_*` treats an error as an aborted run and
-discards the partial data, so an unguarded broadcast would let a plotting bug destroy a sweep.
-`Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset` remain only as deprecated
-shims that forward to an attached monitor.
+`StimCalibration` and `CalibrationGui` embed it). Failures never abort a sweep: MATLAB itself
+catches listener errors (warning per notify), `emit_live_` guards payload construction — every
+`calibrate_*` treats an error as an aborted run and discards the partial data — and
+`LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
+per-measurement warning storm. `Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset`
+remain only as deprecated shims that forward to an attached monitor.
 
 ### The two abstract seams — do not break these
 

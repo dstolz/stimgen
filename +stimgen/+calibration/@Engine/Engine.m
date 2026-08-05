@@ -252,12 +252,14 @@ classdef Engine < handle
             % Broadcast one LiveUpdate, gated by ShowLivePlots so a headless
             % run pays nothing for the payload it would not render.
             %
-            % notify() propagates a listener's error to its caller, and every
-            % calibrate_ method treats an error as an aborted run and discards
-            % the partial data. Unguarded, that makes any bug in any attached
-            % renderer able to destroy a sweep that took minutes to acquire.
-            % Display is not worth a measurement: the failure is logged once
-            % per run and the sweep carries on.
+            % Listener errors are caught by MATLAB itself (warned, not
+            % propagated), so the guard here is for payload construction:
+            % live_snapshot_ runs before notify, and every calibrate_ method
+            % treats an error as an aborted run and discards the partial data.
+            % Display is not worth a measurement: a snapshot failure is logged
+            % once per run and the sweep carries on. LiveMonitor.update guards
+            % its own rendering the same way, so a plotting bug is one log
+            % line rather than a per-measurement warning storm.
             if ~obj.ShowLivePlots, return; end
             try
                 notify(obj, 'LiveUpdate', obj.live_snapshot_(stage, phase, varargin{:}));

@@ -57,6 +57,7 @@ classdef LiveMonitor < handle
         Timer_                     % tic id backing LastDraw_
         PrevSpectrum_ (1,2) cell = {[], []}  % {f, level} of the previous measurement
         LastStage_ (1,1) string = ""
+        RenderFailed_ (1,1) logical = false  % latched by update() on a render error; re-armed at "start"
     end
 
     methods
