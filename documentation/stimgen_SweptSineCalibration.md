@@ -54,7 +54,7 @@ where:
 adapter = host.calibrationAdapter()  % a host-supplied HwAdapter for the connected interface
 eng = stimgen.calibration.Engine(adapter);
 
-% Measure reference (single 1 kHz tone)
+% Measure reference (records an acoustic calibrator on the mic; plays nothing)
 eng.calibrate_reference();
 
 % Run swept sine calibration (1 second, default 50-point analysis)

@@ -173,7 +173,10 @@ Recommended sequence:
 
 1. Initialize Runtime From Protocol...
 2. Attach Adapter (optional if auto-attach already succeeded)
-3. Measure Reference
+3. Measure Reference — put an acoustic calibrator (e.g. PCB CAL150) on the
+   microphone and switch it on first; the button prompts to confirm, then
+   records for one second without playing anything. Remove the calibrator
+   afterwards.
 4. Build the tone lookup, one of two ways:
    - Calibrate Tones (direct per-frequency measurement), **or**
    - Calibrate Swept Sine, with the Tone Lookup From Swept Sine option checked

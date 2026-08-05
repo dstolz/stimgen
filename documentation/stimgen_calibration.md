@@ -61,9 +61,11 @@ Before measuring, fill in the fields on the left side of the GUI:
 
 ### Step 4 — Measure Reference
 
-Place the calibrator on the microphone and turn it on.
+Place the acoustic calibrator (e.g. PCB CAL150, B&K 4231) on the microphone and turn it on. It must be set to the same frequency and level as the *Reference Frequency* and *Reference Level* fields.
 
-Click **Measure Reference**. The software plays a tone at the reference frequency, records the microphone output, and computes the microphone sensitivity (V/Pa). The *Mic Sensitivity* field will update automatically.
+Click **Measure Reference** and confirm the prompt. Nothing is played through the speaker: the reference tone comes from the calibrator, and the software only records the microphone for one second, reads the level at the reference frequency, and computes the microphone sensitivity (V/Pa). The *Mic Sensitivity* field will update automatically.
+
+If the recording contains no tone at the reference frequency, the step fails with `stimgen:calibration:Engine:noReferenceTone` rather than storing a meaningless sensitivity — check that the calibrator is switched on and seated, and that the microphone reaches the acquisition input.
 
 Remove the calibrator after this step and position the microphone at your experimental measurement point.
 
@@ -116,7 +118,7 @@ host.connect();
 adapter = host.calibrationAdapter();
 ```
 
-To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`.
+To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`. `record(nSamples)` — used by the reference measurement, which must not drive the speaker — is concrete and defaults to a silent `play_and_record`, so it only needs overriding if the device can acquire without arming its output.
 
 ### Step 2 — Create An Engine
 
@@ -145,13 +147,15 @@ yourself to log or forward progress.
 
 ### Step 4 — Measure The Microphone Reference
 
-Place the calibrator on the microphone and turn it on, then:
+Place the acoustic calibrator on the microphone and turn it on, then:
 
 ```matlab
 eng.calibrate_reference();
 ```
 
-This plays a tone at `ReferenceFrequency` and uses the recorded level plus `ReferenceLevel` to compute `MicSensitivity`. Remove the calibrator after this step.
+This records only — nothing is played. The tone is produced by the calibrator, so the recorded level at `ReferenceFrequency` is by definition `ReferenceLevel` dB SPL, which is what makes `MicSensitivity` (V/Pa) computable. A recording with no tone at `ReferenceFrequency` (SNR below 20 dB) raises `stimgen:calibration:Engine:noReferenceTone` instead of storing a sensitivity derived from noise. Remove the calibrator after this step.
+
+The acquisition goes through `HwAdapter.record()`, whose default implementation is a silent `play_and_record`; a backend that can acquire without arming its output may override it.
 
 ### Step 5 — Calibrate Tones
 
@@ -406,7 +410,7 @@ Three notes on behaviour:
 Source: `+stimgen/+calibration/`
 
 - `Engine.m` — calibration orchestration, result storage, save/load, and voltage lookup.
-- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`).
+- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes.

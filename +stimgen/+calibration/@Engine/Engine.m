@@ -37,7 +37,8 @@ classdef Engine < handle
     %   eng = stimgen.calibration.Engine(adapter);
     %   eng.set_configuration(ReferenceFrequency=1000);  % parameters are
     %                                    % SetAccess = protected; use this
-    %   eng.calibrate_reference();
+    %   eng.calibrate_reference();      % records an acoustic calibrator held
+    %                                   % on the mic; nothing is played
     %   eng.calibrate_tones([], 3);     % 3 passes over the burst train
     %   eng.calibrate_clicks([], 3);
     %   eng.design_filter();            % optional; see design_filter for
@@ -128,7 +129,7 @@ classdef Engine < handle
 
         set_configuration(obj, options) % Update engine calibration parameters.
         set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
-        calibrate_reference(obj) % Measure microphone sensitivity from reference tone.
+        calibrate_reference(obj) % Measure microphone sensitivity by recording an acoustic calibrator (plays nothing).
         calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.

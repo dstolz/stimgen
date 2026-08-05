@@ -79,7 +79,9 @@ The calibration subsystem separates measurement math from hardware I/O:
   calibration, equalization filter design, `.esgc` save/load. Depends only on the
   abstract adapter below, never on hardware directly.
 - `stimgen.calibration.HwAdapter` — abstract; implement `sample_rate()` and
-  `play_and_record(signal)` to support a new device.
+  `play_and_record(signal)` to support a new device. `record(nSamples)` is
+  concrete (silent `play_and_record` by default) and is what the reference
+  measurement uses.
 - `stimgen.calibration.WindowsSoundCardAdapter` — built-in adapter using the
   system sound card.
 

@@ -145,7 +145,7 @@
     "LoadTool": "Load .esgc",
     "SaveTool": "Save .esgc",
     "QuickStartTool": "Calibration Quick Start",
-    "BtnReference": "Step 1: Measure reference tone to update microphone sensitivity.",
+    "BtnReference": "Step 1: Record an acoustic calibrator (e.g. PCB CAL150) held on the microphone to update microphone sensitivity. Records only -- nothing is played through the speaker.",
     "BtnTones": "Step 2: Run tone frequency sweep to build the tone calibration table by direct measurement.",
     "BtnClicks": "Optional: Build click-duration calibration table.",
     "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp. Can also serve tone lookups -- see Tone Lookup From Swept Sine.",

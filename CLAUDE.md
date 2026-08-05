@@ -67,7 +67,9 @@ remain only as deprecated shims that forward to an attached monitor.
   `connectionState`, `calibrationAdapter`, and the optional `sampleRate` (concrete, returns
   NaN by default, so a host predating it still satisfies the contract). Consumed by
   `StimPlayer` and `CalibrationGui`.
-- `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`. Consumed only
+- `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`, plus a concrete
+  `record(nSamples)` (silent `play_and_record` by default) that `calibrate_reference` uses so the
+  reference step never drives the speaker. Consumed only
   by `Engine`. `WindowsSoundCardAdapter` is the one built-in implementation.
 
 Both are optional at construction; omitting them puts the GUIs in offline mode where speaker
