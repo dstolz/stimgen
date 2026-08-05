@@ -80,9 +80,10 @@ The sweep runs automatically. Progress is shown in the MATLAB command window. A 
 
 These are not required for basic tone delivery but improve accuracy for specialized stimuli:
 
-- **Calibrate Clicks** — sweep across click durations. Dialog collects a duration vector and repeat count.
+- **Calibrate Clicks** — sweep across click durations. Dialog collects a duration vector (in ms) and repeat count. Leave the vector blank for the default octave series from 0.01 ms to 5.12 ms. Any requested duration shorter than one sample at the current sample rate is skipped, and the skipped values are listed in the log.
 - **Calibrate Swept Sine** — broadband transfer function measurement. Dialog collects chirp duration and repeat count.
 - **Design Filter** — designs an equalization FIR filter from the tone LUT, or from the swept sine LUT if no tone calibration exists. Requires one of those two calibrations to have already completed. A dialog collects the design options (filter length, design method, interpolation, smoothing, correction limit, band — see [Reference: Filter Design Options](#reference-filter-design-options)), and the result opens in `fvtool`.
+- **Test Filter** — verifies the designed filter empirically: plays the sweep raw and again through the filter, measures both responses, and reports the ripple of the equalized response against the speaker's own. Enabled once a filter exists and hardware is attached; the result is stored in the calibration as `filterTest`.
 
 ### Step 7 — Save
 
@@ -210,6 +211,17 @@ eng.calibrate_clicks(durs, 3);
 % Swept-sine (broadband transfer function, 1-second chirp, 4 averages):
 eng.calibrate_swept_sine(1, [], 4);
 
+% Serve tone lookups from the swept sine calibration instead of the direct
+% tone table. Both LUTs are on the same SPL/voltage scale, so either can
+% answer compute_adjusted_voltage("tone", ...). While set to "swept_sine"
+% this OVERRIDES any direct tone calibration; nothing is deleted, and
+% setting it back to "tone" restores the direct table instantly. If no
+% swept sine data exists yet the direct tone table still applies. The
+% choice is saved in the .esgc file. In the CalibrationGui this is the
+% "Tone Lookup From Swept Sine" checkbox.
+eng.set_configuration(ToneLutSource="swept_sine");
+eng.set_configuration(ToneLutSource="tone");       % back to the direct table
+
 % Equalization filter design (requires tone or swept sine calibration):
 eng.design_filter();              % "auto": tone LUT, else swept sine
 eng.design_filter("swept_sine");  % force the swept sine LUT
@@ -217,9 +229,22 @@ eng.design_filter("swept_sine");  % force the swept sine LUT
 % Longer filter, 1/6-octave smoothing, correction capped at 20 dB, band limited:
 eng.design_filter("swept_sine", NumCoefficients=257, SmoothingOctaves=1/6, ...
     MaxCorrectionDb=20, FrequencyRange=[500 32000]);
+
+% Verify the filter empirically: plays the sweep raw and through the filter,
+% measures both, and reports how flat the equalized response came out.
+r = eng.test_filter();            % result also stored in CalibrationData.filterTest
+fprintf('ripple %.1f -> %.1f dB (passed: %d)\n', ...
+    r.unfiltered.ripple_db, r.filtered.ripple_db, r.passed);
 ```
 
 See [Reference: Filter Design Options](#reference-filter-design-options) for the full option list.
+
+`test_filter` deconvolves both responses against the *raw* chirp, so the second
+measurement is the filter+speaker chain — the transfer function a calibrated stimulus
+actually passes through. Options: `Duration`, `RepeatCount`, `TailDuration`, `NumPoints`,
+and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized response at
+or below which the test is reported passed. In `CalibrationGui` this runs from the
+**Test Filter** button.
 
 ### Step 7 — Save
 
@@ -264,8 +289,8 @@ mon = stimgen.calibration.LiveMonitor(eng);   % opens its own window
 eng.calibrate_tones();
 ```
 
-A host GUI supplies its own axes instead, which is how `stimgen.StimCalibration` shows a
-run beside the controls driving it:
+A host GUI supplies its own axes instead, which is how `stimgen.calibration.CalibrationGui`
+shows a run beside the controls driving it:
 
 ```matlab
 mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSignal axSpectrum axTransfer]);
@@ -303,6 +328,7 @@ prefer a `LiveMonitor`.
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
+| `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
 
 These are all `SetAccess = protected` — they are readable from anywhere but can only
 be written through `eng.set_configuration(Name=value)`, which is what runs their
@@ -327,6 +353,7 @@ otherwise written only by the calibration runs themselves.
 | `filterGrpDelay` | `design_filter` | filter group delay in samples (0 until filter is designed) |
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
+| `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 
 The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
 

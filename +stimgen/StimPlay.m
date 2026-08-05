@@ -151,6 +151,10 @@ classdef (Hidden) StimPlay < handle & matlab.mixin.SetGet
 
 
         function set.Fs(obj,fs)
+            % Kept on the wrapper as well as the stimuli it holds, so
+            % toStruct and any reader of StimPlay.Fs see the real rate
+            % rather than the 1 Hz placeholder default.
+            obj.Fs = fs;
             for i = 1:obj.NStimObj
                 if obj.StimObj.IsMultiObj
                     obj.StimObj.MultiObjects(i).Fs = fs;

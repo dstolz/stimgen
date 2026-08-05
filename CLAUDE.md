@@ -43,14 +43,16 @@ variant system, serialization, and GUI generation; subclasses only synthesize a 
 into hardware, and triggers from its own MATLAB timer.
 
 **Calibration** — `stimgen.calibration.Engine` (in `+calibration/@Engine/`) does all measurement
-math and owns `.esgc` save/load. `stimgen.StimCalibration` is a thin GUI-state wrapper that
-delegates every property to an Engine; it exists so `StimType` sees stable property names.
-`stimgen.calibration.CalibrationGui` is the interactive front end.
+math and owns `.esgc` save/load. `stimgen.StimCalibration` is a thin headless wrapper that
+delegates every property to an Engine; it exists so `StimType` sees stable property names, and
+it is the form a calibration takes once serialized. `stimgen.calibration.CalibrationGui` is the
+one interactive front end — `StimCalibration` had a second window of its own, which was removed
+so there is a single GUI to maintain.
 
 The engine never draws. Gated by `ShowLivePlots`, it broadcasts a `LiveUpdate` event carrying a
 `stimgen.calibration.LiveUpdate` payload for every measurement; `stimgen.calibration.LiveMonitor`
 renders that stream, either into its own window or into axes a host GUI supplies (which is how
-`StimCalibration` and `CalibrationGui` embed it). Failures never abort a sweep: MATLAB itself
+`CalibrationGui` embeds it). Failures never abort a sweep: MATLAB itself
 catches listener errors (warning per notify), `emit_live_` guards payload construction — every
 `calibrate_*` treats an error as an aborted run and discards the partial data — and
 `LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
@@ -62,7 +64,9 @@ remain only as deprecated shims that forward to an attached monitor.
 `stimgen` never references a host-application type. All hardware coupling goes through:
 
 - `stimgen.HardwareHost` — protocol load, connect/release, `setMode`, `findParameter`,
-  `connectionState`, `calibrationAdapter`. Consumed by `StimPlayer` and `CalibrationGui`.
+  `connectionState`, `calibrationAdapter`, and the optional `sampleRate` (concrete, returns
+  NaN by default, so a host predating it still satisfies the contract). Consumed by
+  `StimPlayer` and `CalibrationGui`.
 - `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`. Consumed only
   by `Engine`. `WindowsSoundCardAdapter` is the one built-in implementation.
 
@@ -169,7 +173,7 @@ in `propMeta`. Lookup walks the class section then each superclass section, so a
 an inherited entry just by declaring the same key — that is how `ClickTrain.Duration` retitles the
 base-class text without editing `@StimType/propMeta.m`. GUI code with no stimulus object passes a
 section name instead (`stimgen.util.tooltip('StimPlayer','RunBtn')`); `@StimPlayer/create.m`,
-`@StimInspector/build_ui_.m`, `@StimCalibration/gui.m` and `+calibration/CalibrationGui.m` all do
+`@StimInspector/build_ui_.m` and `+calibration/CalibrationGui.m` all do
 this for their own controls and toolbars. An unknown key returns `''` and logs a warning rather
 than erroring, so a missing tooltip never blocks a GUI. The file is cached and re-read on change,
 so edits take effect without `clear functions`.

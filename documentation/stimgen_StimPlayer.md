@@ -23,6 +23,7 @@ At the `StimPlayer` level, the class adds:
 - a bank list for adding, removing, and renaming stimulus entries
 - a parameter editor that rebuilds itself for the selected stimulus type
 - a shared playback schedule across bank items using a global `ISI` range
+- a single sample rate (`Fs`) for the whole bank
 - optional hardware-backed playback through a protocol's hardware interfaces
 - save/load support for `.spl` bank files
 
@@ -111,14 +112,50 @@ Important controls:
 - `ISIField`: edits the global inter-stimulus interval range used by the
   player timer, entered in **milliseconds** (`StimPlayer.ISI` itself stays in
   seconds)
+- `FsField`: edits the sample rate, in Hz, used to generate every stimulus in
+  the bank — see [Sample rate](#sample-rate)
 - `OrderDD`: chooses the cross-item playback order, `Serial` or `Shuffle`
 
-`RepsField`, `ISIField`, and `OrderDD` can be hidden by an interfacing
+`RepsField`, `ISIField`, `FsField`, and `OrderDD` can be hidden by an interfacing
 application — see [Hiding session controls](#hiding-session-controls-host-takeover).
 
-When you add a new item, `add_stim()` creates the stimulus object,
-constructs a `StimPlay`, assigns a default name such as `Tone_1`, and then
-selects it so the editor panel is rebuilt immediately.
+When you add a new item, `add_stim()` creates the stimulus object at the bank's
+current sample rate, constructs a `StimPlay`, assigns a default name such as
+`Tone_1`, and then selects it so the editor panel is rebuilt immediately.
+
+### Sample rate
+
+`stimgen.StimType` carries its own `Fs`, but `StimPlayer` holds **one rate for
+the whole bank** — the hardware plays every item through the same converter, so
+a per-item rate would have no meaning at Run time. The `Sample Rate` field in
+the bank panel shows it, and `StimPlayer.Fs` is the same value programmatically:
+
+```matlab
+sp.Fs = 48000;        % rewrites Fs on every bank item and rebuilds their signals
+```
+
+Three things keep that single value true:
+
+- `add_stim()` constructs new stimuli with `'Fs', obj.Fs`
+- `load_bank()` adopts the first loaded item's rate and re-applies it to the
+  rest, reporting in the status line when a bank held mixed rates
+- `Run` calls `adopt_host_fs_()`, which takes the rate from
+  `HardwareHost.sampleRate()` when the attached host can report one. A host
+  that returns `NaN` — the default — leaves the operator's value in place.
+
+A rate change moves Nyquist, so some stimuli cannot survive one: a noise band
+above the new Nyquist, or a click shorter than one sample. Assigning `Fs`
+therefore applies the rate to every item, rebuilds each signal, and if any item
+fails, **rolls the whole bank back** and throws
+`stimgen:StimPlayer:SampleRateNotSupported` naming the items and why. The bank
+never sits at a rate its signals were not generated at. Bring the offending
+stimulus's parameters inside the new range first, then set the rate again.
+
+The rebuild is deliberately run twice per item: assigning `StimType.Fs`
+regenerates the signal inside a `PostSet` listener, where MATLAB downgrades an
+error to a warning and keeps the stale signal, so `apply_fs_to_bank_()` calls
+`update_signal` again where the failure is catchable. This is the same
+assign-then-rebuild pattern the parameter editor uses in `set_prop_`.
 
 ### Parameter editor panel
 
@@ -177,6 +214,23 @@ If a new `StimType` subclass exposes good `propMeta()` metadata — including
 `group`/`order` where a property belongs somewhere other than `Waveform` —
 the editor panel can usually handle it without any `StimPlayer` changes.
 
+### Recent files
+
+The File menu carries three Recent submenus — Recent Protocols, Recent
+Stimulus Banks and Recent Calibrations — each listing up to nine
+most-recently-used paths, newest first. The lists persist across sessions in
+MATLAB preferences under the `StimPlayer` group (`RecentProtocols`,
+`RecentBanks`, `RecentCalibrations`) and are separate from the equivalent
+`StimCalibrationGui` lists.
+
+An entry is recorded whenever the corresponding file is successfully loaded,
+and also when a bank is saved. Re-selecting a path already in a list promotes
+it to the top rather than duplicating it. Selecting an entry whose file has
+since moved or been deleted does not error: the entry is dropped from the list
+and the status label reports the missing path. An empty list shows a disabled
+`(None)` item. All three submenus are disabled during playback by
+`lock_bank_controls_`, like the load/save items they mirror.
+
 ### Toolbar
 
 A toolbar above the signal plot gives one-click access to the most common
@@ -202,8 +256,10 @@ sp.set_control_visibility(All=false)                              % host runs ev
 sp.set_control_visibility(All=false, Run=true)                    % all but Run
 ```
 
-Hideable controls: `Reps`, `ISI`, `PlayMode` (the `Shuffle`/`Serial`
-dropdown), `Run`, and `Pause`. `All` sets every one at once and is applied
+Hideable controls: `Reps`, `ISI`, `SampleRate`, `PlayMode` (the
+`Shuffle`/`Serial` dropdown), `Run`, and `Pause`. A host whose hardware dictates
+the converter rate typically hides `SampleRate` and lets `Run` adopt it from
+`HardwareHost.sampleRate()`. `All` sets every one at once and is applied
 before the individual pairs, so the two can be combined as above. Each accepts
 `true`/`false` or `"on"`/`"off"`.
 
@@ -216,7 +272,7 @@ tf = sp.ControlVisibility.Run;
 ```
 
 Hiding a control removes only the widget. The corresponding state stays fully
-available programmatically — `sp.ISI`, `sp.SelectionType`,
+available programmatically — `sp.ISI`, `sp.Fs`, `sp.SelectionType`,
 `sp.StimPlayObjs(k).Reps` — and playback can be driven with the action-string
 form of `playback_control`:
 
@@ -235,12 +291,13 @@ experiment timer.
 At run time the class:
 
 1. Resolves hardware parameters through `host.findParameter`.
-2. Regenerates signals for every bank item.
-3. Starts a fixed-rate timer.
-4. Chooses the next bank index using the player-level `SelectionType`.
-5. Writes the stimulus waveform into one of two hardware buffers.
-6. Toggles the matching trigger parameter.
-7. Logs presentation order and elapsed trigger time.
+2. Adopts the host's sample rate, when it reports one.
+3. Regenerates signals for every bank item.
+4. Starts a fixed-rate timer.
+5. Chooses the next bank index using the player-level `SelectionType`.
+6. Writes the stimulus waveform into one of two hardware buffers.
+7. Toggles the matching trigger parameter.
+8. Logs presentation order and elapsed trigger time.
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
@@ -292,9 +349,11 @@ repetition count, which ends the session cleanly.
 `load_bank()` reconstructs each item by:
 
 - creating a new stimulus object from `S.StimObj.Class`
-- restoring base `StimType` properties
+- restoring base `StimType` properties, `Fs` among them
 - restoring the serialized `UserProperties`
 - wrapping the result in a new `stimgen.StimPlay`
+- adopting the first item's `Fs` as the bank rate and re-applying it to the
+  rest (see [Sample rate](#sample-rate))
 
 ### Compatibility note
 

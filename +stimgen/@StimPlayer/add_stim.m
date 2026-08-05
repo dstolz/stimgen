@@ -8,11 +8,12 @@ h = obj.handles;
 try
 	typeName = h.TypeDropdown.Value;
 
-	% Create the StimType object
-	stimObj = stimgen.(typeName)();
+	% Create the StimType object at the bank's sample rate
+	stimObj = stimgen.(typeName)('Fs', obj.Fs);
 
 	% Wrap in StimPlay
 	sp              = stimgen.StimPlay(stimObj);
+	sp.Fs           = obj.Fs;
 	sp.Reps         = h.RepsField.Value;
 	sp.Name         = sprintf('%s_%d', typeName, numel(obj.StimPlayObjs) + 1);
 	sp.SelectionType = "Serial"; % within-stim selection (single StimObj, irrelevant)

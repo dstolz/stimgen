@@ -46,7 +46,7 @@ bankPnl.Layout.Column = 1;
 
 bg = uigridlayout(bankPnl);
 bg.ColumnWidth = {'1x', '1x'};
-bg.RowHeight   = {26, 26, '1x', 26, 26, 26, 26, 26, 30};
+bg.RowHeight   = {26, 26, '1x', 26, 26, 26, 26, 26, 26, 30};
 bg.Padding     = [6 6 6 6];
 bg.RowSpacing  = 4;
 
@@ -103,6 +103,7 @@ R = R + 1;
 % appears wherever the pointer lands on the row.
 REPS_TIP  = tip('Reps');
 ISI_TIP   = tip('ISI');
+FS_TIP    = tip('SampleRate');
 ORDER_TIP = tip('Order');
 
 lbl = uilabel(bg, 'Text', 'Reps:', 'HorizontalAlignment', 'right');
@@ -140,6 +141,27 @@ h.Value               = mat2str(obj.ISI * 1e3);
 h.ValueChangedFcn     = @(s,e) on_isi_changed_(obj,s,e);
 h.Tooltip             = ISI_TIP;
 obj.handles.ISIField  = h;
+
+R = R + 1;
+
+% Sample rate field. One rate for the whole bank; the unit sits in the
+% display format rather than the label, which the narrow bank panel clips.
+lbl = uilabel(bg, 'Text', 'Sample Rate:', 'HorizontalAlignment', 'right');
+lbl.Layout.Row    = R;
+lbl.Layout.Column = 1;
+lbl.Tooltip       = FS_TIP;
+obj.handles.FsLabel = lbl;
+obj.handles.FsRow   = R;
+
+h = uieditfield(bg, 'numeric', 'Tag', 'FsField');
+h.Layout.Row          = R;
+h.Layout.Column       = 2;
+h.Limits              = [1 Inf];
+h.ValueDisplayFormat  = '%.2f Hz';
+h.Value               = obj.Fs;
+h.ValueChangedFcn     = @(s,e) on_fs_changed_(obj,s,e);
+h.Tooltip             = FS_TIP;
+obj.handles.FsField   = h;
 
 R = R + 1;
 
@@ -277,23 +299,30 @@ obj.handles.Counter = h;
 mFile = uimenu(f, 'Text', '&File');
 mLoadProtocol = uimenu(mFile, 'Text', 'Load &Protocol',  'Accelerator', 'P', ...
     'MenuSelectedFcn', @(~,~) obj.load_protocol_());
+mRecentProtocols = uimenu(mFile, 'Text', 'Recent P&rotocols');
 mLoadBank = uimenu(mFile, 'Text', '&Load Bank',  'Accelerator', 'L', ...
     'Separator', 'on', ...
     'MenuSelectedFcn', @(~,~) obj.load_bank());
 mSaveBank = uimenu(mFile, 'Text', '&Save Bank',  'Accelerator', 'S', ...
     'MenuSelectedFcn', @(~,~) obj.save_bank());
-mCalibration = uimenu(mFile, 'Text', '&Calibration', 'Accelerator', 'C', ...
-    'MenuSelectedFcn', @(~,~) set_calibration_(obj));
-mOpenCalibrationGui = uimenu(mFile, 'Text', 'Open Calibration &GUI', ...
-    'MenuSelectedFcn', @(~,~) obj.open_calibration_gui());
-mInspectStim = uimenu(mFile, 'Text', '&Inspect Stimulus', 'Accelerator', 'I', ...
+mRecentBanks = uimenu(mFile, 'Text', 'Recent Stimulus &Banks');
+
+mCalibrationMenu = uimenu(f, 'Text', '&Calibration');
+mCalibration = uimenu(mCalibrationMenu, 'Text', '&Load Calibration', 'Accelerator', 'C', ...
+    'MenuSelectedFcn', @(~,~) obj.load_calibration_());
+mRecentCalibrations = uimenu(mCalibrationMenu, 'Text', 'Recent Calibratio&ns');
+mOpenCalibrationGui = uimenu(mCalibrationMenu, 'Text', 'Open Calibration &GUI', ...
     'Separator', 'on', ...
+    'MenuSelectedFcn', @(~,~) obj.open_calibration_gui());
+
+mTools = uimenu(f, 'Text', '&Tools');
+mInspectStim = uimenu(mTools, 'Text', '&Inspect Stimulus', 'Accelerator', 'I', ...
     'MenuSelectedFcn', @(~,~) obj.open_stim_inspector());
-mExportSignal = uimenu(mFile, 'Text', '&Export Signal to Workspace', 'Separator', 'on', ...
+mExportSignal = uimenu(mTools, 'Text', '&Export Signal to Workspace', 'Separator', 'on', ...
     'MenuSelectedFcn', @(~,~) export_signal_to_workspace_(obj));
-mExportAll = uimenu(mFile, 'Text', 'Export &All Signals to Workspace', ...
+mExportAll = uimenu(mTools, 'Text', 'Export &All Signals to Workspace', ...
     'MenuSelectedFcn', @(~,~) export_all_signals_to_workspace_(obj));
-mExportObjs = uimenu(mFile, 'Text', 'Export Bank as &StimType Objects', ...
+mExportObjs = uimenu(mTools, 'Text', 'Export Bank as &StimType Objects', ...
     'MenuSelectedFcn', @(~,~) export_bank_as_stimtype_(obj));
 
 % ---- Toolbar ----
@@ -348,6 +377,9 @@ obj.handles.LoadProtocolMenu  = mLoadProtocol;
 obj.handles.LoadBankMenu      = mLoadBank;
 obj.handles.SaveBankMenu      = mSaveBank;
 obj.handles.CalibrationMenu   = mCalibration;
+obj.handles.RecentProtocolsMenu    = mRecentProtocols;
+obj.handles.RecentBanksMenu        = mRecentBanks;
+obj.handles.RecentCalibrationsMenu = mRecentCalibrations;
 obj.handles.CalibrationGuiMenu = mOpenCalibrationGui;
 obj.handles.InspectStimMenu   = mInspectStim;
 obj.handles.ExportSignalMenu  = mExportSignal;
@@ -355,6 +387,7 @@ obj.handles.ExportAllMenu     = mExportAll;
 obj.handles.ExportObjsMenu    = mExportObjs;
 
 obj.apply_control_visibility_;
+obj.refresh_recent_menus_;
 
 end % create
 
@@ -400,6 +433,20 @@ catch ME
 end
 end
 
+function on_fs_changed_(obj, src, event)
+% Apply a new bank-wide sample rate. Every stimulus is rebuilt at the new
+% rate, so this can take a moment on a large bank.
+try
+    obj.Fs = src.Value;
+    obj.set_status_(sprintf('Sample rate set to %g Hz for %d bank item(s).', ...
+        obj.Fs, numel(obj.StimPlayObjs)));
+catch ME
+    src.Value = event.PreviousValue;
+    obj.report_gui_error_(ME, "Invalid Sample Rate", ...
+        "Sample rate must be a single positive, finite value in Hz.");
+end
+end
+
 function on_order_changed_(obj, src, ~)
 try
     obj.SelectionType = src.Value;
@@ -421,51 +468,6 @@ try
 catch ME
     obj.report_gui_error_(ME, "Key Binding Error", ...
         "StimPlayer could not handle the requested keyboard shortcut.");
-end
-end
-
-function set_calibration_(obj)
-% Prompt user for a calibration file and apply to all bank items.
-[fn, pn] = uigetfile( ...
-    {'*.esgc;*.sgc','Calibration Files (*.esgc, *.sgc)'; ...
-     '*.esgc','EPsych Stim Calibration (*.esgc)'; ...
-     '*.sgc','Legacy Calibration (*.sgc)'}, ...
-    'Select Calibration File');
-if isequal(fn, 0), return; end
-
-ffn = fullfile(pn, fn);
-try
-    [~, ~, ext] = fileparts(ffn);
-
-    if strcmpi(ext, '.esgc')
-        calObj = stimgen.StimCalibration();
-        calObj.load_calibration(ffn);
-    else
-        cal = load(ffn, '-mat');
-        fields = fieldnames(cal);
-        if isempty(fields)
-            error('StimPlayer:InvalidCalibrationFile', ...
-                'The selected calibration file did not contain any variables.');
-        end
-
-        raw = cal.(fields{1});
-        if isa(raw, 'stimgen.StimCalibration')
-            calObj = raw;
-        elseif isstruct(raw)
-            calObj = stimgen.StimCalibration.loadobj(raw);
-        else
-            error('StimPlayer:InvalidCalibrationFile', ...
-                'The selected calibration file did not contain a usable calibration object.');
-        end
-    end
-
-    for i = 1:numel(obj.StimPlayObjs)
-        obj.StimPlayObjs(i).StimObj.Calibration = calObj;
-    end
-    stimgen.util.vprintf(1, 'Calibration applied to %d bank items.', numel(obj.StimPlayObjs));
-catch ME
-    obj.report_gui_error_(ME, "Calibration Error", ...
-        "StimPlayer could not load or apply the selected calibration file.");
 end
 end
 

@@ -27,6 +27,7 @@ classdef StimPlayer < handle
     % Properties (selected):
     %   StimPlayObjs  - Bank of stimgen.StimPlay objects
     %   Host          - Optional stimgen.HardwareHost for hardware playback
+    %   Fs            - Bank-wide sample rate in Hz
     %   ISI           - Global ISI range [min max] in seconds
     %   SelectionType - "Serial" or "Shuffle"
     %
@@ -63,6 +64,13 @@ classdef StimPlayer < handle
     properties
         StimPlayObjs (:,1) stimgen.StimPlay   % Bank of stimulus playback objects
 
+        % Sample rate applied to every stimulus in the bank, in Hz. One rate
+        % is held for the whole bank because the hardware plays them all
+        % through the same converter; assigning it rewrites Fs on every bank
+        % item and regenerates their signals. Run adopts the hardware rate
+        % when the attached host reports one.
+        Fs (1,1) double {mustBePositive,mustBeFinite} = 97656.25
+
         ISI (1,2) double {mustBePositive,mustBeFinite} = [1.0 1.0] % Global ISI range [min max] in seconds
 
         SelectionType (1,1) string {mustBeMember(SelectionType,["Serial","Shuffle"])} = "Shuffle" % Playback order
@@ -75,11 +83,12 @@ classdef StimPlayer < handle
         % set_control_visibility for name-value syntax.  Hidden controls are
         % collapsed out of the layout but remain settable programmatically.
         ControlVisibility (1,1) struct = struct( ...
-            'Reps',     true, ...   % Per-stimulus repetition count field
-            'ISI',      true, ...   % Inter-stimulus interval field
-            'PlayMode', true, ...   % Playback order dropdown (Shuffle/Serial)
-            'Run',      true, ...   % Run/Stop button
-            'Pause',    true)       % Pause/Resume button
+            'Reps',       true, ... % Per-stimulus repetition count field
+            'ISI',        true, ... % Inter-stimulus interval field
+            'SampleRate', true, ... % Bank-wide sample rate field
+            'PlayMode',   true, ... % Playback order dropdown (Shuffle/Serial)
+            'Run',        true, ... % Run/Stop button
+            'Pause',      true)     % Pause/Resume button
     end
 
     % --- Protected runtime state ---
@@ -198,6 +207,34 @@ classdef StimPlayer < handle
 
             obj.ControlVisibility = merged;
             obj.apply_control_visibility_;
+        end
+
+        % -----------------------------------------------------------------
+        function set.Fs(obj, value)
+            % Push the new rate onto every bank item, then resync the GUI.
+            %
+            % A rate change moves Nyquist, so a stimulus whose content no
+            % longer fits below it (a noise band, an FM sweep) fails to
+            % regenerate. Rather than leave the bank half converted with stale
+            % signals, the whole change is rolled back and the caller is told
+            % which items refused it.
+            previousFs = obj.Fs;
+            obj.Fs = value;
+
+            failures = obj.apply_fs_to_bank_;
+            if ~isempty(failures)
+                obj.Fs = previousFs;
+                obj.apply_fs_to_bank_;
+                obj.sync_fs_field_;
+                obj.update_signal_plot;
+                detail = char(strjoin("  " + failures, newline));
+                error('stimgen:StimPlayer:SampleRateNotSupported', ...
+                    'These bank items cannot be generated at %g Hz:%s%s', ...
+                    value, newline, detail);
+            end
+
+            obj.sync_fs_field_;
+            obj.update_signal_plot;
         end
 
         % -----------------------------------------------------------------
@@ -342,6 +379,11 @@ classdef StimPlayer < handle
                     return
                 end
                 protocolInput = fullfile(pn, fn);
+            elseif (ischar(protocolInput) || isstring(protocolInput)) && ~isfile(protocolInput)
+                % A remembered path whose file has since moved or been deleted.
+                obj.forget_recent_protocol_(protocolInput);
+                obj.set_status_("Protocol file not found: " + string(protocolInput), isError=true);
+                return
             end
 
             obj.disconnect_interfaces_;
@@ -352,6 +394,7 @@ classdef StimPlayer < handle
                 % Track the containing folder so later file dialogs open there.
                 if (ischar(protocolInput) || isstring(protocolInput)) && isfile(protocolInput)
                     obj.DataPath = string(fileparts(char(protocolInput)));
+                    obj.remember_recent_protocol_(protocolInput);
                 end
 
                 obj.set_status_("Protocol loaded.");
@@ -408,8 +451,9 @@ classdef StimPlayer < handle
             end
 
             fields = {'AddBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
-                'ISIField','OrderDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
+                'ISIField','FsField','OrderDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
                 'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
+                'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
                 'AddStimTool','RemoveStimTool'};
             for i = 1:numel(fields)
@@ -440,9 +484,10 @@ classdef StimPlayer < handle
 
             % Bank panel rows: {visibility field, widgets, row index field}
             rows = { ...
-                'Reps',     {'RepsLabel','RepsField'}, 'RepsRow'; ...
-                'ISI',      {'ISILabel','ISIField'},   'ISIRow'; ...
-                'PlayMode', {'OrderDD'},               'OrderRow'};
+                'Reps',       {'RepsLabel','RepsField'}, 'RepsRow'; ...
+                'ISI',        {'ISILabel','ISIField'},   'ISIRow'; ...
+                'SampleRate', {'FsLabel','FsField'},     'FsRow'; ...
+                'PlayMode',   {'OrderDD'},               'OrderRow'};
 
             if isfield(h,'BankGrid') && ~isempty(h.BankGrid) && isvalid(h.BankGrid)
                 heights = h.BankGrid.RowHeight;
@@ -519,6 +564,250 @@ classdef StimPlayer < handle
 
             h.ProtocolStatusLabel.Text = sprintf('Protocol: %s | HW: %s', ...
                 obj.Host.protocolName(), hwState);
+        end
+
+        % -----------------------------------------------------------------
+        function failures = apply_fs_to_bank_(obj)
+            % failures = apply_fs_to_bank_() - Write obj.Fs onto every bank item.
+            % StimType.Fs is AbortSet, so items already at this rate are left
+            % alone and only the rest pay for a signal regeneration.
+            %
+            % The regeneration triggered by the assignment runs inside a
+            % PostSet listener, where MATLAB downgrades an error to a warning
+            % and leaves the old signal in place. update_signal is therefore
+            % called again here, where a failure is catchable — the same
+            % assign-then-rebuild pattern the parameter editor uses.
+            %
+            % Returns:
+            %   failures - (:,1) string, one "Name: reason" per item that
+            %              could not be generated at the new rate
+
+            failures = string.empty(0,1);
+            if isempty(obj.StimPlayObjs)
+                return
+            end
+
+            obj.set_computing_(true);
+            computingCleanup = onCleanup(@() obj.set_computing_(false));
+
+            % Silence the listener's own stack dump for the assignment below:
+            % the rebuild that follows it raises the same failure where it can
+            % be caught and reported as one readable message.
+            warnState   = warning('off', 'MATLAB:callback:PropertyEventError');
+            warnCleanup = onCleanup(@() warning(warnState));
+
+            for i = 1:numel(obj.StimPlayObjs)
+                sp = obj.StimPlayObjs(i);
+                try
+                    sp.Fs = obj.Fs;
+                    sp.update_signal;
+                catch ME
+                    failures(end+1,1) = sp.Name + ": " + string(ME.message);
+                end
+            end
+            clear computingCleanup warnCleanup;
+        end
+
+        % -----------------------------------------------------------------
+        function sync_fs_field_(obj)
+            % sync_fs_field_() - Show the current rate in the sample rate field.
+            h = obj.handles;
+            if ~isfield(h, 'FsField') || isempty(h.FsField) || ~isvalid(h.FsField)
+                return
+            end
+            h.FsField.Value = obj.Fs;
+        end
+
+        % -----------------------------------------------------------------
+        function adopt_host_fs_(obj)
+            % adopt_host_fs_() - Take the sample rate from the attached host.
+            % Called at Run time: the converter rate is the hardware's to
+            % decide, so a host that knows it overrides whatever was typed.
+            % Hosts predating stimgen.HardwareHost.sampleRate, or that cannot
+            % determine a rate, leave the bank untouched.
+
+            if isempty(obj.Host)
+                return
+            end
+
+            try
+                hostFs = double(obj.Host.sampleRate());
+            catch ME
+                stimgen.util.vprintf(1, 1, ...
+                    'StimPlayer: host could not report a sample rate: %s', ME.message);
+                return
+            end
+
+            if ~isscalar(hostFs) || ~isfinite(hostFs) || hostFs <= 0 || hostFs == obj.Fs
+                return
+            end
+
+            previousFs = obj.Fs;
+            obj.Fs = hostFs;
+            stimgen.util.vprintf(1, 'StimPlayer: sample rate set from hardware: %g Hz (was %g Hz).', ...
+                hostFs, previousFs);
+            obj.set_status_(sprintf('Sample rate set from hardware: %g Hz.', hostFs));
+        end
+
+        % -----------------------------------------------------------------
+        function load_calibration_(obj, ffn)
+            % load_calibration_(obj) - Prompt for a calibration file and apply it.
+            % load_calibration_(obj, ffn) - Apply a calibration file by path.
+            % The calibration is applied to every item currently in the bank.
+
+            if nargin < 2 || isempty(ffn)
+                [fn, pn] = uigetfile( ...
+                    {'*.esgc;*.sgc','Calibration Files (*.esgc, *.sgc)'; ...
+                     '*.esgc','EPsych Stim Calibration (*.esgc)'; ...
+                     '*.sgc','Legacy Calibration (*.sgc)'}, ...
+                    'Select Calibration File', obj.DataPath);
+                if isequal(fn, 0), return; end
+                ffn = fullfile(pn, fn);
+            elseif ~isfile(ffn)
+                obj.forget_recent_calibration_(ffn);
+                obj.set_status_("Calibration file not found: " + string(ffn), isError=true);
+                return
+            end
+
+            ffn = char(ffn);
+            try
+                [~, ~, ext] = fileparts(ffn);
+
+                if strcmpi(ext, '.esgc')
+                    calObj = stimgen.StimCalibration();
+                    calObj.load_calibration(ffn);
+                else
+                    cal = load(ffn, '-mat');
+                    fields = fieldnames(cal);
+                    if isempty(fields)
+                        error('StimPlayer:InvalidCalibrationFile', ...
+                            'The selected calibration file did not contain any variables.');
+                    end
+
+                    raw = cal.(fields{1});
+                    if isa(raw, 'stimgen.StimCalibration')
+                        calObj = raw;
+                    elseif isstruct(raw)
+                        calObj = stimgen.StimCalibration.loadobj(raw);
+                    else
+                        error('StimPlayer:InvalidCalibrationFile', ...
+                            'The selected calibration file did not contain a usable calibration object.');
+                    end
+                end
+
+                for i = 1:numel(obj.StimPlayObjs)
+                    obj.StimPlayObjs(i).StimObj.Calibration = calObj;
+                end
+                obj.remember_recent_calibration_(ffn);
+                stimgen.util.vprintf(1, 'Calibration applied to %d bank items.', numel(obj.StimPlayObjs));
+                obj.set_status_("Calibration applied to " + string(numel(obj.StimPlayObjs)) + " bank item(s).");
+            catch ME
+                obj.report_gui_error_(ME, "Calibration Error", ...
+                    "StimPlayer could not load or apply the selected calibration file.");
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function refresh_recent_menus_(obj)
+            % refresh_recent_menus_() - Rebuild all three Recent submenus.
+            obj.refresh_recent_menu_('RecentProtocolsMenu', 'RecentProtocols', ...
+                @(p) obj.load_protocol_(p));
+            obj.refresh_recent_menu_('RecentBanksMenu', 'RecentBanks', ...
+                @(p) obj.load_bank(p));
+            obj.refresh_recent_menu_('RecentCalibrationsMenu', 'RecentCalibrations', ...
+                @(p) obj.load_calibration_(p));
+        end
+
+        % -----------------------------------------------------------------
+        function refresh_recent_menu_(obj, handleField, prefName, openFcn)
+            % refresh_recent_menu_() - Rebuild one Recent submenu, most recent first.
+            if ~isfield(obj.handles, handleField)
+                return
+            end
+            menu = obj.handles.(handleField);
+            if isempty(menu) || ~isvalid(menu)
+                return
+            end
+            delete(allchild(menu));
+
+            paths = obj.get_recent_paths_(prefName);
+            if isempty(paths)
+                uimenu(menu, 'Text', '(None)', 'Enable', 'off');
+                return
+            end
+
+            for idx = 1:numel(paths)
+                filePath = paths{idx};
+                [~, fn, ext] = fileparts(filePath);
+                uimenu(menu, ...
+                    'Text', sprintf('%d. %s%s | %s', idx, fn, ext, filePath), ...
+                    'MenuSelectedFcn', @(~,~) openFcn(filePath));
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function remember_recent_protocol_(obj, filePath)
+            obj.add_recent_path_('RecentProtocols', filePath);
+        end
+
+        function forget_recent_protocol_(obj, filePath)
+            obj.remove_recent_path_('RecentProtocols', filePath);
+        end
+
+        function remember_recent_bank_(obj, filePath)
+            obj.add_recent_path_('RecentBanks', filePath);
+        end
+
+        function forget_recent_bank_(obj, filePath)
+            obj.remove_recent_path_('RecentBanks', filePath);
+        end
+
+        function remember_recent_calibration_(obj, filePath)
+            obj.add_recent_path_('RecentCalibrations', filePath);
+        end
+
+        function forget_recent_calibration_(obj, filePath)
+            obj.remove_recent_path_('RecentCalibrations', filePath);
+        end
+
+        % -----------------------------------------------------------------
+        function paths = get_recent_paths_(~, prefName)
+            % get_recent_paths_() - Read one recent list from stored preferences.
+            groupName = 'StimPlayer';
+            if ispref(groupName, prefName)
+                paths = getpref(groupName, prefName);
+            else
+                paths = {};
+            end
+            if ischar(paths)
+                paths = {paths};
+            end
+            paths = paths(:).';
+            paths = paths(~cellfun(@isempty, paths));
+        end
+
+        % -----------------------------------------------------------------
+        function add_recent_path_(obj, prefName, filePath)
+            % add_recent_path_() - Promote a path to the head of a recent list.
+            filePath = strtrim(char(filePath));
+            if isempty(filePath)
+                return
+            end
+            paths = obj.get_recent_paths_(prefName);
+            paths(strcmpi(paths, filePath)) = [];
+            paths = [{filePath}, paths];
+            paths = paths(1:min(9, numel(paths)));
+            setpref('StimPlayer', prefName, paths);
+            obj.refresh_recent_menus_;
+        end
+
+        % -----------------------------------------------------------------
+        function remove_recent_path_(obj, prefName, filePath)
+            % remove_recent_path_() - Drop a stale path from a recent list.
+            paths = obj.get_recent_paths_(prefName);
+            paths(strcmpi(paths, strtrim(char(filePath)))) = [];
+            setpref('StimPlayer', prefName, paths);
+            obj.refresh_recent_menus_;
         end
 
         % -----------------------------------------------------------------
@@ -719,6 +1008,9 @@ classdef StimPlayer < handle
             switch string(ME.identifier)
                 case "StimPlayer:InvalidISI"
                     messageText = "Enter either one positive ISI value in milliseconds, such as 1000, or a two-value range such as [500 1500].";
+                case "stimgen:StimPlayer:SampleRateNotSupported"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "The sample rate is unchanged. A rate change moves the highest frequency that can be represented, so bring the parameters of those stimuli inside the new range first, then set the rate again.";
                 case "StimPlayer:InvalidCalibrationFile"
                     messageText = "The selected calibration file did not contain a usable calibration object.";
                 case "stimgen:StimType:NonVectorizableProperty"

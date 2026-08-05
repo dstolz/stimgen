@@ -12,6 +12,9 @@ function set_configuration(obj, options)
 %   ExcitationVoltage  - (1,1) double, > 0
 %   MaxOutputVoltage   - (1,1) double, > 0 (rig output ceiling, V)
 %   ShowLivePlots      - (1,1) logical
+%   ToneLutSource      - (1,1) string, "tone" or "swept_sine". Which LUT serves
+%                        tone lookups; "swept_sine" overrides any direct tone
+%                        calibration whenever swept sine data exists.
 arguments
     obj
     options.MicSensitivity     (1,1) double {mustBePositive,mustBeFinite} = obj.MicSensitivity
@@ -21,6 +24,7 @@ arguments
     options.ExcitationVoltage  (1,1) double {mustBePositive} = obj.ExcitationVoltage
     options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
     options.ShowLivePlots      (1,1) logical = obj.ShowLivePlots
+    options.ToneLutSource      (1,1) string {mustBeMember(options.ToneLutSource, ["tone", "swept_sine"])} = obj.ToneLutSource
 end
 
 obj.MicSensitivity    = options.MicSensitivity;
@@ -30,4 +34,5 @@ obj.NormativeValue    = options.NormativeValue;
 obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.MaxOutputVoltage  = options.MaxOutputVoltage;
 obj.ShowLivePlots     = options.ShowLivePlots;
+obj.ToneLutSource     = options.ToneLutSource;
 end

@@ -174,10 +174,22 @@ Recommended sequence:
 1. Initialize Runtime From Protocol...
 2. Attach Adapter (optional if auto-attach already succeeded)
 3. Measure Reference
-4. Calibrate Tones
+4. Build the tone lookup, one of two ways:
+   - Calibrate Tones (direct per-frequency measurement), **or**
+   - Calibrate Swept Sine, with the Tone Lookup From Swept Sine option checked
 5. Optional: Calibrate Clicks and/or Calibrate Swept Sine
-6. Optional: Design Filter
+6. Optional: Design Filter, then Test Filter to verify it empirically
 7. Save .esgc
+
+## Tone Lookup From Swept Sine
+
+The Tone Lookup From Swept Sine checkbox sets `Engine.ToneLutSource` ("tone" unchecked, "swept_sine" checked). It changes where tone lookups are *served from*, not what is stored: with it checked, `compute_adjusted_voltage("tone", ...)` — and therefore every StimType whose `CalibrationType` is `"tone"` (e.g. `Tone`), plus the `"filter"`/`"noise"` lookups anchored to the tone table — reads the swept sine LUT instead of the direct tone table. Both calibrations are on the same SPL/voltage scale, so the two sources are interchangeable at lookup time.
+
+Semantics to be aware of:
+
+- **While checked, the swept sine calibration overrides any direct tone calibration.** The direct tone table is not deleted — unchecking the box restores it instantly.
+- If no swept sine data exists yet, the direct tone table still serves lookups (the option is a preference, not an error), and takes effect as soon as a sweep is run.
+- The choice takes effect immediately when toggled, and is persisted in the `.esgc` file, so a calibration saved with it checked drives Tone stimuli from the swept sine table wherever that file is loaded.
 
 ## Calibration Parameter Dialogs
 
@@ -196,6 +208,8 @@ Durations are entered in milliseconds and converted to seconds before reaching t
 
 The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibrate_clicks`, or `Engine.calibrate_swept_sine` as the `repeatCount` argument.
 
+Leaving the click-duration vector blank uses the `Engine` default, an octave series from 0.01 ms to 5.12 ms. It is specified in duration rather than sample counts, so the same sweep is requested regardless of the rig's sample rate. Durations that do not reach one sample at the current `Fs` cannot be rendered and are dropped before the sweep starts, with the skipped values logged; a vector in which none are resolvable raises `stimgen:calibration:Engine:unresolvableClickDurations`.
+
 ## Filter Design Dialog
 
 Design Filter prompts for the equalizer design options before running, and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
@@ -213,10 +227,16 @@ Design Filter prompts for the equalizer design options before running, and remem
 
 The status line reports the resulting tap count and correction span, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
+## Test Filter
+
+Test Filter verifies the designed filter empirically with `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified. The run is cancellable with Stop, and with live plots on, the transfer panel shows the raw response fill in and then be replaced by the flattened one.
+
 ## Button Enable Rules
 
 1. Measure Reference, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
 2. Design Filter: enabled when tone **or** swept sine calibration data exists. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
+3. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
+4. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
 
 ## Runtime Ownership And Independence
 

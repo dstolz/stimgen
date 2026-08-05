@@ -68,6 +68,11 @@ classdef Engine < handle
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         MaxOutputVoltage    (1,1) double {mustBePositive,mustBeFinite}      = 10    % V full scale
         ShowLivePlots       (1,1) logical                                   = false
+        % Which LUT serves "tone" lookups (and the "filter" lookups anchored to
+        % them). "swept_sine" overrides any direct tone calibration whenever
+        % swept sine data exists, falling back to the tone LUT when it does not.
+        % Both LUTs stay stored either way; this only redirects the lookup.
+        ToneLutSource       (1,1) string {mustBeMember(ToneLutSource, ["tone", "swept_sine"])} = "tone"
         CalibrationTimestamp (1,1) datetime = datetime("")
     end
 
@@ -128,6 +133,7 @@ classdef Engine < handle
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
         design_filter(obj, source, options) % Design equalization filter from a frequency LUT.
+        results = test_filter(obj, options) % Verify the designed filter flattens the measured response.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
         restore(obj, s) % Restore engine state from a serialized struct.

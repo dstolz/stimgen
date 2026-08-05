@@ -113,6 +113,7 @@
     "BankLabel": "Name for this bank item, shown in the list and used as its field name when the bank is exported to the workspace.",
     "Reps": "Presentations of the selected bank item per run. Applies to that item only; other items keep their own count.",
     "ISI": "Time between presentations, in ms, for the whole bank. Enter one value for a fixed interval or [min max] to draw each interval uniformly from that range.",
+    "SampleRate": "Sample rate used to generate every stimulus in the bank, in Hz. Changing it rebuilds all bank signals at the new rate. When a protocol is running on hardware that reports its own rate, Run adopts that rate instead.",
     "Order": "Order in which bank items are drawn during a run: Shuffle picks at random among items with reps left, Serial works down the list.",
     "ComboPrevBtn": "Show the previous variant combination of the selected stimulus (also the left arrow key).",
     "ComboNextBtn": "Show the next variant combination of the selected stimulus (also the right arrow key).",
@@ -135,18 +136,9 @@
     "PlayTool": "Play Selected"
   },
 
-  "StimCalibration": {
-    "LoadTool": "Load (.esgc)",
-    "SaveTool": "Save (.esgc)",
-    "MeasureReferenceTool": "Measure Reference",
-    "RunCalibrationTool": "Run Calibration",
-    "RefreshPlotsTool": "Redraw the panels from the current calibration",
+  "CalibrationGui": {
     "MaxOutputVoltage": "Output ceiling of the rig, in volts. Sets the clipping limits drawn on the waveform and the line above which a required drive voltage is unreachable.",
     "ShowLivePlots": "Update the panels during a sweep, measurement by measurement, instead of only when it finishes.",
-    "LogXAxis": "Log frequency axis on the transfer panel. Turn off for a linear axis."
-  },
-
-  "CalibrationGui": {
     "InitializeRuntimeTool": "Initialize Runtime From Protocol...",
     "AttachAdapterTool": "Attach Adapter",
     "DisconnectTool": "Disconnect Runtime/Adapter",
@@ -154,11 +146,13 @@
     "SaveTool": "Save .esgc",
     "QuickStartTool": "Calibration Quick Start",
     "BtnReference": "Step 1: Measure reference tone to update microphone sensitivity.",
-    "BtnTones": "Step 2: Run tone frequency sweep to build tone calibration table.",
+    "BtnTones": "Step 2: Run tone frequency sweep to build the tone calibration table by direct measurement.",
     "BtnClicks": "Optional: Build click-duration calibration table.",
-    "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp.",
+    "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp. Can also serve tone lookups -- see Tone Lookup From Swept Sine.",
+    "ToneLutFromSweptSine": "Serve tone lookups (Tone stimuli, filter/noise level anchoring) from the swept sine calibration instead of the direct tone table. While checked this overrides any direct tone calibration; until swept sine data exists the direct tone table still applies. Both tables stay stored, and the choice is saved in the .esgc file.",
     "BtnFilter": "Step 3 (optional): Design equalization filter after tone or swept sine calibration. Prompts for filter length, design method, interpolation, smoothing, correction limit and band, then opens the result in fvtool.",
-    "BtnStop": "Interrupt a running tone, click, or swept-sine calibration. Takes effect at the next measurement, not instantly; partial data is discarded."
+    "BtnTestFilter": "Step 4 (optional): Verify the designed filter empirically -- play the sweep raw and again through the filter, measure both responses, and report how flat the equalized response came out. Enabled once a filter is designed or loaded and hardware is attached.",
+    "BtnStop": "Interrupt a running tone, click, swept-sine calibration, or filter test. Takes effect at the next measurement, not instantly; partial calibration data is discarded."
   },
 
   "StimInspector": {

@@ -14,4 +14,10 @@ obj.CalibrationTimestamp = s.CalibrationTimestamp;
 if isfield(s, 'MaxOutputVoltage')
     obj.MaxOutputVoltage = s.MaxOutputVoltage;
 end
+
+% Written since tone lookups could be redirected to the swept sine LUT; an
+% older file keeps the default direct-tone source.
+if isfield(s, 'ToneLutSource')
+    obj.ToneLutSource = s.ToneLutSource;
+end
 end

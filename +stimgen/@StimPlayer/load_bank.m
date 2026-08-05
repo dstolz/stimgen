@@ -10,7 +10,14 @@ if nargin < 2 || isempty(ffn)
     [fn, pn] = uigetfile('*.spl', 'Load Stimulus Bank', obj.DataPath);
     if isequal(fn, 0), return; end
     ffn = fullfile(pn, fn);
+elseif ~isfile(ffn)
+    % A remembered path whose file has since moved or been deleted.
+    obj.forget_recent_bank_(ffn);
+    obj.set_status_("Bank file not found: " + string(ffn), isError=true);
+    return
 end
+
+ffn = char(ffn);
 
 try
     bank = load(ffn, '-mat');
@@ -74,6 +81,20 @@ try
 
     obj.StimPlayObjs = sps;
 
+    % A bank stores Fs per stimulus, but the player runs one rate for the
+    % whole bank, so the first item's rate wins and is re-applied to the rest.
+    fsNote = "";
+    if ~isempty(sps)
+        loadedFs = arrayfun(@(sp) sp.CurrentStimObj.Fs, sps);
+        obj.Fs   = loadedFs(1);
+        if any(loadedFs ~= loadedFs(1))
+            fsNote = sprintf(' Bank items had differing sample rates; all set to %g Hz.', obj.Fs);
+            stimgen.util.vprintf(1, 1, ...
+                'StimPlayer: bank contained %d distinct sample rates; all items set to %g Hz.', ...
+                numel(unique(loadedFs)), obj.Fs);
+        end
+    end
+
     ISIField_sync_(obj);
 
     obj.refresh_listbox_;
@@ -81,8 +102,11 @@ try
     obj.update_counter_;
     obj.refresh_combo_controls_;
 
+    obj.DataPath = string(fileparts(ffn));
+    obj.remember_recent_bank_(ffn);
+
     stimgen.util.vprintf(1, 'StimPlayer: bank loaded from "%s" (%d items).', ffn, numel(sps));
-    obj.set_status_("Loaded bank with " + string(numel(sps)) + " item(s).");
+    obj.set_status_("Loaded bank with " + string(numel(sps)) + " item(s)." + fsNote);
 catch ME
     obj.report_gui_error_(ME, "Load Bank Error", ...
         "StimPlayer could not load the selected bank file.");

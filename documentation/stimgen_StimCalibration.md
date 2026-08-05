@@ -1,6 +1,8 @@
 # `stimgen.StimCalibration`
 
-`stimgen.StimCalibration` is the calibration controller that stimulus objects talk to. Since the calibration refactor it is a thin wrapper around the `stimgen.calibration` package: [stimgen.calibration.Engine](stimgen_calibration.md) does the measurement and lookup work, and an adapter handles hardware I/O. The wrapper exists so `stimgen.StimType` keeps working unchanged.
+`stimgen.StimCalibration` is the calibration object that stimulus classes talk to. Since the calibration refactor it is a thin wrapper around the `stimgen.calibration` package: [stimgen.calibration.Engine](stimgen_calibration.md) does the measurement and lookup work, and an adapter handles hardware I/O. The wrapper exists so `stimgen.StimType` keeps working unchanged.
+
+It is headless. The one interactive front end in the package is [`stimgen.calibration.CalibrationGui`](stimgen_CalibrationGui.md), which drives the same `Engine`; `StimCalibration` is what a calibration *is* once it has been measured — the form a `StimType` holds and `toStruct`/`saveobj` carry into `.spl` banks and host protocol files.
 
 This is a developer reference. If you just want to calibrate a rig, follow [stimgen_calibration.md](stimgen_calibration.md).
 
@@ -17,7 +19,7 @@ cal = stimgen.StimCalibration();
 cal.load_calibration('Rig3_earphone.esgc');
 ```
 
-Without arguments the object holds an offline `Engine`. Load a saved `.esgc` file and attach the object to stimuli; no hardware is required.
+Without arguments the object holds an offline `Engine`. Load a saved `.esgc` file and attach the object to stimuli; no hardware is required. This is the common case — it is what `loadobj`, `StimPlayer`, and `StimType.fromStruct` build.
 
 ### Online (measurement) mode
 
@@ -25,7 +27,7 @@ Without arguments the object holds an offline `Engine`. Load a saved `.esgc` fil
 cal = stimgen.StimCalibration(adapter);
 ```
 
-Pass a `stimgen.calibration.HwAdapter` connected to your hardware and the constructor builds an `Engine` around it and launches the calibration window so a new calibration can be measured. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; for lab hardware, use a host-supplied `HwAdapter`, e.g. `host.calibrationAdapter()`.
+Pass a `stimgen.calibration.HwAdapter` connected to your hardware and the constructor builds an `Engine` around it, so the measurement methods on `Engine` can be driven programmatically. stimgen ships `stimgen.calibration.WindowsSoundCardAdapter`; for lab hardware, use a host-supplied `HwAdapter`, e.g. `host.calibrationAdapter()`. To measure interactively, use `stimgen.calibration.CalibrationGui` instead.
 
 ## Delegated properties
 
@@ -37,41 +39,18 @@ These proxy directly to the underlying `Engine`:
 - `ReferenceFrequency`
 - `NormativeValue`
 - `ExcitationSignalVoltage`
+- `ToneLutSource`
 - `CalibrationTimestamp`
+- `Fs`
 
-The widgets mirror these automatically. The engine's parameters are `SetObservable`, and `gui()` registers a `PostSet` listener per field, so a value changed from anywhere — `calibrate_reference` replacing `MicSensitivity`, or a host calling `set_configuration` directly — reaches the display without the writer having to know the GUI exists. A value the engine accepts but the widget's `Limits` refuse is logged and left undisplayed rather than thrown, because these listeners can fire from inside a running sweep.
+The `Engine`'s parameters are `SetAccess = protected`, so every setter here routes through `Engine.set_configuration`, which is also what runs the property validators. A rejected value therefore raises rather than being silently stored.
 
 ## Key methods
 
-- `gui()` — build or raise the calibration window.
-- `refresh_plots()` — redraw the panels from the Engine's current state.
 - `compute_adjusted_voltage(...)` — proxy to the Engine; called by `stimgen.StimType.apply_calibration()` to convert a requested dB SPL level into an output voltage.
-- `load_calibration(filename)` / `save_calibration(filename)` — read/write `.esgc` files (legacy `.sgc` files can still be loaded).
+- `design_filter(...)` / `test_filter(...)` — proxies to `Engine.design_filter` and `Engine.test_filter`, arguments and all.
+- `load_calibration(filename)` / `save_calibration(filename)` — read/write `.esgc` files. Called with no argument, each prompts for a file. `load_calibration` replaces the `Engine` outright.
 - `toStruct()` / `saveobj()` / `loadobj(s)` — serialization. `loadobj` rebuilds an offline instance and repopulates it through `Engine.restore(s)`.
-
-## The window
-
-Two columns: engine parameters and the two run buttons on the left, a
-[`stimgen.calibration.LiveMonitor`](stimgen_calibration.md#watching-a-run) on the right.
-The monitor's three panels are attached to axes in this figure rather than to a window of
-its own, so a sweep fills in beside the controls driving it:
-
-- **Waveform** — the response over time, the excitation behind it as a scaled ghost, and shading over the span the measurement was actually computed from. That span is the point of the panel: a level that looks wrong is usually a segmentation problem, and a whole tone train is a single record in which the individual bursts are otherwise indistinguishable.
-- **Spectrum** — dB SPL, on the same scale as the calibration itself, with the previous measurement as a ghost and markers at the fundamental and its 2nd and 3rd harmonics.
-- **Transfer** — the lookup table as it fills in, with the points still to come as a rug, a ±1 SD ribbon across repeats, and the drive voltage each point needs for `NormativeValue` against the rig's `MaxOutputVoltage` ceiling. Points above that line cannot be produced at the normative level.
-
-`Max Output Voltage` sets that ceiling and the full scale the clipping test is judged
-against. `Live Plots` gates the engine's `LiveUpdate` broadcast; with it off, the panels
-refresh only when a run finishes, a file is loaded, or the toolbar's refresh button is
-pressed. `Log X-Axis` switches the transfer panel between log and linear.
-
-The monitor follows an *engine*, not this object, so `load_calibration` — which replaces
-the engine outright — re-attaches it and re-registers the parameter listeners. Closing
-the window detaches the monitor and stores the window position; the engine outlives the
-GUI, because a `StimType` goes on using it to convert levels.
-
-`stimgen.calibration.CalibrationGui` is a separate, fuller front end for the same engine —
-use it when you want swept-sine runs, filter design, and protocol-driven hardware setup.
 
 ### Restoring engine state
 
@@ -94,6 +73,7 @@ Assigning `Calibration` on a `stimgen.StimPlay` wrapper forwards the object to t
 
 - Calibration behavior is coupled to the `CalibrationType` constant on each stimulus class; adding a new calibration mode usually requires coordinated changes in the `stimgen.calibration` package and `StimType.apply_calibration()`.
 - The `CalibrationData` schema is defined by the Engine (see [stimgen_calibration.md](stimgen_calibration.md) for the structure reference).
+- This class had a second calibration window of its own (`gui()`, plus `refresh_plots`, a `LiveMonitor`, and a `ClickDurations` per-run property). It was removed in favour of a single front end; anything that called `cal.gui()` should open `stimgen.calibration.CalibrationGui` instead.
 
 ## Related documentation
 

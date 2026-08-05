@@ -23,6 +23,7 @@ classdef (Abstract) HardwareHost < handle
     %   setMode         - Set device mode ("Preview" or "Idle")
     %   findParameter   - Resolve a named parameter handle, or [] if absent
     %   connectionState - "None" | "NotConnected" | "Partial" | "Ready"
+    %   sampleRate      - Output sample rate in Hz (optional override)
     %
     % Example:
     %   % Host application supplies the concrete implementation:
@@ -93,5 +94,22 @@ classdef (Abstract) HardwareHost < handle
         %
         % Throws if no connected interface can be adapted.
         adapter = calibrationAdapter(obj)
+    end
+
+    methods
+        function Fs = sampleRate(~)
+            % Fs = sampleRate(obj)
+            % Report the hardware output sample rate in Hz.
+            %
+            % Optional: override this when the host can determine the rate its
+            % converters run at, and stimgen GUIs will generate stimuli to
+            % match it. The default returns NaN, meaning "unknown", which
+            % leaves the rate under the operator's control and keeps hosts
+            % written before this method working unchanged.
+            %
+            % Returns:
+            %   Fs - (1,1) double sample rate in Hz, or NaN when unknown
+            Fs = NaN;
+        end
     end
 end

@@ -50,10 +50,9 @@ switch action
                 stimgen.util.vprintf(1, 'StimPlayer: hardware parameters not found — timer will run without hardware output.');
             end
 
-            % Update Fs on all bank items from hardware if available
-            if obj.HardwareAvailable && isfield(obj.PARAMS, 'BufferData_0')
-                % Fs is not stored in a parameter; leave StimType defaults in place
-            end
+            % The converter rate belongs to the hardware, so let the host
+            % override the bank rate whenever it can report one.
+            obj.adopt_host_fs_;
 
             % Prime each bank item to combination #1 so playback stepping is deterministic
             obj.initialize_variants_;

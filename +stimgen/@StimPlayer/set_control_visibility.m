@@ -5,15 +5,17 @@ function set_control_visibility(obj, options)
 % player and remove the corresponding widgets from the GUI, so the operator
 % cannot change them independently.  Hidden controls are collapsed out of
 % their grid, not merely greyed out; the underlying properties (ISI, Reps,
-% SelectionType) and playback_control remain fully usable programmatically.
+% Fs, SelectionType) and playback_control remain fully usable
+% programmatically.
 %
 % Name-value pairs (each accepts true/false or "on"/"off"):
-%   All      - Set every control below at once (applied before the others)
-%   Reps     - Per-stimulus repetition count field
-%   ISI      - Inter-stimulus interval field
-%   PlayMode - Playback order dropdown (Shuffle / Serial)
-%   Run      - Run/Stop button
-%   Pause    - Pause/Resume button
+%   All        - Set every control below at once (applied before the others)
+%   Reps       - Per-stimulus repetition count field
+%   ISI        - Inter-stimulus interval field
+%   SampleRate - Bank-wide sample rate field
+%   PlayMode   - Playback order dropdown (Shuffle / Serial)
+%   Run        - Run/Stop button
+%   Pause      - Pause/Resume button
 %
 % The resulting state is readable from the ControlVisibility property.
 %
@@ -27,12 +29,13 @@ function set_control_visibility(obj, options)
 
 arguments
     obj (1,1) stimgen.StimPlayer
-    options.All      (1,1) matlab.lang.OnOffSwitchState
-    options.Reps     (1,1) matlab.lang.OnOffSwitchState
-    options.ISI      (1,1) matlab.lang.OnOffSwitchState
-    options.PlayMode (1,1) matlab.lang.OnOffSwitchState
-    options.Run      (1,1) matlab.lang.OnOffSwitchState
-    options.Pause    (1,1) matlab.lang.OnOffSwitchState
+    options.All        (1,1) matlab.lang.OnOffSwitchState
+    options.Reps       (1,1) matlab.lang.OnOffSwitchState
+    options.ISI        (1,1) matlab.lang.OnOffSwitchState
+    options.SampleRate (1,1) matlab.lang.OnOffSwitchState
+    options.PlayMode   (1,1) matlab.lang.OnOffSwitchState
+    options.Run        (1,1) matlab.lang.OnOffSwitchState
+    options.Pause      (1,1) matlab.lang.OnOffSwitchState
 end
 
 vis = obj.ControlVisibility;

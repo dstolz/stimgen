@@ -6,9 +6,13 @@ function calibrate_clicks(obj, durs, repeatCount)
 % Sweep across click durations and build the click calibration LUT.
 % Aborts and clears any prior click data on error.
 %
+% Durations shorter than one sample at the current Fs cannot be rendered, so
+% they are dropped with a message rather than aborting the sweep partway
+% through on ClickTrain's assertion.
+%
 % Parameters:
 %   durs - (1,:) double click durations in seconds
-%          (default: 8-point geometric series 1..128 samples)
+%          (default: 10-point octave series, 10 us .. 5.12 ms)
 %   repeatCount - (1,1) double positive integer number of
 %                 measurements to average per duration
 arguments
@@ -21,7 +25,25 @@ obj.reset_cancel_();
 fs = obj.Fs;
 
 if isempty(durs)
-    durs = 2.^(0:7) ./ fs;
+    % Fixed durations rather than sample counts, so the same sweep is
+    % requested regardless of the rig's sample rate.
+    durs = 2.^(0:9) .* 10e-6;
+end
+
+% ClickTrain renders round(fs*dur) samples and requires at least one.
+minDur     = 0.5 / fs;
+resolvable = round(fs .* durs) >= 1;
+if ~any(resolvable)
+    error('stimgen:calibration:Engine:unresolvableClickDurations', ...
+        'No requested click duration reaches one sample at Fs = %.0f Hz (minimum %.2f us).', ...
+        fs, minDur*1e6);
+end
+if ~all(resolvable)
+    stimgen.util.vprintf(0, 1, ...
+        'Skipping %d click duration(s) below one sample at Fs = %.0f Hz (minimum %.2f us): %s', ...
+        sum(~resolvable), fs, minDur*1e6, ...
+        char(strjoin(compose('%.2f us', durs(~resolvable)*1e6).', ', ')));
+    durs = durs(resolvable);
 end
 
 so            = stimgen.ClickTrain;

@@ -71,6 +71,7 @@ classdef CalibrationGui < handle
         MaxOutputField
         ShowLivePlotsCheck
         TransferLogXCheck
+        ToneSweptSineCheck
         SampleRateLabel
         StatusLabel
 
@@ -80,6 +81,7 @@ classdef CalibrationGui < handle
         BtnClicks
         BtnSweptSine
         BtnFilter
+        BtnTestFilter
         BtnStop
 
         % Axes
@@ -225,8 +227,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [17 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [19 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -283,7 +285,7 @@ classdef CalibrationGui < handle
             obj.MaxOutputField.Layout.Column = 2;
             obj.MaxOutputField.Limits = [eps, 1000];
             obj.MaxOutputField.ValueDisplayFormat = '%.1f';
-            obj.MaxOutputField.Tooltip = stimgen.util.tooltip('StimCalibration', 'MaxOutputVoltage');
+            obj.MaxOutputField.Tooltip = stimgen.util.tooltip('CalibrationGui', 'MaxOutputVoltage');
 
             sampleRateLabelCaption = uilabel(g, Text='Hardware Sample Rate', HorizontalAlignment='right');
             sampleRateLabelCaption.Layout.Row = 7;
@@ -298,7 +300,7 @@ classdef CalibrationGui < handle
             obj.ShowLivePlotsCheck = uicheckbox(g, Text='');
             obj.ShowLivePlotsCheck.Layout.Row = 8;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
-            obj.ShowLivePlotsCheck.Tooltip = stimgen.util.tooltip('StimCalibration', 'ShowLivePlots');
+            obj.ShowLivePlotsCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ShowLivePlots');
 
             transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
             transferLogXLabel.Layout.Row = 9;
@@ -308,46 +310,61 @@ classdef CalibrationGui < handle
             obj.TransferLogXCheck.Layout.Row = 9;
             obj.TransferLogXCheck.Layout.Column = 2;
 
+            toneSweptLabel = uilabel(g, Text='Tone Lookup From Swept Sine', HorizontalAlignment='right');
+            toneSweptLabel.Layout.Row = 10;
+            toneSweptLabel.Layout.Column = 1;
+            obj.ToneSweptSineCheck = uicheckbox(g, Text='', ...
+                ValueChangedFcn=@(~,~) obj.on_tone_lut_source_());
+            obj.ToneSweptSineCheck.Layout.Row = 10;
+            obj.ToneSweptSineCheck.Layout.Column = 2;
+            obj.ToneSweptSineCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine');
+
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 10;
+            obj.BtnReference.Layout.Row = 11;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 11;
+            obj.BtnTones.Layout.Row = 12;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 12;
+            obj.BtnClicks.Layout.Row = 13;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 13;
+            obj.BtnSweptSine.Layout.Row = 14;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 14;
+            obj.BtnFilter.Layout.Row = 15;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
+
+            obj.BtnTestFilter = uibutton(g, Text='Test Filter', ...
+                ButtonPushedFcn=@(~,~) obj.on_test_filter_());
+            obj.BtnTestFilter.Layout.Row = 16;
+            obj.BtnTestFilter.Layout.Column = [1 2];
+            obj.BtnTestFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestFilter');
 
             obj.BtnStop = uibutton(g, Text='Stop', ...
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 15;
+            obj.BtnStop.Layout.Row = 17;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 16;
+            obj.StatusLabel.Layout.Row = 18;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -454,7 +471,7 @@ classdef CalibrationGui < handle
             [durs, repeatCount, wasCancelled] = obj.prompt_vector_parameter_( ...
                 'clickDurationsMs', ...
                 'clickRepeats', ...
-                'Click durations (ms). Leave empty to use default 1..128 samples.', ...
+                'Click durations (ms), e.g. 0.01 0.02 0.04 or 0.01.*2.^(0:9). Leave empty for the default 0.01..5.12 ms octave series. Durations below one sample at the current Fs are skipped.', ...
                 'Click Calibration', ...
                 '', ...
                 1);
@@ -496,6 +513,23 @@ classdef CalibrationGui < handle
             obj.set_status_('Swept sine calibration complete.', false);
         end
 
+        function on_tone_lut_source_(obj)
+            % Applies immediately rather than at the next run: the source
+            % choice affects lookups on committed data, not measurements.
+            if obj.ToneSweptSineCheck.Value
+                obj.Engine.set_configuration(ToneLutSource="swept_sine");
+                C = obj.Engine.CalibrationData;
+                if isstruct(C) && isfield(C, 'swept_sine') && ~isempty(C.swept_sine)
+                    obj.set_status_('Tone lookups now use the swept sine calibration, overriding any direct tone calibration.', false);
+                else
+                    obj.set_status_('Tone lookups will use the swept sine calibration once one is run; until then the direct tone calibration applies.', false);
+                end
+            else
+                obj.Engine.set_configuration(ToneLutSource="tone");
+                obj.set_status_('Tone lookups use the direct tone calibration.', false);
+            end
+        end
+
         function on_design_filter_(obj)
             obj.with_busy_state_(@() obj.run_design_filter_(), 'Designing filter...');
         end
@@ -512,6 +546,34 @@ classdef CalibrationGui < handle
             obj.set_status_(sprintf( ...
                 'Equalization filter designed: %d taps, %.1f dB correction span.', ...
                 D.numCoefficients, D.correctionDb), false);
+        end
+
+        function on_test_filter_(obj)
+            obj.with_busy_state_(@() obj.run_test_filter_(), 'Testing filter...', true);
+        end
+
+        function run_test_filter_(obj)
+            % Verify the designed filter empirically: Engine.test_filter plays
+            % the sweep raw and through the filter and compares the flatness
+            % of the two measured responses. Stored in
+            % CalibrationData.filterTest by the engine.
+            r = obj.Engine.test_filter();
+            if r.passed
+                verdict = 'PASS';
+            else
+                verdict = 'FAIL';
+            end
+            msg = sprintf( ...
+                'Filter test %s: ripple %.1f \x2192 %.1f dB over %g\x2013%g Hz (tolerance %.1f dB).', ...
+                verdict, r.unfiltered.ripple_db, r.filtered.ripple_db, ...
+                r.band(1), r.band(2), r.ripple_tolerance_db);
+            obj.set_status_(msg, ~r.passed);
+            if ~r.passed
+                uialert(obj.Figure, sprintf(['%s\n\nThe equalized response still ripples more ' ...
+                    'than the tolerance. Consider redesigning the filter (more taps, or less ' ...
+                    'smoothing/correction limiting).'], msg), ...
+                    'Filter Test Failed', Icon='warning');
+            end
         end
 
         function on_save_(obj)
@@ -743,7 +805,7 @@ classdef CalibrationGui < handle
                 '1) File > Initialize Runtime From Protocol..., then File > Attach Adapter (if needed).\n\n', ...
                 '2) Verify parameters (reference level/frequency, mic sensitivity, excitation).\n\n', ...
                 '3) Click "Measure Reference" to update microphone sensitivity.\n\n', ...
-                '4) Click "Calibrate Tones" (required for tone lookup).\n\n', ...
+                '4) Click "Calibrate Tones" (required for tone lookup), or run "Calibrate Swept Sine" and check "Tone Lookup From Swept Sine" to serve tone lookups from the sweep instead (overrides any direct tone calibration while checked).\n\n', ...
                 '5) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
                 '6) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
                 '7) Save calibration with File > Save .esgc.']);
@@ -753,6 +815,11 @@ classdef CalibrationGui < handle
         function ok = apply_controls_to_engine_(obj)
             ok = false;
             try
+                if obj.ToneSweptSineCheck.Value
+                    toneLutSource = "swept_sine";
+                else
+                    toneLutSource = "tone";
+                end
                 obj.Engine.set_configuration( ...
                     ReferenceLevel=obj.RefLevelField.Value, ...
                     ReferenceFrequency=obj.RefFreqField.Value, ...
@@ -760,7 +827,8 @@ classdef CalibrationGui < handle
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
                     MaxOutputVoltage=obj.MaxOutputField.Value, ...
-                    ShowLivePlots=obj.ShowLivePlotsCheck.Value);
+                    ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
+                    ToneLutSource=toneLutSource);
                 ok = true;
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
@@ -776,6 +844,7 @@ classdef CalibrationGui < handle
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
+            obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
         end
 
         function refresh_all_plots_(obj)
@@ -813,6 +882,16 @@ classdef CalibrationGui < handle
             else
                 obj.BtnFilter.Enable = 'off';
             end
+
+            % Testing needs both a designed (or loaded) filter and hardware to
+            % play it through.
+            hasFilter = obj.Engine.IsCalibrated && ...
+                isfield(C, 'filter') && ~isempty(C.filter);
+            if hasFilter && hasAdapter
+                obj.BtnTestFilter.Enable = 'on';
+            else
+                obj.BtnTestFilter.Enable = 'off';
+            end
         end
 
         function refresh_sample_rate_label_(obj)
@@ -839,32 +918,9 @@ classdef CalibrationGui < handle
         end
 
         function values = parse_numeric_vector_(~, textValue, label)
-            values = [];
-            if ischar(textValue)
-                raw = string(textValue);
-            elseif isstring(textValue)
-                raw = strjoin(textValue, ' ');
-            elseif iscell(textValue)
-                raw = strjoin(string(textValue), ' ');
-            else
-                raw = "";
-            end
-
-            raw = strtrim(raw);
-            if raw == "" || startsWith(raw, "(empty", IgnoreCase=true)
-                return
-            end
-
-            vals = str2num(char(raw));
-            if ~isnumeric(vals) || isempty(vals) || ~isreal(vals) || ~isvector(vals) || any(isnan(vals(:)))
-                error('stimgen:calibration:CalibrationGui:badVector', ...
-                    'Could not parse %s. Use comma/space separated numbers or a MATLAB expression (e.g. 500:250:32000).', label);
-            end
-            values = vals(:)';
-            if any(values <= 0)
-                error('stimgen:calibration:CalibrationGui:badVector', ...
-                    '%s must contain only positive values.', label);
-            end
+            % Delegated to the shared utility so every vector entry in the
+            % package accepts the same syntax.
+            values = stimgen.util.parse_numeric_vector(textValue, char(label));
         end
 
         function [values, repeatCount, wasCancelled] = prompt_vector_parameter_(obj, prefName, repeatPrefName, promptText, dlgTitle, defaultValue, repeatDefault)
@@ -1082,6 +1138,7 @@ classdef CalibrationGui < handle
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
                 obj.BtnFilter.Enable = 'off';
+                obj.BtnTestFilter.Enable = 'off';
                 if cancellable
                     obj.BtnStop.Enable = 'on';
                 else

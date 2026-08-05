@@ -21,7 +21,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference
 - [stimgen_SweptSineCalibration.md](stimgen_SweptSineCalibration.md): swept-sine calibration method
-- [stimgen_StimCalibration.md](stimgen_StimCalibration.md): the `StimCalibration` wrapper used by stimulus objects
+- [stimgen_StimCalibration.md](stimgen_StimCalibration.md): the headless `StimCalibration` wrapper stimulus objects hold
 - [stimgen_TDT_RPvds.md](stimgen_TDT_RPvds.md): TDT/RPvds hardware circuit contract and legacy file types
 
 ## Core workflow
