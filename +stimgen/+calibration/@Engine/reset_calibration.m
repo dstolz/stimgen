@@ -7,9 +7,9 @@ function reset_calibration(obj)
 % ExcitationVoltage, MaxOutputVoltage, ShowLivePlots, ToneLutSource) are left
 % untouched.
 %
-% Clears CalibrationData (tone/click/swept_sine tables and any designed
-% filter), the last excitation/response record, and CalibrationTimestamp, so
-% IsCalibrated becomes false again.
+% Clears CalibrationData (tone/click/swept_sine tables, any designed filter,
+% and any background capture), the last excitation/response record, and
+% CalibrationTimestamp, so IsCalibrated becomes false again.
 
 obj.CalibrationData       = [];
 obj.ExcitationSignal      = [];

@@ -35,6 +35,9 @@ classdef Engine < handle
     %   toneTest         - struct recording a test_tones verification run, so
     %                      a saved calibration carries the evidence that its
     %                      tone LUT reproduces the levels it promises
+    %   background       - struct recording a measure_background capture: the
+    %                      noise floor, in band levels and tonal components,
+    %                      that the rest of the tables were measured over
     %
     % Usage:
     %   adapter = stimgen.calibration.WindowsSoundCardAdapter();
@@ -134,6 +137,7 @@ classdef Engine < handle
         set_configuration(obj, options) % Update engine calibration parameters.
         set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
         calibrate_reference(obj) % Measure microphone sensitivity by recording an acoustic calibrator (plays nothing).
+        results = measure_background(obj, duration, repeatCount, options) % Capture and characterize the background with nothing presented.
         calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
@@ -363,6 +367,7 @@ classdef Engine < handle
         [name, lut] = resolve_tone_lut_(obj) % Which LUT serves tone lookups, and its contents.
         [spl_db, voltage] = compute_spl_voltage_(obj, measurement, mode) % Convert measurement to SPL and normative voltage.
         [noiseFloorDb, snrDb] = estimate_noise_snr_(obj, y, fs, toneFreq) % Estimate noise floor and SNR.
+        results = analyze_background_(obj, records, fs, options) % Reduce silent records to the background analysis.
         [thdDb, h2Db, h3Db] = estimate_harmonics_(obj, y, fs, fundamentalFreq) % Estimate THD and harmonic levels.
         A = analyze_sweep_response_(obj, x, y, fs, sweep) % Full swept-sine analysis from one deconvolution.
         [H, freqHz, h, nfft] = deconvolve_sweep_(obj, x, y, fs) % Regularized sweep deconvolution.

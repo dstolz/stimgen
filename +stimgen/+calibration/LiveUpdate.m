@@ -9,7 +9,8 @@ classdef LiveUpdate < event.EventData
     % can log or forward the stream instead of plotting it.
     %
     % Properties:
-    %   Stage        - "reference" | "tone" | "click" | "swept_sine" | "manual"
+    %   Stage        - "reference" | "background" | "tone" | "click" |
+    %                  "swept_sine" | "tone_test" | "filter_test" | "manual"
     %   Phase        - "start" | "measure" | "done"
     %   Fs           - sample rate of Excitation/Response (Hz)
     %   Excitation   - excitation waveform sent to the hardware (V)

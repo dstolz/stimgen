@@ -649,6 +649,13 @@ classdef SoundFile < stimgen.StimType
                     end
 
                     Hd = C.CalibrationData.filter;
+
+                    % The taps realize their designed response only at the rate
+                    % they were fitted for, and a mismatch is invisible in the
+                    % output.
+                    stimgen.util.assert_filter_rate(C.CalibrationData, ...
+                        double(obj.selected_value("Fs")));
+
                     % Equalize in place so the recording keeps its length and
                     % its onset sample.
                     y = stimgen.util.filter_aligned(Hd, y, ...

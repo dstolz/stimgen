@@ -1013,6 +1013,9 @@ classdef StimPlayer < handle
                         "The sample rate is unchanged. A rate change moves the highest frequency that can be represented, so bring the parameters of those stimuli inside the new range first, then set the rate again.";
                 case "StimPlayer:InvalidCalibrationFile"
                     messageText = "The selected calibration file did not contain a usable calibration object.";
+                case "stimgen:util:filterRateMismatch"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "An equalization filter only corrects the frequencies it was designed for at the sample rate it was designed at. Redesign the filter for this rate in the calibration GUI (Design Filter, ""Design sample rate"" field) -- the measurement itself does not have to be repeated -- or set the sample rate back to the one the calibration was designed at.";
                 case "stimgen:StimType:NonVectorizableProperty"
                     messageText = "This property must stay scalar in StimPlayer. Use a single value rather than a vector or expression that expands to multiple values.";
                 case "stimgen:StimType:PairwiseLengthMismatch"

@@ -43,8 +43,12 @@ eng = stimgen.calibration.Engine();
 eng.restore_from_struct_(s);
 
 if isstruct(eng.CalibrationData)
+    % isnat, not isequal against datetime(""): NaT compares unequal to itself
+    % the way NaN does, so the isequal form never caught the case. Reachable
+    % for a file holding only a background capture, which does not re-date the
+    % transfer measurements and so leaves the timestamp unset.
     ts = eng.CalibrationTimestamp;
-    if isequal(ts, datetime(""))
+    if isnat(ts)
         stimgen.util.vprintf(0, 'Loaded calibration: "%s" (timestamp unknown)', ffn);
     else
         stimgen.util.vprintf(0, 'Loaded calibration: "%s" from %s', ffn, string(ts));

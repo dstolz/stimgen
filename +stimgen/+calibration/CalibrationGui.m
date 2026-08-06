@@ -62,6 +62,9 @@ classdef CalibrationGui < handle
         RecentProtocolsMenu
         RecentCalibrationsMenu
 
+        % View menu
+        BackgroundViewMenu
+
         % Controls
         RefLevelField
         RefFreqField
@@ -77,6 +80,7 @@ classdef CalibrationGui < handle
 
         % Buttons
         BtnReference
+        BtnBackground
         BtnTones
         BtnClicks
         BtnSweptSine
@@ -219,6 +223,15 @@ classdef CalibrationGui < handle
             obj.RecentCalibrationsMenu = uimenu(fileMenu, Text='Recent Calibrations');
             obj.refresh_recent_calibrations_menu_();
 
+            % The transfer panel serves one view at a time; this is how a user
+            % gets back to the other one without re-running anything.
+            viewMenu = uimenu(obj.Figure, Text='View');
+            uimenu(viewMenu, Text='Calibration Transfer Curves', ...
+                MenuSelectedFcn=@(~,~) obj.on_show_transfer_());
+            obj.BackgroundViewMenu = uimenu(viewMenu, Text='Background Noise Analysis', ...
+                Enable='off', ...
+                MenuSelectedFcn=@(~,~) obj.on_show_background_());
+
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start', ...
                 MenuSelectedFcn=@(~,~) obj.on_show_quick_start_());
@@ -229,8 +242,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [21 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [22 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -327,21 +340,30 @@ classdef CalibrationGui < handle
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
+            % Sits with the reference step, the other measurement that plays
+            % nothing, and after it: the noise floor is only a level in dB SPL
+            % once the reference has set the scale it is read on.
+            obj.BtnBackground = uibutton(g, Text='Measure Background', ...
+                ButtonPushedFcn=@(~,~) obj.on_measure_background_());
+            obj.BtnBackground.Layout.Row = 12;
+            obj.BtnBackground.Layout.Column = [1 2];
+            obj.BtnBackground.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnBackground');
+
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 12;
+            obj.BtnTones.Layout.Row = 13;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 13;
+            obj.BtnClicks.Layout.Row = 14;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 14;
+            obj.BtnSweptSine.Layout.Row = 15;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
@@ -350,19 +372,19 @@ classdef CalibrationGui < handle
             % wrong inherits that error.
             obj.BtnTestTones = uibutton(g, Text='Test Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_test_tones_());
-            obj.BtnTestTones.Layout.Row = 15;
+            obj.BtnTestTones.Layout.Row = 16;
             obj.BtnTestTones.Layout.Column = [1 2];
             obj.BtnTestTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestTones');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 16;
+            obj.BtnFilter.Layout.Row = 17;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
             obj.BtnTestFilter = uibutton(g, Text='Test Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_test_filter_());
-            obj.BtnTestFilter.Layout.Row = 17;
+            obj.BtnTestFilter.Layout.Row = 18;
             obj.BtnTestFilter.Layout.Column = [1 2];
             obj.BtnTestFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestFilter');
 
@@ -370,18 +392,18 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 18;
+            obj.BtnStop.Layout.Row = 19;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.BtnReset = uibutton(g, Text='Reset Calibration', ...
                 ButtonPushedFcn=@(~,~) obj.on_reset_calibration_());
-            obj.BtnReset.Layout.Row = 19;
+            obj.BtnReset.Layout.Row = 20;
             obj.BtnReset.Layout.Column = [1 2];
             obj.BtnReset.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReset');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 20;
+            obj.StatusLabel.Layout.Row = 21;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -467,6 +489,122 @@ classdef CalibrationGui < handle
             obj.sync_controls_();
             obj.Monitor.show_engine_state(obj.Engine);
             obj.set_status_('Reference measurement complete. Remove the calibrator.', false);
+        end
+
+        function on_measure_background_(obj)
+            if ~obj.apply_controls_to_engine_()
+                return
+            end
+            obj.with_busy_state_(@() obj.run_measure_background_(), ...
+                'Recording background...', true);
+        end
+
+        function run_measure_background_(obj)
+            [duration, nRecords, promDb, wasCancelled] = obj.prompt_background_parameters_();
+            if wasCancelled
+                obj.set_status_('Background measurement cancelled.', false);
+                return
+            end
+
+            r = obj.Engine.measure_background(duration, nRecords, ...
+                TonalProminenceDb=promDb);
+
+            % The panels are left showing the background rather than refreshed
+            % back to the lookup tables: the band curve is the result, and
+            % View > Calibration Transfer Curves brings the tables back.
+            obj.Monitor.show_background(obj.Engine);
+            obj.Monitor.show_engine_state(obj.Engine);
+
+            hasFindings = ~isempty(r.flags);
+            obj.set_status_(background_summary_(r), hasFindings);
+
+            if hasFindings
+                icon = 'warning';
+            else
+                icon = 'info';
+            end
+            uialert(obj.Figure, background_report_(r), 'Background Noise', Icon=icon);
+        end
+
+        function [duration, nRecords, promDb, wasCancelled] = prompt_background_parameters_(obj)
+            % Collect the capture parameters. The first prompt carries the
+            % physical prerequisites: unlike a sweep, this measurement is only
+            % meaningful when the rig is in the state an experiment runs in,
+            % and nothing else in the dialog can say so.
+            durationPref = obj.get_pref_('backgroundDurationS', '2');
+            recordsPref  = obj.get_pref_('backgroundRecords', '3');
+            promPref     = obj.get_pref_('backgroundProminenceDb', '6');
+
+            prompts = {
+                ['Nothing is played during this measurement. Take the acoustic ' ...
+                 'calibrator off the microphone, put the microphone where it sits ' ...
+                 'during an experiment, and leave the rig running as it normally ' ...
+                 'does. Recording duration (s, >0):'], ...
+                'Number of records (positive integer). Their spectra are averaged, and the spread of their levels reports how steady the background is:', ...
+                'Tonal peak prominence (dB above the local noise floor). Peaks below this are not reported:'
+            };
+            defaults = {durationPref, recordsPref, promPref};
+            answer = inputdlg(prompts, 'Measure Background', [3 90; 2 90; 2 90], defaults);
+
+            if isempty(answer)
+                duration = 2;
+                nRecords = 3;
+                promDb = 6;
+                wasCancelled = true;
+                return
+            end
+
+            durationText = strtrim(string(answer{1}));
+            duration = str2double(durationText);
+            if isnan(duration) || ~isfinite(duration) || duration <= 0
+                error('stimgen:calibration:CalibrationGui:badDuration', ...
+                    'Recording duration must be a positive number of seconds.');
+            end
+
+            recordsText = strtrim(string(answer{2}));
+            nRecords = obj.parse_positive_integer_(recordsText, 'number of records');
+
+            promText = strtrim(string(answer{3}));
+            promDb = str2double(promText);
+            if isnan(promDb) || ~isfinite(promDb) || promDb <= 0
+                error('stimgen:calibration:CalibrationGui:badProminence', ...
+                    'Tonal peak prominence must be a positive number of decibels.');
+            end
+
+            obj.set_pref_('backgroundDurationS', char(durationText));
+            obj.set_pref_('backgroundRecords', char(recordsText));
+            obj.set_pref_('backgroundProminenceDb', char(promText));
+            wasCancelled = false;
+        end
+
+        function on_show_transfer_(obj)
+            obj.refresh_all_plots_();
+            obj.set_status_('Showing calibration transfer curves.', false);
+        end
+
+        function on_show_background_(obj)
+            % show_background resets the monitor's whole graphics cache, not
+            % just the transfer panel's share of it, so the response panels have
+            % to be redrawn after it -- the same ordering refresh_all_plots_
+            % depends on.
+            obj.Monitor.show_background(obj.Engine);
+            obj.Monitor.show_engine_state(obj.Engine);
+            obj.set_status_('Showing background noise analysis.', false);
+        end
+
+        function update_background_menu_(obj)
+            % The background view is only reachable once something has been
+            % captured; there is nothing to draw before that.
+            if isempty(obj.BackgroundViewMenu) || ~isvalid(obj.BackgroundViewMenu)
+                return
+            end
+            C = obj.Engine.CalibrationData;
+            hasBackground = isstruct(C) && isfield(C, 'background') && ~isempty(C.background);
+            if hasBackground
+                obj.BackgroundViewMenu.Enable = 'on';
+            else
+                obj.BackgroundViewMenu.Enable = 'off';
+            end
         end
 
         function on_calibrate_tones_(obj)
@@ -630,9 +768,22 @@ classdef CalibrationGui < handle
             args = namedargs2cell(opts);
             obj.Engine.design_filter(source, args{:});
             D = obj.Engine.CalibrationData.filterDesign;
-            obj.set_status_(sprintf( ...
-                'Equalization filter designed: %d taps, %.1f dB correction span.', ...
-                D.numCoefficients, D.correctionDb), false);
+            msg = sprintf( ...
+                'Equalization filter designed: %d taps, %.1f dB correction span, Fs = %g Hz.', ...
+                D.numCoefficients, D.correctionDb, D.sampleRate);
+
+            % A filter cut for a rate other than the one attached is a
+            % legitimate thing to want, and a silent trap if it was not
+            % intended -- test_filter is the only thing that refuses it, and
+            % apply_calibration would happily run it at the wrong rate. Flag it
+            % on the way out.
+            fsHardware = obj.Engine.Fs;
+            isOverride = fsHardware > 0 && abs(D.sampleRate - fsHardware) > 1e-6 * fsHardware;
+            if isOverride
+                msg = sprintf(['%s The attached hardware runs at %g Hz, so this filter is ' ...
+                    'for another rig -- it cannot be tested or used here.'], msg, fsHardware);
+            end
+            obj.set_status_(msg, isOverride);
         end
 
         function on_test_filter_(obj)
@@ -892,6 +1043,7 @@ classdef CalibrationGui < handle
                 '1) File > Initialize Runtime From Protocol..., then File > Attach Adapter (if needed).\n\n', ...
                 '2) Verify parameters (reference level/frequency, mic sensitivity, excitation).\n\n', ...
                 '3) Put an acoustic calibrator (e.g. PCB CAL150) on the microphone, switch it on, and click "Measure Reference" to update microphone sensitivity. This step records only -- nothing is played. Remove the calibrator afterwards.\n\n', ...
+                '3b) Optional but recommended: with the calibrator removed and the rig running as it normally does, click "Measure Background" to record the noise floor every later measurement sits on. Nothing is played. The result is plotted as band levels and saved with the calibration; View > Background Noise Analysis brings it back.\n\n', ...
                 '4) Click "Calibrate Tones" (required for tone lookup), or run "Calibrate Swept Sine" and check "Tone Lookup From Swept Sine" to serve tone lookups from the sweep instead (overrides any direct tone calibration while checked).\n\n', ...
                 '5) Click "Test Tones" to check the table: tones are played at the levels the table says to use, and the levels that come back are compared to the ones requested. Do this before trusting the calibration in an experiment.\n\n', ...
                 '6) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
@@ -947,14 +1099,18 @@ classdef CalibrationGui < handle
         function update_runtime_state_(obj)
             obj.refresh_sample_rate_label_();
 
+            obj.update_background_menu_();
+
             hasAdapter = ~isempty(obj.Engine.Adapter);
             if hasAdapter
                 obj.BtnReference.Enable = 'on';
+                obj.BtnBackground.Enable = 'on';
                 obj.BtnTones.Enable = 'on';
                 obj.BtnClicks.Enable = 'on';
                 obj.BtnSweptSine.Enable = 'on';
             else
                 obj.BtnReference.Enable = 'off';
+                obj.BtnBackground.Enable = 'off';
                 obj.BtnTones.Enable = 'off';
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
@@ -996,9 +1152,38 @@ classdef CalibrationGui < handle
         function refresh_sample_rate_label_(obj)
             fs = obj.Engine.Fs;
             if fs > 0
-                obj.SampleRateLabel.Text = sprintf('%g Hz', fs);
+                txt = sprintf('%g Hz', fs);
             else
-                obj.SampleRateLabel.Text = 'No adapter';
+                txt = 'No adapter';
+            end
+
+            % An FIR's taps carry the rate they were designed for, so a loaded
+            % calibration whose filter was cut at another rate equalizes the
+            % wrong frequencies -- quietly, since apply_calibration does not
+            % compare rates. Report it where the rate is read, not only when
+            % test_filter happens to be run.
+            designFs = obj.filter_design_rate_();
+            mismatched = designFs > 0 && (fs <= 0 || abs(designFs - fs) > 1e-6 * fs);
+            if mismatched
+                txt = sprintf('%s (filter designed at %g Hz)', txt, designFs);
+                obj.SampleRateLabel.FontColor = [0.7 0 0];
+            else
+                obj.SampleRateLabel.FontColor = [0 0 0];
+            end
+            obj.SampleRateLabel.Text = txt;
+        end
+
+        function fs = filter_design_rate_(obj)
+            % fs = filter_design_rate_(obj)
+            % Rate the current equalization filter was designed for, or 0 when
+            % there is no filter or it predates the filterDesign metadata.
+            fs = 0;
+            C = obj.Engine.CalibrationData;
+            if ~isstruct(C) || ~isfield(C, 'filter') || isempty(C.filter), return; end
+            if ~isfield(C, 'filterDesign') || ~isfield(C.filterDesign, 'sampleRate'), return; end
+            v = double(C.filterDesign.sampleRate);
+            if isscalar(v) && isfinite(v) && v > 0
+                fs = v;
             end
         end
 
@@ -1140,6 +1325,20 @@ classdef CalibrationGui < handle
             opts = struct();
             wasCancelled = false;
 
+            % The design rate is offered here rather than as a settings field
+            % because it belongs to the filter, not to the measurement: the LUT
+            % is in Hz and volts and holds at any rate, while the taps fitted to
+            % it only realize the designed response at the rate they were cut
+            % for. Naming the hardware rate in the prompt makes an intentional
+            % override obvious and an accidental one unlikely.
+            fsHardware = obj.Engine.Fs;
+            if fsHardware > 0
+                ratePrompt = sprintf( ...
+                    'Design sample rate (Hz; empty or 0 = hardware rate, %g Hz):', fsHardware);
+            else
+                ratePrompt = 'Design sample rate (Hz; required, no adapter attached):';
+            end
+
             prompts = {
                 'LUT source (auto | tone | swept_sine):', ...
                 'Number of coefficients (taps; 0 = auto from LUT size):', ...
@@ -1148,7 +1347,8 @@ classdef CalibrationGui < handle
                 'Frequency scale (log | linear):', ...
                 'Fractional-octave smoothing (octaves, e.g. 0.333; 0 = none):', ...
                 'Maximum correction depth (dB below peak; Inf = unlimited):', ...
-                'Frequency range (Hz, "lo hi"; empty = LUT span):'
+                'Frequency range (Hz, "lo hi"; empty = LUT span):', ...
+                ratePrompt
             };
             defaults = {
                 obj.get_pref_('filterSource', 'auto'), ...
@@ -1158,7 +1358,8 @@ classdef CalibrationGui < handle
                 obj.get_pref_('filterFrequencyScale', 'log'), ...
                 obj.get_pref_('filterSmoothingOctaves', '0'), ...
                 obj.get_pref_('filterMaxCorrectionDb', 'Inf'), ...
-                obj.get_pref_('filterFrequencyRange', '')
+                obj.get_pref_('filterFrequencyRange', ''), ...
+                obj.get_pref_('filterSampleRate', '')
             };
 
             answer = inputdlg(prompts, 'Design Equalization Filter', ...
@@ -1187,6 +1388,13 @@ classdef CalibrationGui < handle
                     'Frequency range must be two values, "lo hi", or empty for the LUT span.');
             end
 
+            sampleRate = obj.parse_nonnegative_scalar_(raw(9), 'design sample rate', 0, false);
+            if sampleRate == 0 && fsHardware <= 0
+                error('stimgen:calibration:CalibrationGui:noSampleRate', ...
+                    ['With no adapter attached there is no hardware rate to fall back on. ' ...
+                     'Enter the sample rate the filter will run at.']);
+            end
+
             opts.DesignMethod     = designMethod;
             opts.Interpolation    = interpolation;
             opts.FrequencyScale   = frequencyScale;
@@ -1196,11 +1404,14 @@ classdef CalibrationGui < handle
             if nCoef > 0
                 opts.NumCoefficients = nCoef;
             end
+            if sampleRate > 0
+                opts.SampleRate = sampleRate;
+            end
 
             prefNames = {'filterSource', 'filterNumCoefficients', 'filterDesignMethod', ...
                          'filterInterpolation', 'filterFrequencyScale', ...
                          'filterSmoothingOctaves', 'filterMaxCorrectionDb', ...
-                         'filterFrequencyRange'};
+                         'filterFrequencyRange', 'filterSampleRate'};
             for k = 1:numel(prefNames)
                 obj.set_pref_(prefNames{k}, char(raw(k)));
             end
@@ -1299,6 +1510,7 @@ classdef CalibrationGui < handle
             % Stop is only enabled for operations that actually poll cancel().
             if tf
                 obj.BtnReference.Enable = 'off';
+                obj.BtnBackground.Enable = 'off';
                 obj.BtnTones.Enable = 'off';
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
@@ -1406,4 +1618,93 @@ if isempty(eng)
     eng = stimgen.calibration.Engine();
 end
 eng = eng(1);
+end
+
+% -------------------------------------------------------------------------
+function s = background_summary_(r)
+% s = background_summary_(r)
+% One-line status-bar summary of a background capture.
+s = sprintf('Background: %.1f dB SPL (%.1f dB(A)), loudest band %.0f Hz at %.1f dB SPL.', ...
+    r.spl_db, r.spl_dba, r.worst_band.frequency, r.worst_band.level_db);
+if ~isempty(r.flags)
+    s = sprintf('%s %d finding(s) -- see the report.', s, numel(r.flags));
+end
+end
+
+% -------------------------------------------------------------------------
+function s = background_report_(r)
+% s = background_report_(r)
+% Full text of a background capture, for the dialog shown after a run.
+%
+% The plots carry the shape of the noise; this carries the numbers that are
+% awkward to read off a curve -- the broadband levels, the quietest and
+% loudest bands, the tonal components and what they line up with, and whatever
+% the analysis flagged as worth acting on.
+lines = {};
+lines{end+1} = sprintf('%g s x %d record(s) at %g Hz, %s', ...
+    round(r.duration_s, 2), r.repeat_count, r.fs, ...
+    char(datetime(r.measuredOn, Format='dd-MMM-yyyy HH:mm')));
+lines{end+1} = '';
+lines{end+1} = sprintf('Broadband        %.1f dB SPL   |   A-weighted  %.1f dB(A)', ...
+    r.spl_db, r.spl_dba);
+lines{end+1} = sprintf('Below normative  %.1f dB (normative %g dB SPL)', ...
+    r.headroom_to_normative_db, r.normative_value_db);
+
+if r.repeat_count > 1
+    lines{end+1} = sprintf('Across records   %.1f dB spread, SD %.2f dB (%s)', ...
+        r.range_db, r.sd_db, steadiness_(r.stable));
+end
+lines{end+1} = sprintf('Input            peak %.4f V, %.1f dB below full scale, crest %.0f dB', ...
+    r.peak_v, r.headroom_db, r.crest_factor_db);
+
+lines{end+1} = '';
+lines{end+1} = sprintf('1/%d-octave bands (%d):', r.bands.fraction, numel(r.bands.frequency));
+if isempty(r.bands.frequency)
+    lines{end+1} = '  none resolvable at this duration and sample rate';
+else
+    [~, iHi] = max(r.bands.level_db);
+    [~, iLo] = min(r.bands.level_db);
+    lines{end+1} = sprintf('  loudest   %6.0f Hz   %.1f dB SPL', ...
+        r.bands.frequency(iHi), r.bands.level_db(iHi));
+    lines{end+1} = sprintf('  quietest  %6.0f Hz   %.1f dB SPL', ...
+        r.bands.frequency(iLo), r.bands.level_db(iLo));
+    lines{end+1} = sprintf('  span      %6.0f-%.0f Hz', ...
+        r.bands.frequency(1), r.bands.frequency(end));
+end
+
+lines{end+1} = '';
+if isempty(r.peaks.frequency)
+    lines{end+1} = sprintf('Tonal components: none more than %g dB above the local floor.', ...
+        r.tonal_prominence_db);
+else
+    lines{end+1} = sprintf('Tonal components (>= %g dB above the local floor):', ...
+        r.tonal_prominence_db);
+    for k = 1:numel(r.peaks.frequency)
+        lines{end+1} = sprintf('  %7.1f Hz   %.1f dB SPL   (+%.0f dB)', ...
+            r.peaks.frequency(k), r.peaks.level_db(k), r.peaks.prominence_db(k));
+    end
+    if isfinite(r.mains.frequency)
+        lines{end+1} = sprintf('  %d of these are %g Hz mains harmonics, %.1f dB SPL combined.', ...
+            r.mains.n_harmonics, r.mains.frequency, r.mains.level_db);
+    end
+end
+
+if ~isempty(r.flags)
+    lines{end+1} = '';
+    lines{end+1} = 'Findings:';
+    for k = 1:numel(r.flags)
+        lines{end+1} = sprintf('  - %s', r.flags(k));
+    end
+end
+
+s = strjoin(string(lines), newline);
+end
+
+% -------------------------------------------------------------------------
+function s = steadiness_(tf)
+if tf
+    s = 'steady';
+else
+    s = 'not steady';
+end
 end

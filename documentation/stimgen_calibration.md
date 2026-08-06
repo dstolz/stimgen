@@ -69,6 +69,22 @@ If the recording contains no tone at the reference frequency, the step fails wit
 
 Remove the calibrator after this step and position the microphone at your experimental measurement point.
 
+### Step 4b — Measure Background (optional, recommended)
+
+With the calibrator removed, the microphone where it will sit during an experiment, and the rig running as it normally does, click **Measure Background**. Nothing is played: this records the noise floor that every later measurement sits on top of, and it is the only step whose answer changes when someone leaves a fan on.
+
+The dialog asks for the record duration, how many records to take, and the prominence a spectral peak needs to be called tonal. The defaults (2 s, 3 records, 6 dB) are reasonable for a sound-attenuating booth.
+
+What comes back, on the transfer panel and in a summary dialog:
+
+- **broadband level, unweighted and A-weighted.** The gap between them is how much of the noise is where hearing is. A floor that is 62 dB SPL but 47 dB(A) is almost all low-frequency rumble.
+- **fractional-octave band levels.** This is the comparable form — read a stimulus spectrum against it to see which parts of a stimulus are actually clear of the room.
+- **tonal components,** with their frequencies refined below the FFT bin spacing, and a note when they line up with 50 or 60 Hz mains harmonics. Hum is the one background component that is nearly always the rig's own wiring rather than the room, and it is fixed by grounding, not by acoustic treatment.
+- **acquisition health** — DC offset, crest factor, headroom to full scale, and whether the input is quantizer-limited. A "silent" room measured through a converter that has run out of bits is measuring the converter.
+- **stability** across the records. If the level moved several dB between them, something intermittent is running and one number will not describe it.
+
+The result is stored as `background` in the calibration and saved with it, so a `.esgc` records the floor its tables were measured over. It does not change `CalibrationTimestamp` — a background capture does not re-date the transfer measurements. **View > Background Noise Analysis** brings the panel back after another view has taken it.
+
 ### Step 5 — Calibrate Tones
 
 Click **Calibrate Tones**. A dialog will ask for:
@@ -171,6 +187,26 @@ eng.calibrate_reference();
 This records only — nothing is played. The tone is produced by the calibrator, so the recorded level at `ReferenceFrequency` is by definition `ReferenceLevel` dB SPL, which is what makes `MicSensitivity` (V/Pa) computable. A recording with no tone at `ReferenceFrequency` (SNR below 20 dB) raises `stimgen:calibration:Engine:noReferenceTone` instead of storing a sensitivity derived from noise. Remove the calibrator after this step.
 
 The acquisition goes through `HwAdapter.record()`, whose default implementation is a silent `play_and_record`; a backend that can acquire without arming its output may override it.
+
+### Step 4b — Measure The Background (optional, recommended)
+
+With the calibrator off the microphone and the rig in the state an experiment would find it:
+
+```matlab
+r = eng.measure_background();          % 2 s x 3 records, third-octave bands
+r = eng.measure_background(5, 5, FractionalOctave=12, TonalProminenceDb=8);
+
+fprintf('%.1f dB SPL, %.1f dB(A)\n', r.spl_db, r.spl_dba);
+fprintf('worst band %.0f Hz at %.1f dB SPL\n', ...
+    r.worst_band.frequency, r.worst_band.level_db);
+disp(r.flags);                         % findings worth acting on, if any
+```
+
+This also records only. It power-averages the records' spectra into fractional-octave band levels, computes the broadband level both unweighted and A-weighted, picks out tonal components against a running-median local floor, and checks the acquisition chain itself — DC offset, crest factor, headroom, and whether the input has run out of quantization steps. An all-zero record raises `stimgen:calibration:Engine:silentAcquisition` rather than reporting a floor of `-Inf` dB: a microphone always returns something, so zeros mean it is not reaching the input.
+
+The result is stored in `CalibrationData.background` and saved with the calibration. It does not set `CalibrationTimestamp` — the transfer measurements have not been re-dated by it.
+
+Run it against the levels you intend to use: `r.bands.snr_at_normative_db` is the margin each band has at `NormativeValue`, and `r.headroom_to_normative_db` is that margin broadband.
 
 ### Step 5 — Calibrate Tones
 
@@ -287,6 +323,10 @@ eng.design_filter("swept_sine");  % force the swept sine LUT
 % Longer filter, 1/6-octave smoothing, correction capped at 20 dB, band limited:
 eng.design_filter("swept_sine", NumCoefficients=257, SmoothingOctaves=1/6, ...
     MaxCorrectionDb=20, FrequencyRange=[500 32000]);
+
+% Same measurement, filter for hardware running at a different rate. The LUT is
+% rate independent; the taps are not. No adapter is needed for this.
+eng.design_filter("swept_sine", SampleRate=100e3, FrequencyRange=[500 32000]);
 
 % Verify the filter empirically: plays the sweep raw and through the filter,
 % measures both, and reports how flat the equalized response came out.
@@ -413,6 +453,7 @@ otherwise written only by the calibration runs themselves.
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
 | `toneTest` | `test_tones` | struct recording the tone-LUT verification run: the `frequency`-by-`level_db` grid, `lut_source`, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-frequency breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
+| `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
 
 The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
 
@@ -442,9 +483,28 @@ Only the *shape* of the response matters: `stimgen.StimType.apply_calibration` r
 | `SmoothingOctaves` | `0` | Fractional-octave smoothing width, e.g. `1/3`. Keeps measurement noise and single-point notches out of the filter |
 | `MaxCorrectionDb` | `Inf` | Maximum correction depth in dB below the peak of the target. Caps how much of a short filter a deep notch can claim |
 | `FrequencyRange` | LUT span | `[lo hi]` Hz to equalize. The target is held flat at the edge value outside it |
+| `SampleRate` | `0` (adapter) | Rate in Hz the filter will be run at. Set it to design for hardware other than the attached adapter, or with no adapter at all — see [Changing The Design Sample Rate](#changing-the-design-sample-rate) |
 | `ShowResponse` | `true` | Open the design in `fvtool`, replacing the window from the previous design |
 
 Results are recorded in `CalibrationData.filterDesign`, so a saved `.esgc` says how its filter was made — including `correctionDb`, the correction span the design actually asked for.
+
+### Changing The Design Sample Rate
+
+An FIR's coefficients are defined in cycles per *sample*, not in Hz. Running a tap set at a different rate than it was fitted for rescales its entire response by the rate ratio: a filter designed at 200 kHz, run at 100 kHz, applies its 20 kHz correction at 10 kHz. Being below the lower Nyquist does not help — that only makes the band representable, not correctly equalized. Nothing in `apply_calibration` compares the two rates, so the failure is silent; `test_filter` is the one place that refuses a mismatch outright.
+
+The measurement itself is not rate bound. The `tone` and `swept_sine` LUTs hold frequency in Hz against voltage, which is a property of the transducer, so **the same calibration can be re-fitted for any rate without re-measuring anything**:
+
+```matlab
+eng = stimgen.calibration.Engine.load('Rig3_earphone.esgc');   % measured at 200 kHz
+eng.design_filter("swept_sine", SampleRate=100e3);             % filter for the 100 kHz rig
+eng.save('Rig3_earphone_100k.esgc');
+```
+
+Two consequences of the lower rate: the equalized band is clipped to the new Nyquist (LUT points at or above it are dropped and the target holds flat at the last kept value), and `filterGrpDelay` is the same number of *samples* but twice the duration in seconds. Alignment is unaffected — `filter_aligned` works in samples.
+
+One thing re-fitting cannot recover: the LUT was measured through the output path at its original rate, so any rate-dependent behaviour of the DAC's reconstruction filtering is baked into it. `test_filter`, run on hardware at the new rate, is what settles whether that matters.
+
+In `CalibrationGui` this is the last field of the Filter Design dialog; the Hardware Sample Rate line turns red and names the design rate whenever a loaded filter does not match the attached adapter.
 
 ### How The Filter Is Applied
 
@@ -468,7 +528,7 @@ Source: `+stimgen/+calibration/`
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
-- `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes.
+- `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes. Also draws the two off-run views of the transfer axes: `show_calibration` (the lookup tables) and `show_background` (a background capture).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
 
 Host-supplied adapters for lab hardware (TDT and similar) live outside this package; a host

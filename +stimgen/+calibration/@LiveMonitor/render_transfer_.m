@@ -134,6 +134,7 @@ function render_voltage_(obj, ax, xd, T, valid, d)
 % ceiling. Log-scaled because the requirement spans decades across a speaker's
 % roll-off, which is exactly where it matters.
 yyaxis(ax, 'right');
+ax.YAxis(2).Visible = 'on';   % show_background hides it; a run owns it again
 
 vAll = T.voltage;
 show = valid & isfinite(vAll) & vAll > 0;

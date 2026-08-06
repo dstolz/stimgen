@@ -109,6 +109,7 @@ classdef LiveMonitor < handle
         reset(obj)         % Delete every graphics object this monitor created.
         show_engine_state(obj, eng)  % Draw an engine's current response, off-run.
         show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer axes.
+        show_background(obj, eng)    % Draw an engine's background analysis on the transfer axes.
 
         function show(obj)
             % Bring an owned figure to the foreground. Never called during a
@@ -182,6 +183,7 @@ classdef LiveMonitor < handle
                 case "filter_test", s = 'Filter test';
                 case "tone_test",  s = 'Tone LUT test';
                 case "reference",  s = 'Reference';
+                case "background", s = 'Background';
                 otherwise,         s = char(stage);
             end
         end

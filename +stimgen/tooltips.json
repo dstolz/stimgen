@@ -146,6 +146,7 @@
     "SaveTool": "Save .esgc",
     "QuickStartTool": "Calibration Quick Start",
     "BtnReference": "Step 1: Record an acoustic calibrator (e.g. PCB CAL150) held on the microphone to update microphone sensitivity. Records only -- nothing is played through the speaker.",
+    "BtnBackground": "Optional but recommended, after Measure Reference: record the acoustic background with nothing presented and analyze it -- broadband and A-weighted level, fractional-octave band levels, and tonal components such as mains hum. Records only; nothing is played, so take the calibrator off the microphone first and leave the rig as an experiment would find it. The result is plotted on the transfer panel and saved in the .esgc; View > Background Noise Analysis brings it back after another view has taken the panel.",
     "BtnTones": "Step 2: Run tone frequency sweep to build the tone calibration table by direct measurement.",
     "BtnClicks": "Optional: Build click-duration calibration table.",
     "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp. Can also serve tone lookups -- see Tone Lookup From Swept Sine.",

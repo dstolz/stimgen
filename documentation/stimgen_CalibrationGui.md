@@ -40,6 +40,12 @@ re-attaches the monitor to the loaded engine, and closing the window detaches
 and deletes the monitor so the engine does not keep notifying a renderer whose
 axes are gone.
 
+The transfer panel serves two views, one at a time — the lookup tables, and the
+background noise analysis. Whichever ran last owns it; the **View** menu
+switches between `LiveMonitor.show_calibration` and `LiveMonitor.show_background`
+without re-measuring anything. **Background Noise Analysis** is disabled until a
+background capture exists, in the engine or in a loaded `.esgc`.
+
 ## Constructor
 
 Both inputs are optional and are identified by **type**, not position, so an `Engine` and a `HardwareHost` may be given in either order, either one alone, or as `Engine=`/`Host=` pairs:
@@ -216,6 +222,48 @@ The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibra
 
 Leaving the click-duration vector blank uses the `Engine` default, an octave series from 0.01 ms to 5.12 ms. It is specified in duration rather than sample counts, so the same sweep is requested regardless of the rig's sample rate. Durations that do not reach one sample at the current `Fs` cannot be rendered and are dropped before the sweep starts, with the skipped values logged; a vector in which none are resolvable raises `stimgen:calibration:Engine:unresolvableClickDurations`.
 
+## Measure Background
+
+Measure Background records the rig with nothing presented and characterizes what
+comes back. Like Measure Reference it plays nothing — it acquires through
+`HwAdapter.record` — but where that step is scaling the microphone, this one is
+measuring the floor every later measurement sits on top of. Run it after Measure
+Reference, with the calibrator off the microphone: without a reference the levels
+are volts wearing a dB SPL label.
+
+A dialog collects the record duration (default 2 s), how many records to take
+(default 3), and how far a spectral peak must stand above the local floor to be
+called tonal (default 6 dB). All three are remembered between sessions. The run
+is cancellable with Stop.
+
+`Engine.measure_background` power-averages the records' spectra and reports:
+
+- **broadband level**, unweighted and A-weighted — the gap between them says how
+  much of the noise is where hearing actually is;
+- **fractional-octave band levels** (third-octave by default), the form a noise
+  floor is comparable in and the form to read a stimulus spectrum against;
+- **tonal components** — narrowband peaks against a running-median local floor,
+  with sub-bin frequency refinement, plus whether they line up with 50 or 60 Hz
+  mains harmonics;
+- **acquisition health** — DC offset, crest factor, headroom to full scale, and
+  whether the input is sitting on its quantization floor;
+- **stability** — the spread of the per-record levels, which is what says whether
+  a single number describes the room at all.
+
+The panel is drawn on the transfer axes by `LiveMonitor.show_background`: the
+1/12-octave spectrum behind, the analysis bands on top, the A-weighted bands
+alongside, the broadband level across, and the tonal components marked and
+labelled. A dialog gives the numbers that are awkward to read off a curve, and
+the status line carries the headline. Findings — clipping, a quantizer-limited
+input, an unsteady room, mains hum, a floor close to the normative level — turn
+that dialog into a warning and are listed in it.
+
+The result is stored in `CalibrationData.background` and saved in the `.esgc`, so
+a calibration file records the noise floor its tables were measured over.
+`CalibrationTimestamp` is deliberately left alone: a background capture does not
+re-date the transfer measurements. A file holding only a background capture is
+saveable, and loads with its timestamp reported as unknown.
+
 ## Test Tones
 
 Test Tones is the closed loop on the tone calibration: `Engine.test_tones` asks
@@ -277,8 +325,13 @@ Design Filter prompts for the equalizer design options before running, and remem
 | Fractional-octave smoothing | `SmoothingOctaves` | `0` |
 | Maximum correction depth | `MaxCorrectionDb` | `Inf` |
 | Frequency range | `FrequencyRange` (empty = LUT span) | empty |
+| Design sample rate | `SampleRate` (empty or 0 = hardware rate) | empty |
 
-The status line reports the resulting tap count and correction span, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
+**Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
+
+Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Hardware Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter refuses such a filter rather than reporting the rate error as a design failure.
+
+The status line reports the resulting tap count, correction span and design rate, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
 ## Test Filter
 
@@ -286,15 +339,15 @@ Test Filter verifies the designed filter empirically with `Engine.test_filter`: 
 
 ## Reset Calibration
 
-Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables and any designed filter), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
+Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
 
 Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
 
 ## Button Enable Rules
 
-1. Measure Reference, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
+1. Measure Reference, Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
 2. Test Tones: enabled when tone **or** swept sine calibration data exists **and** an adapter is attached — verification is a live measurement. The condition is deliberately not tone-only: with Tone Lookup From Swept Sine checked, the sweep is the table a `Tone` stimulus is scaled by, so it is the one that has to be verified.
-3. Design Filter: enabled when tone **or** swept sine calibration data exists. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
+3. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
 4. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
 5. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
 6. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.

@@ -88,6 +88,7 @@ end
 function draw_voltage_(obj, ax, eng, C, specs, allX)
 % Right axis: required drive voltage per LUT, plus the output ceiling.
 yyaxis(ax, 'right');
+ax.YAxis(2).Visible = 'on';   % show_background hides it; this view owns it again
 vals = [];
 for k = 1:size(specs, 1)
     key = specs{k, 1};

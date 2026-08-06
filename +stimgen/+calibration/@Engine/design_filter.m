@@ -41,11 +41,23 @@ function design_filter(obj, source, options)
 %                      Caps how much of the filter a deep notch can claim.
 %   FrequencyRange   - [lo hi] Hz to equalize. Defaults to the LUT span. The
 %                      target is held flat at the edge value outside it.
+%   SampleRate       - rate in Hz the filter will be run at. 0 (default) takes
+%                      the attached adapter's rate. Set it to redesign for
+%                      hardware running at a rate other than the one the
+%                      calibration was measured at, or to design with no
+%                      adapter attached at all. The LUT is in Hz and volts and
+%                      so is rate independent, but the taps fitted to it are
+%                      not: an FIR realizes its designed magnitude only at the
+%                      rate it was designed for, and running it slower slides
+%                      the whole correction down in Hz by the same ratio.
 %   ShowResponse     - true (default) opens the design in fvtool.
 %
 % Example:
 %   eng.design_filter("swept_sine", NumCoefficients=257, ...
 %       SmoothingOctaves=1/6, MaxCorrectionDb=20, FrequencyRange=[500 32000]);
+%
+%   % Same measurement, filter for a rig running at half the calibrated rate:
+%   eng.design_filter("swept_sine", SampleRate=100e3, FrequencyRange=[500 32000]);
 arguments
     obj
     source (1,1) string {mustBeMember(source, ["auto", "tone", "swept_sine"])} = "auto"
@@ -58,6 +70,7 @@ arguments
     options.SmoothingOctaves (1,1) double {mustBeNonnegative, mustBeFinite} = 0
     options.MaxCorrectionDb  (1,1) double {mustBePositive} = inf
     options.FrequencyRange   (1,:) double = []
+    options.SampleRate       (1,1) double {mustBeNonnegative, mustBeFinite} = 0
     options.ShowResponse     (1,1) logical = true
 end
 
@@ -101,12 +114,27 @@ if isempty(lutName)
 end
 stimgen.util.vprintf(1, 'Designing equalization filter from %s calibration...', lutName);
 
-fs = obj.Fs;
-if ~isfinite(fs) || fs <= 0
-    % Fs comes from the adapter, so this is the offline case.
-    error('stimgen:calibration:Engine:noSampleRate', ...
-        ['Filter design needs a sample rate, which comes from the hardware ' ...
-         'adapter. Attach an adapter before designing the filter.']);
+% The design rate is the rate the taps will be *run* at, which is the adapter's
+% only by default. Overriding it is how a LUT measured on one rig equalizes
+% another, and how a saved .esgc is redesigned with nothing attached.
+fs = options.SampleRate;
+if fs <= 0
+    fs = obj.Fs;
+    if ~isfinite(fs) || fs <= 0
+        % Fs comes from the adapter, so this is the offline case.
+        error('stimgen:calibration:Engine:noSampleRate', ...
+            ['Filter design needs a sample rate. Attach an adapter to take it ' ...
+             'from the hardware, or pass SampleRate to design for a rate you ' ...
+             'are not connected to.']);
+    end
+elseif obj.Fs > 0 && abs(fs - obj.Fs) > 1e-6 * obj.Fs
+    % test_filter refuses a filter whose design rate is not the adapter's, so
+    % say here why that is about to happen rather than leaving it to look
+    % like a failure of the design.
+    stimgen.util.vprintf(1, 1, ...
+        ['Designing for Fs = %.4f Hz, not the attached adapter''s %.4f Hz. ' ...
+         'The filter cannot be tested until the adapter runs at the design rate.'], ...
+        fs, obj.Fs);
 end
 nyq  = fs / 2;
 d    = obj.CalibrationData.(lutName);
