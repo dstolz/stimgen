@@ -150,9 +150,11 @@
     "BtnClicks": "Optional: Build click-duration calibration table.",
     "BtnSweptSine": "Optional: Broadband calibration with a swept-sine chirp. Can also serve tone lookups -- see Tone Lookup From Swept Sine.",
     "ToneLutFromSweptSine": "Serve tone lookups (Tone stimuli, filter/noise level anchoring) from the swept sine calibration instead of the direct tone table. While checked this overrides any direct tone calibration; until swept sine data exists the direct tone table still applies. Both tables stay stored, and the choice is saved in the .esgc file.",
-    "BtnFilter": "Step 3 (optional): Design equalization filter after tone or swept sine calibration. Prompts for filter length, design method, interpolation, smoothing, correction limit and band, then opens the result in fvtool.",
-    "BtnTestFilter": "Step 4 (optional): Verify the designed filter empirically -- play the sweep raw and again through the filter, measure both responses, and report how flat the equalized response came out. Enabled once a filter is designed or loaded and hardware is attached.",
-    "BtnStop": "Interrupt a running tone, click, swept-sine calibration, or filter test. Takes effect at the next measurement, not instantly; partial calibration data is discarded."
+    "BtnTestTones": "Step 3: Verify the tone table -- play discrete tones at the drive voltages the table asks for and compare the levels that come back to the levels requested. Defaults probe midway between the calibrated frequencies, where the table is interpolating, at three levels. Follows Tone Lookup From Swept Sine, so it tests whichever table a Tone stimulus is actually scaled by. Enabled once a tone or swept sine calibration exists and hardware is attached.",
+    "BtnFilter": "Step 4 (optional): Design equalization filter after tone or swept sine calibration. Prompts for filter length, design method, interpolation, smoothing, correction limit and band, then opens the result in fvtool.",
+    "BtnTestFilter": "Step 5 (optional): Verify the designed filter empirically -- play the sweep raw and again through the filter, measure both responses, and report how flat the equalized response came out. Enabled once a filter is designed or loaded and hardware is attached.",
+    "BtnStop": "Interrupt a running tone, click, swept-sine calibration, tone table test, or filter test. Takes effect at the next measurement, not instantly; partial calibration data is discarded.",
+    "BtnReset": "Discard all acquired tone/click/swept-sine calibration data and any designed filter, to start over. Keeps the attached adapter, loaded protocol, mic sensitivity, and other settings."
   },
 
   "StimInspector": {

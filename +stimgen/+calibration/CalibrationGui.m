@@ -80,9 +80,11 @@ classdef CalibrationGui < handle
         BtnTones
         BtnClicks
         BtnSweptSine
+        BtnTestTones
         BtnFilter
         BtnTestFilter
         BtnStop
+        BtnReset
 
         % Axes
         AxTime
@@ -227,8 +229,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [19 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [21 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -343,15 +345,24 @@ classdef CalibrationGui < handle
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
+            % Sits next to the sweep that builds the table it checks, ahead of
+            % the equalizer: a filter designed on a table whose levels are
+            % wrong inherits that error.
+            obj.BtnTestTones = uibutton(g, Text='Test Tones', ...
+                ButtonPushedFcn=@(~,~) obj.on_test_tones_());
+            obj.BtnTestTones.Layout.Row = 15;
+            obj.BtnTestTones.Layout.Column = [1 2];
+            obj.BtnTestTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestTones');
+
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 15;
+            obj.BtnFilter.Layout.Row = 16;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
             obj.BtnTestFilter = uibutton(g, Text='Test Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_test_filter_());
-            obj.BtnTestFilter.Layout.Row = 16;
+            obj.BtnTestFilter.Layout.Row = 17;
             obj.BtnTestFilter.Layout.Column = [1 2];
             obj.BtnTestFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestFilter');
 
@@ -359,12 +370,18 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 17;
+            obj.BtnStop.Layout.Row = 18;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
+            obj.BtnReset = uibutton(g, Text='Reset Calibration', ...
+                ButtonPushedFcn=@(~,~) obj.on_reset_calibration_());
+            obj.BtnReset.Layout.Row = 19;
+            obj.BtnReset.Layout.Column = [1 2];
+            obj.BtnReset.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReset');
+
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 18;
+            obj.StatusLabel.Layout.Row = 20;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -548,6 +565,55 @@ classdef CalibrationGui < handle
             else
                 obj.Engine.set_configuration(ToneLutSource="tone");
                 obj.set_status_('Tone lookups use the direct tone calibration.', false);
+            end
+        end
+
+        function on_test_tones_(obj)
+            if ~obj.apply_controls_to_engine_()
+                return
+            end
+            obj.with_busy_state_(@() obj.run_test_tones_(), 'Testing tone lookup table...', true);
+        end
+
+        function run_test_tones_(obj)
+            % Verify the tone LUT empirically: Engine.test_tones plays discrete
+            % tones at the drive voltages the table asks for and compares the
+            % levels that come back to the ones requested. Stored in
+            % CalibrationData.toneTest by the engine.
+            [freqs, levels, repeatCount, wasCancelled] = obj.prompt_tone_test_parameters_();
+            if wasCancelled
+                obj.set_status_('Tone LUT test cancelled.', false);
+                return
+            end
+
+            % The plots are deliberately left showing the test's own curve
+            % rather than refreshed back to the committed LUTs -- the measured
+            % level against the requested one is the result.
+            r = obj.Engine.test_tones(freqs, levels, RepeatCount=repeatCount);
+
+            if r.passed
+                verdict = 'PASS';
+            else
+                verdict = 'FAIL';
+            end
+            msg = sprintf( ...
+                'Tone LUT test %s (%s table): worst error %.2f dB at %.0f Hz / %g dB SPL, bias %+.2f dB (tolerance %.1f dB).', ...
+                verdict, r.lut_source, r.max_abs_error_db, r.worst.frequency, ...
+                r.worst.level_db, r.bias_db, r.tolerance_db);
+
+            nSkipped = numel(r.skipped.frequency);
+            if nSkipped > 0
+                msg = sprintf('%s %d point(s) skipped as unreachable.', msg, nSkipped);
+            end
+            obj.set_status_(msg, ~r.passed);
+
+            if ~r.passed
+                uialert(obj.Figure, sprintf(['%s\n\nLevels are not being reproduced within ' ...
+                    'tolerance. A uniform bias usually means the reference measurement or ' ...
+                    'Normative Value moved since the sweep; errors at scattered frequencies ' ...
+                    'mean the table is too sparse to interpolate through -- recalibrate tones ' ...
+                    'with a finer frequency list.'], msg), ...
+                    'Tone LUT Test Failed', Icon='warning');
             end
         end
 
@@ -827,9 +893,10 @@ classdef CalibrationGui < handle
                 '2) Verify parameters (reference level/frequency, mic sensitivity, excitation).\n\n', ...
                 '3) Put an acoustic calibrator (e.g. PCB CAL150) on the microphone, switch it on, and click "Measure Reference" to update microphone sensitivity. This step records only -- nothing is played. Remove the calibrator afterwards.\n\n', ...
                 '4) Click "Calibrate Tones" (required for tone lookup), or run "Calibrate Swept Sine" and check "Tone Lookup From Swept Sine" to serve tone lookups from the sweep instead (overrides any direct tone calibration while checked).\n\n', ...
-                '5) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
-                '6) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
-                '7) Save calibration with File > Save .esgc.']);
+                '5) Click "Test Tones" to check the table: tones are played at the levels the table says to use, and the levels that come back are compared to the ones requested. Do this before trusting the calibration in an experiment.\n\n', ...
+                '6) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
+                '7) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
+                '8) Save calibration with File > Save .esgc.']);
             uialert(obj.Figure, msg, 'Calibration Quick Start', Icon='info');
         end
 
@@ -898,6 +965,17 @@ classdef CalibrationGui < handle
             hasLut = obj.Engine.IsCalibrated && ...
                 ((isfield(C, 'tone') && ~isempty(C.tone)) || ...
                  (isfield(C, 'swept_sine') && ~isempty(C.swept_sine)));
+            % Testing the tone lookup needs a table to test and hardware to
+            % play it through. hasLut is the right condition rather than a
+            % tone-only one: with Tone Lookup From Swept Sine set, the sweep is
+            % the table a Tone stimulus is scaled by, so it is what the test
+            % has to verify.
+            if hasLut && hasAdapter
+                obj.BtnTestTones.Enable = 'on';
+            else
+                obj.BtnTestTones.Enable = 'off';
+            end
+
             if hasLut
                 obj.BtnFilter.Enable = 'on';
             else
@@ -1011,6 +1089,46 @@ classdef CalibrationGui < handle
             obj.set_pref_('sweptSineDurationMs', char(durationText));
             obj.set_pref_('sweptSineFreqs', char(freqsText));
             obj.set_pref_('sweptSineRepeats', char(repeatsText));
+            wasCancelled = false;
+        end
+
+        function [freqs, levels, repeatCount, wasCancelled] = prompt_tone_test_parameters_(obj)
+            % Collect the frequency/level grid for the tone LUT test. Both
+            % lists default to empty, which hands the choice to Engine.test_tones:
+            % the midpoints between LUT points, at NormativeValue and 10/20 dB
+            % below it. Those defaults are the interesting ones, so the dialog
+            % opens ready to run.
+            freqsPref   = obj.get_pref_('toneTestFreqs', '');
+            levelsPref  = obj.get_pref_('toneTestLevels', '');
+            repeatsPref = obj.get_pref_('toneTestRepeats', '2');
+
+            prompts = {
+                'Test frequencies (Hz), e.g. 1000 2000 4000. Leave empty to probe midway between the calibrated points, where the table is interpolating:', ...
+                'Requested levels (dB SPL), e.g. 50 60 70. Leave empty for the normative value and 10/20 dB below it:', ...
+                'Number of averages (positive integer):'
+            };
+            defaults = {freqsPref, levelsPref, repeatsPref};
+            answer = inputdlg(prompts, 'Test Tone Lookup Table', [1 90; 1 90; 1 90], defaults);
+
+            if isempty(answer)
+                freqs = [];
+                levels = [];
+                repeatCount = 2;
+                wasCancelled = true;
+                return
+            end
+
+            freqsText  = strtrim(string(answer{1}));
+            levelsText = strtrim(string(answer{2}));
+            repeatsText = strtrim(string(answer{3}));
+
+            freqs       = obj.parse_numeric_vector_(freqsText, 'test frequencies');
+            levels      = obj.parse_numeric_vector_(levelsText, 'requested levels');
+            repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
+
+            obj.set_pref_('toneTestFreqs', char(freqsText));
+            obj.set_pref_('toneTestLevels', char(levelsText));
+            obj.set_pref_('toneTestRepeats', char(repeatsText));
             wasCancelled = false;
         end
 
@@ -1150,6 +1268,32 @@ classdef CalibrationGui < handle
             obj.BtnStop.Enable = 'off';
         end
 
+        function on_reset_calibration_(obj)
+            % Discard acquired calibration data and start over. The engine's
+            % adapter, its persistent parameters (including mic sensitivity
+            % from Measure Reference), and this window's preferences are left
+            % untouched -- only CalibrationData, the last response record, and
+            % the calibration timestamp are cleared.
+            if obj.Engine.IsCalibrated
+                msg = ['Discard all acquired tone/click/swept-sine calibration ' ...
+                    'data and any designed filter?' newline newline ...
+                    'The attached adapter, loaded protocol, mic sensitivity, ' ...
+                    'and other settings are kept.'];
+                choice = uiconfirm(obj.Figure, msg, 'Reset Calibration', ...
+                    Options={'Reset', 'Cancel'}, DefaultOption=2, CancelOption=2, ...
+                    Icon='warning');
+                if ~strcmp(choice, 'Reset')
+                    obj.set_status_('Reset cancelled.', false);
+                    return
+                end
+            end
+
+            obj.Engine.reset_calibration();
+            obj.refresh_all_plots_();
+            obj.update_runtime_state_();
+            obj.set_status_('Calibration reset. Ready to measure again.', false);
+        end
+
         function set_busy_(obj, tf, cancellable)
             % Disable calibration actions while an operation is running.
             % Stop is only enabled for operations that actually poll cancel().
@@ -1158,8 +1302,10 @@ classdef CalibrationGui < handle
                 obj.BtnTones.Enable = 'off';
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
+                obj.BtnTestTones.Enable = 'off';
                 obj.BtnFilter.Enable = 'off';
                 obj.BtnTestFilter.Enable = 'off';
+                obj.BtnReset.Enable = 'off';
                 if cancellable
                     obj.BtnStop.Enable = 'on';
                 else
@@ -1167,6 +1313,7 @@ classdef CalibrationGui < handle
                 end
             else
                 obj.BtnStop.Enable = 'off';
+                obj.BtnReset.Enable = 'on';
             end
         end
 

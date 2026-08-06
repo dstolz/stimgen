@@ -26,7 +26,12 @@ if ~isempty(response)
     m.responsePeakV = rspPeak;
     m.responseHeadroomDb = 20 * log10(fullScaleV / max(rspPeak, eps));
 
-    tol = max(1e-8, 1e-5 * max(rspPeak, 1));
+    % Relative to the record's own peak: a flat top is a shape, not a
+    % voltage. An absolute floor tied to 1 V instead called every quiet
+    % recording clipped -- a mic at a normal level returns a few millivolts,
+    % where a 1e-5 V window spans a percent of the peak and any clean sine
+    % dwells inside it for more than the 1% that trips the flag.
+    tol = max(1e-12, 1e-5 * rspPeak);
     flatTopFraction = mean(abs(abs(response) - rspPeak) <= tol);
     m.responseFlatTopFraction = flatTopFraction;
     m.responseClippingLikely = (rspPeak >= fullScaleV) || (flatTopFraction > 0.01);

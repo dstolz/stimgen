@@ -78,7 +78,20 @@ Click **Calibrate Tones**. A dialog will ask for:
 
 The sweep runs automatically. Progress is shown in the MATLAB command window. A transfer curve appears on the right plot when complete.
 
-### Step 6 — Optional Additional Calibrations
+### Step 6 — Test The Tone Table
+
+Click **Test Tones**. This is the step that tells you whether the calibration works: the software asks the table what voltage each test frequency needs for a requested dB SPL, plays a tone at exactly that voltage, measures it, and reports the difference. It is the same lookup a `Tone` stimulus goes through in an experiment.
+
+A dialog asks for test frequencies, requested levels, and an average count. Leave the first two blank — the defaults are the ones worth running:
+
+- **Frequencies** default to the geometric midpoints between the calibrated points. Testing *at* the calibrated frequencies would only confirm that the interpolant passes through its own knots; halfway between two of them is where the interpolation is actually deciding the level.
+- **Levels** default to the Normative Value and 10 and 20 dB below it, which also checks that level scales correctly with drive voltage away from the normative point.
+
+The status line reports PASS/FAIL, the worst error and where it happened, and the mean bias, against a 3 dB tolerance. A uniform bias points at the reference measurement or the Normative Value; scattered errors point at a tone sweep too sparse for the response's structure — recalibrate with a finer frequency list. The result is stored in the calibration as `toneTest`, so the saved file records that its table was verified.
+
+Points needing more than Max Output Voltage are skipped rather than played, and reported; points that come back below the SNR floor are measured but left out of the verdict.
+
+### Step 7 — Optional Additional Calibrations
 
 These are not required for basic tone delivery but improve accuracy for specialized stimuli:
 
@@ -87,7 +100,9 @@ These are not required for basic tone delivery but improve accuracy for speciali
 - **Design Filter** — designs an equalization FIR filter from the tone LUT, or from the swept sine LUT if no tone calibration exists. Requires one of those two calibrations to have already completed. A dialog collects the design options (filter length, design method, interpolation, smoothing, correction limit, band — see [Reference: Filter Design Options](#reference-filter-design-options)), and the result opens in `fvtool`.
 - **Test Filter** — verifies the designed filter empirically: plays the sweep raw and again through the filter, measures both responses, and reports the ripple of the equalized response against the speaker's own. Enabled once a filter exists and hardware is attached; the result is stored in the calibration as `filterTest`.
 
-### Step 7 — Save
+**Test Tones** (Step 6 above) follows Tone Lookup From Swept Sine, so after switching a rig to the swept sine table, re-run it: the table serving tone lookups has changed, and it is the one that now has to be right.
+
+### Step 8 — Save
 
 **File > Save .esgc** — save the calibration to disk. Use a descriptive filename that identifies the rig and date, e.g. `Rig3_earphone_2026-05-08.esgc`.
 
@@ -205,7 +220,46 @@ Two error paths are specific to this arrangement:
 - A warning that the response delay reached the search bound, meaning burst
   segmentation may be misaligned. Increase `GapDuration`.
 
-### Step 6 — Optional Additional Calibrations
+### Step 6 — Test The Tone Table
+
+```matlab
+% Play tones at the voltages the LUT asks for and check what comes back.
+% Both arguments may be [] -- see the note below on why the defaults matter.
+r = eng.test_tones();                       % also stored in CalibrationData.toneTest
+r = eng.test_tones([1400 5600], [50 60 70], RepeatCount=2, ToleranceDb=2);
+
+fprintf('worst %.2f dB at %.0f Hz / %g dB SPL, bias %+.2f dB (passed: %d)\n', ...
+    r.max_abs_error_db, r.worst.frequency, r.worst.level_db, r.bias_db, r.passed);
+```
+
+`test_tones` takes the drive voltage from `compute_adjusted_voltage("tone", f, level)` —
+the same call `StimType.apply_calibration` makes — so it measures the level
+normalization a real stimulus receives rather than a reimplementation of it. Which
+table is exercised follows `ToneLutSource`; `results.lut_source` records which one it
+was.
+
+Both defaults are chosen to test what a sweep cannot check itself:
+
+- **Frequencies** default to the geometric midpoints between successive LUT points.
+  At the LUT's own frequencies `makima` reproduces the measurement by construction,
+  so an error there is impossible and a pass there means nothing. Between them the
+  interpolation is the only thing setting the level.
+- **Levels** default to `NormativeValue - [20 10 0]`. The LUT is solved at
+  `NormativeValue`; every other level comes from the `20*log10(V)` scaling in
+  `compute_adjusted_voltage`, which a single-level test never exercises.
+
+Other options: `RepeatCount`, `BurstDuration`, `GapDuration`, `MaxSequenceDuration`
+(all as in `calibrate_tones`), `ToleranceDb` (default 3) and `MinSnrDb` (default 10).
+
+Points needing more than `MaxOutputVoltage` are skipped rather than played — they
+would clip, and clipping measures the amplifier, not the table — and are listed in
+`results.skipped`. Points below `MinSnrDb` are measured but excluded from the verdict,
+since noise reads *high* and would fail the test for something the LUT did not do.
+Clipped points stay in the verdict: clipping reads low, and that error is real.
+
+In `CalibrationGui` this runs from the **Test Tones** button.
+
+### Step 7 — Optional Additional Calibrations
 
 ```matlab
 % Click calibration (sweep over durations in seconds):
@@ -250,7 +304,7 @@ and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized re
 or below which the test is reported passed. In `CalibrationGui` this runs from the
 **Test Filter** button.
 
-### Step 7 — Save
+### Step 8 — Save
 
 ```matlab
 eng.save('Rig3_earphone_2026-05-08.esgc');
@@ -357,6 +411,7 @@ otherwise written only by the calibration runs themselves.
 | `filterGrpDelay` | `design_filter` | filter group delay in samples (0 until filter is designed) |
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
+| `toneTest` | `test_tones` | struct recording the tone-LUT verification run: the `frequency`-by-`level_db` grid, `lut_source`, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-frequency breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 
 The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.

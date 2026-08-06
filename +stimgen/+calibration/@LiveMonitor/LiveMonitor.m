@@ -180,6 +180,7 @@ classdef LiveMonitor < handle
                 case "click",      s = 'Click sweep';
                 case "swept_sine", s = 'Swept sine';
                 case "filter_test", s = 'Filter test';
+                case "tone_test",  s = 'Tone LUT test';
                 case "reference",  s = 'Reference';
                 otherwise,         s = char(stage);
             end

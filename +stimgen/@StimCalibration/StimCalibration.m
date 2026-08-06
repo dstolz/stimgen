@@ -25,6 +25,8 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     %   design_filter            - Proxy to Engine; design equalization filter.
     %   test_filter              - Proxy to Engine; verify the filter flattens
     %                              the measured response.
+    %   test_tones               - Proxy to Engine; verify the tone LUT
+    %                              reproduces requested levels.
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.HwAdapter,
     %           stimgen.calibration.CalibrationGui,
@@ -162,6 +164,17 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             % responses. Delegates to Engine, arguments and all; results are
             % stored in CalibrationData.filterTest.
             results = obj.Engine.test_filter(varargin{:});
+        end
+
+        % ---------------------------------------------------------- %
+        function results = test_tones(obj, varargin)
+            % results = test_tones(obj)
+            % results = test_tones(obj, freqs, levels, Name=Value)
+            % Verify the tone lookup table: play discrete tones at the drive
+            % voltages the LUT asks for and compare the levels that come back
+            % to the ones requested. Delegates to Engine, arguments and all;
+            % results are stored in CalibrationData.toneTest.
+            results = obj.Engine.test_tones(varargin{:});
         end
 
         % ---------------------------------------------------------- %

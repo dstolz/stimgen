@@ -180,9 +180,12 @@ Recommended sequence:
 4. Build the tone lookup, one of two ways:
    - Calibrate Tones (direct per-frequency measurement), **or**
    - Calibrate Swept Sine, with the Tone Lookup From Swept Sine option checked
-5. Optional: Calibrate Clicks and/or Calibrate Swept Sine
-6. Optional: Design Filter, then Test Filter to verify it empirically
-7. Save .esgc
+5. Test Tones — play tones at the levels the table says to use and check that
+   those levels come back. Do this before trusting a calibration in an
+   experiment; it is the only step that measures whether the lookup works
+6. Optional: Calibrate Clicks and/or Calibrate Swept Sine
+7. Optional: Design Filter, then Test Filter to verify it empirically
+8. Save .esgc
 
 ## Tone Lookup From Swept Sine
 
@@ -213,6 +216,53 @@ The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibra
 
 Leaving the click-duration vector blank uses the `Engine` default, an octave series from 0.01 ms to 5.12 ms. It is specified in duration rather than sample counts, so the same sweep is requested regardless of the rig's sample rate. Durations that do not reach one sample at the current `Fs` cannot be rendered and are dropped before the sweep starts, with the skipped values logged; a vector in which none are resolvable raises `stimgen:calibration:Engine:unresolvableClickDurations`.
 
+## Test Tones
+
+Test Tones is the closed loop on the tone calibration: `Engine.test_tones` asks
+the lookup table what voltage a given frequency needs for a given dB SPL, plays
+a gated burst at exactly that voltage, measures what came back, and reports the
+difference. The drive voltage comes from `compute_adjusted_voltage` — the same
+call `StimType.apply_calibration` makes when it scales a `Tone` — so what is
+verified is the level normalization a real stimulus gets, not a reimplementation
+of it. Which table is tested follows Tone Lookup From Swept Sine.
+
+The dialog collects a frequency list, a level list, and an average count, all
+remembered as preferences. Both lists may be left empty, which is the
+recommended way to run it:
+
+| Field | Empty means | Why |
+|---|---|---|
+| Test frequencies (Hz) | geometric midpoints between successive LUT points, at most 15 | These are the frequencies the sweep never measured. At the LUT's own frequencies the interpolant reproduces the measurement by construction, so testing there proves nothing; halfway between two points is where `makima` is doing all the work |
+| Requested levels (dB SPL) | Normative Value and 10 and 20 dB below it | One level only checks the table. Three check the other half of the model — that level scales as 20·log10 of drive voltage away from `NormativeValue` |
+| Number of averages | 2 | A second pass gives the ±1 SD ribbon, which is the only evidence on screen that a point converged rather than drifted |
+
+The status line reports the verdict, the worst error and where it occurred, and
+the mean bias, against the pass tolerance (default 3 dB). A failure raises an
+alert; the shape of the error says what to fix:
+
+- **A uniform bias at every frequency and level** — the reference measurement or
+  Normative Value moved since the sweep. Re-run Measure Reference.
+- **Errors at scattered frequencies, small elsewhere** — the table is too sparse
+  to interpolate through a response with structure between its points. Re-run
+  Calibrate Tones with a finer frequency list.
+- **Errors that grow with level** — the rig is running out of range. Check
+  `results.clipping` and the drive voltages against Max Output Voltage.
+
+Points whose required drive exceeds Max Output Voltage are skipped rather than
+played — they would clip, and clipping measures the amplifier, not the table.
+They are counted in the status line and listed in `results.skipped`, never
+dropped silently. Points that come back below the SNR floor (default 10 dB) are
+measured but excluded from the verdict, since noise reads *high* and would fail
+the test for something the table did not do. Clipped points are kept in the
+verdict: clipping reads low, and a level the rig cannot deliver cleanly is a
+level the calibration does not deliver.
+
+The full result is stored in `CalibrationData.toneTest`, so a saved `.esgc`
+carries the evidence that its tone table reproduces the levels it promises. The
+run is cancellable with Stop. With live plots on, the transfer panel fills in
+the measured level against frequency one requested level at a time — a correct
+table draws a flat line at the level under test.
+
 ## Filter Design Dialog
 
 Design Filter prompts for the equalizer design options before running, and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
@@ -234,12 +284,20 @@ The status line reports the resulting tap count and correction span, and the des
 
 Test Filter verifies the designed filter empirically with `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified. The run is cancellable with Stop, and with live plots on, the transfer panel shows the raw response fill in and then be replaced by the flattened one.
 
+## Reset Calibration
+
+Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables and any designed filter), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
+
+Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
+
 ## Button Enable Rules
 
 1. Measure Reference, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
-2. Design Filter: enabled when tone **or** swept sine calibration data exists. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
-3. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
-4. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
+2. Test Tones: enabled when tone **or** swept sine calibration data exists **and** an adapter is attached — verification is a live measurement. The condition is deliberately not tone-only: with Tone Lookup From Swept Sine checked, the sweep is the table a `Tone` stimulus is scaled by, so it is the one that has to be verified.
+3. Design Filter: enabled when tone **or** swept sine calibration data exists. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
+4. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
+5. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
+6. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
 
 ## Runtime Ownership And Independence
 

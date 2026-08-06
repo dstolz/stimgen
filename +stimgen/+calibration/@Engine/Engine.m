@@ -31,6 +31,10 @@ classdef Engine < handle
     %   filterDesign     - struct of the design options and the achieved
     %                      correction span, so a saved filter records how it
     %                      was made (see design_filter)
+    %   filterTest       - struct recording a test_filter verification run
+    %   toneTest         - struct recording a test_tones verification run, so
+    %                      a saved calibration carries the evidence that its
+    %                      tone LUT reproduces the levels it promises
     %
     % Usage:
     %   adapter = stimgen.calibration.WindowsSoundCardAdapter();
@@ -135,10 +139,12 @@ classdef Engine < handle
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
         design_filter(obj, source, options) % Design equalization filter from a frequency LUT.
         results = test_filter(obj, options) % Verify the designed filter flattens the measured response.
+        results = test_tones(obj, freqs, levels, options) % Verify the tone LUT reproduces requested levels at discrete tones.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
         restore(obj, s) % Restore engine state from a serialized struct.
         cancel(obj) % Request cancellation of an in-progress calibration run.
+        reset_calibration(obj) % Discard acquired calibration data; keeps adapter and parameters.
 
         function Fs = get.Fs(obj)
             % Return adapter sample rate or 0 when no adapter is attached.
@@ -353,6 +359,8 @@ classdef Engine < handle
         r = measure_(obj, signal, mode, options) % Acquire and compute measurement metric.
         [y, schedule] = build_tone_sequence_(obj, freqs, burstDur, gapDur) % Assemble one gated tone-burst train.
         [lag, atBound] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
+        [exBurst, rsBurst, rsSteady, steadySpan] = extract_burst_(obj, x, response, s, lag) % Cut one scheduled burst from an excitation/response pair.
+        [name, lut] = resolve_tone_lut_(obj) % Which LUT serves tone lookups, and its contents.
         [spl_db, voltage] = compute_spl_voltage_(obj, measurement, mode) % Convert measurement to SPL and normative voltage.
         [noiseFloorDb, snrDb] = estimate_noise_snr_(obj, y, fs, toneFreq) % Estimate noise floor and SNR.
         [thdDb, h2Db, h3Db] = estimate_harmonics_(obj, y, fs, fundamentalFreq) % Estimate THD and harmonic levels.

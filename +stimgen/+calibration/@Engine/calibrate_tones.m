@@ -129,9 +129,8 @@ try
                 i = idx(k);
                 s = schedule(k);
 
-                [exBurst, rsBurst] = slice_(x, response, s.onset, 0, s.nsamples, lag);
-                [aRel, bRel] = steady_span_(s, fs);
-                [~, rsSteady, steadySpan] = slice_(x, response, s.onset, aRel, bRel, lag);
+                [exBurst, rsBurst, rsSteady, steadySpan] = ...
+                    obj.extract_burst_(x, response, s, lag);
 
                 toneMeasAll(rep, i) = stimgen.calibration.Engine.spectral_rms( ...
                     rsSteady, freqs(i), fs);
@@ -235,38 +234,4 @@ obj.emit_live_("tone", "done", 'Table', tone_data, ...
 
 stimgen.util.vprintf(1, 'Tone calibration complete. %d points over %g-%g Hz in %d train(s) x %d repeat(s)', ...
     n, freqs(1), freqs(end), numel(trainStarts), repeatCount);
-end
-
-% ------------------------------------------------------------------------ %
-function [aRel, bRel] = steady_span_(s, fs)
-% Half-open [aRel, bRel) sample offsets of the burst's steady-state middle,
-% relative to its onset. Falls back to the whole burst when the ramps leave
-% too little to estimate a level from.
-aRel = s.rampSamples;
-bRel = s.nsamples - s.rampSamples;
-
-minLen = max(32, ceil(4 * fs / s.frequency));
-if bRel - aRel < minLen
-    aRel = 0;
-    bRel = s.nsamples;
-end
-end
-
-% ------------------------------------------------------------------------ %
-function [exSeg, rsSeg, rsSpan] = slice_(x, response, onset, aRel, bRel, lag)
-% Cut the same half-open span out of the excitation and, shifted by the
-% acquisition delay, out of the response. Both are clamped to their records:
-% the trailing gap normally covers the shift, but a mis-estimated delay or a
-% short return from the adapter must not index past the end.
-%
-% rsSpan is the clamped [first last] index of rsSeg within response, which the
-% live update passes to the monitor so the analysed window can be drawn on the
-% waveform. It is returned from here rather than recomputed by the caller so
-% that the shift and the clamping have exactly one definition.
-a = onset + aRel;
-b = onset + bRel - 1;
-
-exSeg  = x(max(a,1) : min(b, numel(x)));
-rsSpan = [max(a + lag, 1), min(b + lag, numel(response))];
-rsSeg  = response(rsSpan(1) : rsSpan(2));
 end

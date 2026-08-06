@@ -39,17 +39,11 @@ else
     lutType = type;
 end
 
-% Redirect tone lookups to the swept sine LUT when so configured -- the two
-% are on the same SPL/voltage scale. Fall back to the tone LUT rather than
-% error when no sweep has been run, so setting the source ahead of the
-% measurement is harmless.
-if lutType == "tone" && obj.ToneLutSource == "swept_sine"
-    if isfield(obj.CalibrationData, 'swept_sine') && ~isempty(obj.CalibrationData.swept_sine)
-        lutType = "swept_sine";
-    else
-        stimgen.util.vprintf(2, ...
-            'ToneLutSource is "swept_sine" but no swept sine calibration exists; using the tone LUT.');
-    end
+% ToneLutSource may redirect tone lookups to the swept sine LUT; resolve_tone_lut_
+% is the single definition of that choice, shared with test_tones so the table
+% the test verifies is the table a stimulus is actually scaled by.
+if lutType == "tone"
+    lutType = obj.resolve_tone_lut_();
 end
 
 if ~isfield(obj.CalibrationData, lutType) || isempty(obj.CalibrationData.(lutType))
