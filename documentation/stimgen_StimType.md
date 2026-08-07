@@ -67,6 +67,8 @@ Typical subclass update flow:
 
 All concrete subclasses follow this order. Calibration must precede gating: `apply_calibration` renormalizes the waveform before scaling it to the voltage returned by the calibration lookup, so any onset/offset ramp applied earlier would be undone.
 
+For a `CalibrationType` of `"filter"`, `apply_calibration` first checks that the equalizer was designed for this stimulus's `Fs`. A mismatch raises `stimgen:util:filterRateMismatch` and clears `Signal`, because the taps would otherwise correct the wrong frequencies with nothing in the output to show for it — see [Rate Checking](stimgen_calibration.md#rate-checking).
+
 `refresh_plot_if_valid` keeps open plot handles synchronized.
 
 ## Variant Selection

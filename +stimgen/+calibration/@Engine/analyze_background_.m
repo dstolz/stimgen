@@ -103,7 +103,7 @@ df = f(2) - f(1);
 % Integrated over the weighted spectrum rather than by filtering the record:
 % the spectrum is already averaged, and the weighting is exact on it. The DC
 % bin contributes nothing -- the weighting is zero there by construction.
-aw     = a_weighting_db_(f);
+aw     = stimgen.util.weighting_db(f, "A");
 powA   = sum(pxx .* 10 .^ (aw ./ 10)) * df;
 splA   = refLvl + 10 * log10(max(powA, realmin)) - 20 * log10(micSens);
 
@@ -113,7 +113,7 @@ splA   = refLvl + 10 * log10(max(powA, realmin)) - 20 * log10(micSens);
 fMin = max(5 * df, 10);
 bands = band_levels_(pxx, f, df, options.FractionalOctave, fMin, fs / 2, refLvl, micSens);
 bands.snr_at_normative_db = obj.NormativeValue - bands.level_db;
-bands.level_dba = bands.level_db + a_weighting_db_(bands.frequency);
+bands.level_dba = bands.level_db + stimgen.util.weighting_db(bands.frequency, "A");
 
 worstBand = struct('frequency', nan, 'level_db', nan);
 if ~isempty(bands.level_db)
@@ -387,16 +387,4 @@ for f0 = [50 60]
     end
 end
 m = best;
-end
-
-% ------------------------------------------------------------------------ %
-function a = a_weighting_db_(f)
-% IEC 61672-1 A-weighting, evaluated directly from the pole/zero form so the
-% package does not gain an Audio Toolbox dependency for one curve.
-sz = size(f);
-f2 = double(f(:)) .^ 2;
-num = 12194 ^ 2 .* f2 .^ 2;
-den = (f2 + 20.6 ^ 2) .* sqrt((f2 + 107.7 ^ 2) .* (f2 + 737.9 ^ 2)) .* (f2 + 12194 ^ 2);
-a = 20 * log10(max(num ./ den, realmin)) + 2.00;   % +2 dB normalizes to 0 at 1 kHz
-a = reshape(a, sz);
 end

@@ -64,6 +64,9 @@ classdef CalibrationGui < handle
 
         % View menu
         BackgroundViewMenu
+        WeightingMenus          % one checkable item per LiveMonitor.WeightingTypes
+        SpectrumUnitMenus       % one checkable item per LiveMonitor.SpectrumUnitList
+        TransferView_ (1,1) string = "calibration"  % which view the transfer panel last drew
 
         % Controls
         RefLevelField
@@ -231,6 +234,37 @@ classdef CalibrationGui < handle
             obj.BackgroundViewMenu = uimenu(viewMenu, Text='Background Noise Analysis', ...
                 Enable='off', ...
                 MenuSelectedFcn=@(~,~) obj.on_show_background_());
+
+            % Weightings annotate whichever view is up rather than being a
+            % view of their own, and more than one at a time is a reasonable
+            % thing to want -- hence checkable items instead of a dropdown,
+            % which also keeps them off the already-crowded controls panel.
+            weightMenu = uimenu(viewMenu, Text='Weighting Overlay', Separator='on');
+            types = stimgen.calibration.LiveMonitor.WeightingTypes;
+            obj.WeightingMenus = gobjects(1, numel(types));
+            for k = 1:numel(types)
+                obj.WeightingMenus(k) = uimenu(weightMenu, ...
+                    Text=sprintf('%s-weighting', types(k)), ...
+                    MenuSelectedFcn=@(src,~) obj.on_weighting_(src));
+            end
+            uimenu(weightMenu, Text='None', Separator='on', ...
+                MenuSelectedFcn=@(~,~) obj.on_weighting_none_());
+
+            % The spectrum answers a different question in each unit -- is the
+            % level right, is the input stage clipping, how does this floor
+            % compare to the last one, what is the shape -- and only one at a
+            % time, so these are exclusive checkmarks. The unit is carried in
+            % UserData rather than parsed back out of the menu text.
+            unitMenu = uimenu(viewMenu, Text='Spectrum Y-Axis', Separator='on');
+            units = stimgen.calibration.LiveMonitor.SpectrumUnitList;
+            obj.SpectrumUnitMenus = gobjects(1, numel(units));
+            for k = 1:numel(units)
+                obj.SpectrumUnitMenus(k) = uimenu(unitMenu, ...
+                    Text=spectrum_unit_menu_text_(units(k)), ...
+                    UserData=units(k), ...
+                    Tooltip=stimgen.util.tooltip('CalibrationGui', 'SpectrumUnits'), ...
+                    MenuSelectedFcn=@(src,~) obj.on_spectrum_units_(src));
+            end
 
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start', ...
@@ -436,12 +470,63 @@ classdef CalibrationGui < handle
             obj.Monitor = stimgen.calibration.LiveMonitor(obj.Engine, ...
                 Axes=[obj.AxTime obj.AxSpectrum obj.AxTransfer]);
             obj.Monitor.LogX = obj.TransferLogXCheck.Value;
+            obj.sync_spectrum_units_menu_();
+        end
+
+        function on_spectrum_units_(obj, src)
+            % Redraw the spectrum panel in the selected unit. The record is
+            % kept in volts by the monitor, so this costs a redraw of what is
+            % already measured -- nothing has to be re-acquired.
+            obj.Monitor.SpectrumUnits = src.UserData;
+            obj.sync_spectrum_units_menu_();
+            obj.Monitor.show_engine_state(obj.Engine);
+            obj.set_status_(sprintf('Spectrum in %s.', src.UserData), false);
+        end
+
+        function sync_spectrum_units_menu_(obj)
+            % Check the item matching the monitor's unit, so the menu follows
+            % the monitor even when something other than the menu set it.
+            if isempty(obj.SpectrumUnitMenus)
+                return
+            end
+            for h = obj.SpectrumUnitMenus
+                h.Checked = matlab.lang.OnOffSwitchState(h.UserData == obj.Monitor.SpectrumUnits);
+            end
         end
 
         function on_transfer_log_x_(obj)
             % Toggle log/linear frequency on the transfer panel and redraw.
             obj.Monitor.LogX = obj.TransferLogXCheck.Value;
             obj.refresh_all_plots_();
+        end
+
+        function on_weighting_(obj, src)
+            % Toggle one weighting curve on the transfer panel.
+            src.Checked = ~strcmp(src.Checked, 'on');
+            obj.apply_weightings_();
+        end
+
+        function on_weighting_none_(obj)
+            % Clear every weighting curve in one step.
+            set(obj.WeightingMenus, Checked='off');
+            obj.apply_weightings_();
+        end
+
+        function apply_weightings_(obj)
+            % Push the checked set to the monitor, which owns the curves, and
+            % redraw so the change shows without waiting for a measurement.
+            % Redrawn in whichever view is up: an overlay is an annotation on
+            % the current view, and switching the panel out from under a user
+            % who asked for A-weighting on the noise floor is not what they
+            % asked for.
+            checked = arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus);
+            obj.Monitor.Weightings = ...
+                stimgen.calibration.LiveMonitor.WeightingTypes(checked);
+            if obj.TransferView_ == "background"
+                obj.on_show_background_();
+            else
+                obj.refresh_all_plots_();
+            end
         end
 
         function on_close_(obj, fig)
@@ -578,11 +663,13 @@ classdef CalibrationGui < handle
         end
 
         function on_show_transfer_(obj)
+            obj.TransferView_ = "calibration";
             obj.refresh_all_plots_();
             obj.set_status_('Showing calibration transfer curves.', false);
         end
 
         function on_show_background_(obj)
+            obj.TransferView_ = "background";
             % show_background resets the monitor's whole graphics cache, not
             % just the transfer panel's share of it, so the response panels have
             % to be redrawn after it -- the same ordering refresh_all_plots_
@@ -1565,6 +1652,26 @@ classdef CalibrationGui < handle
             obj.StatusLabel.Text = msg;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+function s = spectrum_unit_menu_text_(unit)
+% s = spectrum_unit_menu_text_(unit)
+% Menu caption for a LiveMonitor spectrum unit: what the unit is for, with the
+% unit itself in parentheses. The list of units belongs to the monitor; only
+% the wording of it belongs here, and an unlisted unit still gets an item
+% rather than an error.
+
+switch unit
+    case "dB SPL",      s = 'Sound Pressure Level (dB SPL)';
+    case "dB SPL/Hz",   s = 'Spectral Density (dB SPL/Hz)';
+    case "Pa",          s = 'Sound Pressure (Pa rms)';
+    case "V",           s = 'Measured Voltage (V rms)';
+    case "dBV",         s = 'Measured Voltage (dB re 1 V)';
+    case "V/sqrt(Hz)",  s = 'Voltage Density (V/sqrt(Hz))';
+    case "dB re peak",  s = 'Relative to Peak (dB)';
+    otherwise,          s = char(unit);
+end
 end
 
 % -------------------------------------------------------------------------

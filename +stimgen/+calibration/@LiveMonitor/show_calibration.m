@@ -43,6 +43,8 @@ specs = { ...
 yyaxis(ax, 'left');
 allX = [];
 allV = [];
+freqX = [];   % the frequency-keyed LUTs only, for the weighting overlay
+freqY = [];
 for k = 1:size(specs, 1)
     key = specs{k, 1};
     lineKey = ['static_' key];
@@ -53,12 +55,17 @@ for k = 1:size(specs, 1)
     end
     S = C.(key);
     x = S.(specs{k, 2})(:).' .* specs{k, 3};
+    y = S.spl_db(:).';
     h = obj.gobj_(lineKey, @() line(ax, NaN, NaN, LineStyle='-', Marker=specs{k,4}(1), ...
         MarkerSize=4, Color=specs{k,5}, MarkerFaceColor=specs{k,5}, ...
         LineWidth=1, DisplayName=specs{k,6}));
-    set(h, XData=x, YData=S.spl_db(:).');
+    set(h, XData=x, YData=y);
     allX = [allX, x];
     allV = [allV, S.voltage(:).'];
+    if strcmp(specs{k, 2}, 'frequency')
+        freqX = [freqX, x];
+        freqY = [freqY, y];
+    end
 end
 
 ylabel(ax, 'level (dB SPL)');
@@ -71,6 +78,11 @@ end
 if numel(allX) > 1
     xlim(ax, [min(allX) * 0.93, max(allX) * 1.07]);
 end
+
+% Only the frequency-keyed tables anchor a weighting curve. The click LUT
+% shares this axis but its x is a duration, and a weighting evaluated there
+% would be a plot of nothing.
+obj.render_weighting_(ax, freqX, freqY);
 
 if obj.ShowVoltage && ~isempty(allV)
     draw_voltage_(obj, ax, eng, C, specs, allX);

@@ -652,9 +652,15 @@ classdef SoundFile < stimgen.StimType
 
                     % The taps realize their designed response only at the rate
                     % they were fitted for, and a mismatch is invisible in the
-                    % output.
-                    stimgen.util.assert_filter_rate(C.CalibrationData, ...
-                        double(obj.selected_value("Fs")));
+                    % output. Drop the waveform as well as raising, for the
+                    % reason given in StimType.apply_calibration.
+                    try
+                        stimgen.util.assert_filter_rate(C.CalibrationData, ...
+                            double(obj.selected_value("Fs")));
+                    catch ME
+                        obj.Signal = [];
+                        rethrow(ME);
+                    end
 
                     % Equalize in place so the recording keeps its length and
                     % its onset sample.

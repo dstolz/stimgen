@@ -139,6 +139,7 @@
   "CalibrationGui": {
     "MaxOutputVoltage": "Output ceiling of the rig, in volts. Sets the clipping limits drawn on the waveform and the line above which a required drive voltage is unreachable.",
     "ShowLivePlots": "Update the panels during a sweep, measurement by measurement, instead of only when it finishes.",
+    "SpectrumUnits": "Y-axis of the spectrum panel. dB SPL is the calibration's own scale. V rms and dB re 1 V read the microphone signal as the input stage sees it, which is how you tell a quiet room from an overloaded preamp. The per-Hz densities are the comparable way to read a noise floor, since a per-bin level depends on the analysis window. dB re peak shows shape alone -- harmonics and sidebands -- on a rig whose reference has not been measured yet. Applies to the last measurement immediately; nothing is re-acquired.",
     "InitializeRuntimeTool": "Initialize Runtime From Protocol...",
     "AttachAdapterTool": "Attach Adapter",
     "DisconnectTool": "Disconnect Runtime/Adapter",

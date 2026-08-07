@@ -49,6 +49,14 @@ if numel(xd) > 1 && all(isfinite(xd([1 end])))
     xlim(ax, [min(xd) * 0.93, max(xd) * 1.07]);
 end
 
+% The click sweep runs this same panel against duration, where a weighting
+% has nothing to say; the payload's own axis label is what distinguishes it.
+if contains(d.XLabel, 'frequency', IgnoreCase=true)
+    obj.render_weighting_(ax, xd(valid), T.spl_db(valid));
+else
+    obj.render_weighting_(ax, [], []);
+end
+
 if obj.ShowVoltage
     render_voltage_(obj, ax, xd, T, valid, d);
     yyaxis(ax, 'left');

@@ -3,10 +3,15 @@ classdef LiveMonitor < handle
     % Renderer for the stimgen.calibration.Engine LiveUpdate event stream.
     %
     % Draws three panels while a calibration runs: the acquired waveform with
-    % the analysed span and clipping limits, its spectrum in dB SPL with
-    % harmonic markers and the previous measurement as a ghost, and the partial
-    % transfer curve with across-repeat spread, the required drive voltage, and
-    % run progress.
+    % the analysed span and clipping limits, its spectrum with harmonic markers
+    % and the previous measurement as a ghost, and the partial transfer curve
+    % with across-repeat spread, the required drive voltage, and run progress.
+    %
+    % The spectrum is drawn in dB SPL by default and in any of SpectrumUnitList
+    % on request -- electrical units for judging the input stage, per-Hz
+    % densities for comparing noise floors, dB re peak for shape alone. The
+    % measurement itself is kept in volts, so changing units redraws the same
+    % record rather than needing a new one.
     %
     % Graphics objects are created once and then updated in place, so a long
     % sweep does not rebuild the axes on every measurement. Updates are
@@ -14,6 +19,10 @@ classdef LiveMonitor < handle
     % renders. Long records are drawn as a min/max envelope and spectra are
     % peak-held onto a log grid, which keeps redraw cost flat regardless of
     % record length.
+    %
+    % The transfer panel also carries the standard A/B/C/D weighting curves on
+    % request (Weightings), anchored to the measured level at 1 kHz so the gap
+    % between curve and measurement reads as what the ear discards.
     %
     % Attaches to axes supplied by a host GUI, or creates its own figure when
     % given none. Objects it created are the only ones reset() deletes, so it
@@ -36,9 +45,27 @@ classdef LiveMonitor < handle
         MinInterval (1,1) double {mustBeNonnegative} = 0.05  % s between redraws
         MaxPoints   (1,1) double {mustBePositive}    = 4000  % samples drawn per waveform
         SpectrumBins (1,1) double {mustBePositive}   = 1200  % log-grid bins in the spectrum
+        SpectrumUnits (1,1) string = "dB SPL"  % y-axis of the spectrum panel; see SpectrumUnitList
         ShowGhost   (1,1) logical = true   % overlay the previous spectrum
         ShowVoltage (1,1) logical = true   % required-drive-voltage axis on the transfer plot
         LogX        (1,1) logical = true   % log x-axis on the transfer plot
+
+        % Weighting curves overlaid on the transfer plot, e.g. ["A" "C"];
+        % empty for none. Ignored on a panel whose x-axis is not frequency.
+        Weightings (1,:) string {mustBeMember(Weightings, ["A", "B", "C", "D"])} = string.empty(1, 0)
+    end
+
+    properties (Constant)
+        WeightingTypes = ["A", "B", "C", "D"]   % offered as overlays, in legend order
+
+        % Units the spectrum panel can be drawn in, in menu order. dB SPL is the
+        % calibration's own scale; the electrical units say whether the input
+        % stage has room left; the per-Hz forms are the comparable way to read a
+        % noise floor, since a per-bin level depends on the analysis window and a
+        % density does not; dB re peak shows shape alone, which is what a rig
+        % without a measured reference can still be judged on.
+        SpectrumUnitList = ["dB SPL", "dB SPL/Hz", "Pa", "V", "dBV", ...
+            "V/sqrt(Hz)", "dB re peak"]
     end
 
     properties (SetAccess = private)
@@ -55,7 +82,9 @@ classdef LiveMonitor < handle
         H_ (1,1) struct = struct() % cache of graphics objects this object created
         LastDraw_ (1,1) double = -inf   % toc() of the last render
         Timer_                     % tic id backing LastDraw_
-        PrevSpectrum_ (1,2) cell = {[], []}  % {f, level} of the previous measurement
+        PrevSpectrum_ (1,2) cell = {[], []}  % {f, V rms} behind the one on screen -- the ghost
+        CurrSpectrum_ (1,2) cell = {[], []}  % {f, V rms} of the record on screen
+        LastRecord_ (1,:) double = []        % fingerprint of the record last drawn, to tell a redraw from a new measurement
         LastStage_ (1,1) string = ""
         RenderFailed_ (1,1) logical = false  % latched by update() on a render error; re-armed at "start"
     end
@@ -111,6 +140,31 @@ classdef LiveMonitor < handle
         show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer axes.
         show_background(obj, eng)    % Draw an engine's background analysis on the transfer axes.
 
+        function set.Weightings(obj, value)
+            obj.Weightings = unique(value, 'stable');
+
+            % Both the curves and the legends that name them are cached, so a
+            % selection changed mid-run would otherwise leave an orphan curve
+            % on the panel and a legend that disagrees with it: the legends
+            % are built with AutoUpdate off and never pick up a line added
+            % after them. Dropping both makes the next render rebuild them.
+            for t = stimgen.calibration.LiveMonitor.WeightingTypes
+                obj.drop_(char("wt_" + t));
+            end
+            obj.drop_('xfer_legend');
+            obj.drop_('static_legend');
+            obj.drop_('bg_legend');
+        end
+
+        function set.SpectrumUnits(obj, v)
+            % Rejected here rather than at draw time: an unknown unit would
+            % otherwise surface as a latched render failure partway through a
+            % sweep, which reads as a plotting bug rather than a bad assignment.
+            v = string(v);
+            mustBeMember(v, stimgen.calibration.LiveMonitor.SpectrumUnitList);
+            obj.SpectrumUnits = v;
+        end
+
         function show(obj)
             % Bring an owned figure to the foreground. Never called during a
             % run: stealing focus on every measurement is what the old
@@ -127,6 +181,7 @@ classdef LiveMonitor < handle
         render_signal_(obj, d)      % Waveform panel.
         render_spectrum_(obj, d)    % Spectrum panel.
         render_transfer_(obj, d)    % Transfer-curve panel.
+        render_weighting_(obj, ax, f, lvl)  % Weighting curves over a level/frequency axis.
 
         function h = gobj_(obj, key, ctor)
             % h = gobj_(obj, key, ctor)
@@ -162,7 +217,8 @@ classdef LiveMonitor < handle
 
     methods (Static, Access = private)
         [t, y] = envelope_decimate_(y, fs, maxPoints)   % Min/max envelope for display.
-        [f, lvl] = spectrum_db_spl_(y, fs, refLevel, micSens, nBins)  % dB SPL spectrum on a log grid.
+        [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins)  % V rms spectrum on a log grid.
+        [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)  % V rms to a display unit.
 
         function s = clock_(seconds)
             % Format a duration as m:ss, or --:-- when unknown.

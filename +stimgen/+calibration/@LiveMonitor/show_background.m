@@ -52,6 +52,12 @@ lvls = draw_curves_(obj, ax, B);
 draw_broadband_(obj, ax, B);
 lvls = [lvls, draw_peaks_(obj, ax, B, lvls)];
 
+% Anchored on the band levels rather than the fine spectrum: the bands are
+% the averaged form the rest of this view is read against. Its levels stay
+% out of lvls, as the A-weighted band curve's do, so the overlay cannot
+% rescale the axis.
+obj.render_weighting_(ax, B.bands.frequency, B.bands.level_db);
+
 if obj.LogX
     set(ax, XScale='log');
 else

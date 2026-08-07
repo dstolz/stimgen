@@ -27,7 +27,7 @@ The three axes (waveform, spectrum, transfer curve) are drawn exclusively by a
 [`stimgen.calibration.LiveMonitor`](stimgen_calibration.md#watching-a-run)
 attached to them at construction. During a run with **Show Engine Live Plots**
 checked, the monitor renders the engine's `LiveUpdate` stream measurement by
-measurement — analysed-span shading and clipping limits on the waveform, dB SPL
+measurement — analysed-span shading and clipping limits on the waveform, the
 spectrum with harmonic markers and a previous-measurement ghost, and the
 transfer curve filling in with a ±1 SD repeat ribbon, required drive voltage
 against the `MaxOutputVoltage` ceiling, and a progress/ETA title. Between runs
@@ -45,6 +45,38 @@ background noise analysis. Whichever ran last owns it; the **View** menu
 switches between `LiveMonitor.show_calibration` and `LiveMonitor.show_background`
 without re-measuring anything. **Background Noise Analysis** is disabled until a
 background capture exists, in the engine or in a loaded `.esgc`.
+
+### Spectrum y-axis
+
+**View ▸ Spectrum Y-Axis** picks the unit the spectrum panel is drawn in, and
+sets the monitor's [`SpectrumUnits`](stimgen_calibration.md#spectrum-units)
+property. The items are exclusive checkmarks — one unit at a time — and the
+choice applies to the measurement already on screen, so nothing is re-acquired:
+
+| Menu item | Unit | What it answers |
+|---|---|---|
+| Sound Pressure Level | `dB SPL` | the level the LUT records; the default, and the scale the rest of the GUI is in |
+| Spectral Density | `dB SPL/Hz` | how this noise floor compares to another, independent of the analysis window |
+| Sound Pressure | `Pa` | the same acoustic quantity in linear pressure |
+| Measured Voltage | `V` | what the microphone signal actually is, in the units the input stage is specified in |
+| Measured Voltage | `dBV` | the same, as a level — a quiet room and an overloaded preamp are far apart here and identical in dB SPL |
+| Voltage Density | `V/sqrt(Hz)` | electrical noise floor in the form a converter or preamp datasheet quotes |
+| Relative to Peak | `dB re peak` | shape alone — harmonics and sidebands on a rig whose reference has not been measured yet |
+
+The dB units are drawn on a linear axis and the linear units on a log axis: a
+spectrum spans tens of dB whatever it is measured in, and on a linear volts axis
+the noise floor lies on the axis with only the fundamental visible.
+
+### Weighting overlays
+
+**View ▸ Weighting Overlay** draws the standard A, B, C and D weighting curves
+over whichever view the transfer panel is showing, and sets the monitor's
+[`Weightings`](stimgen_calibration.md#weighting-overlays) property. The items are
+checkable and independent — any combination at once — and **None** clears them.
+
+They annotate the current view rather than replacing it, so toggling one while
+the background analysis is up redraws the background analysis, not the lookup
+tables. During a run the curve re-anchors as the sweep fills in.
 
 ## Constructor
 

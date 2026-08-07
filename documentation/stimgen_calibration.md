@@ -379,7 +379,7 @@ waveform just acquired, the span of it that was measured, the partial lookup tab
 the scalar metrics for that point.
 
 `stimgen.calibration.LiveMonitor` renders that stream into three panels — waveform,
-spectrum in dB SPL, and the transfer curve as it fills in:
+spectrum, and the transfer curve as it fills in:
 
 ```matlab
 eng.set_configuration(ShowLivePlots=true);
@@ -397,6 +397,58 @@ mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSignal axSpectrum axTransfer]
 Outside a run, `mon.show_engine_state(eng)` redraws the response panels and
 `mon.show_calibration(eng)` draws the committed lookup tables — call
 `show_calibration` first, since it resets the monitor's graphics cache.
+
+### Spectrum units
+
+`mon.SpectrumUnits` selects what the spectrum panel's y-axis measures. Anything
+in `LiveMonitor.SpectrumUnitList` is accepted; anything else is rejected at
+assignment rather than at draw time:
+
+```matlab
+mon.SpectrumUnits = "V";   % "dB SPL" (default), "dB SPL/Hz", "Pa", "V",
+                           % "dBV", "V/sqrt(Hz)", "dB re peak"
+```
+
+dB SPL is the calibration's own scale. The electrical units read the microphone
+signal as the input stage sees it, which is what separates a quiet room from an
+overloaded preamp — in dB SPL those look the same. The per-Hz densities are the
+comparable form for a noise floor, since a per-bin level depends on the analysis
+window and a density does not. `dB re peak` drops the calibration entirely and
+shows shape alone, which is all a rig without a measured reference can be judged
+on.
+
+The measurement is held in volts and converted at draw time, so changing units
+redraws the record already on screen, ghost included, without re-acquiring
+anything. The dB units are drawn on a linear axis and the linear units on a log
+one: a spectrum spans tens of dB in any unit, and a linear volts axis shows the
+fundamental and nothing else.
+
+### Weighting overlays
+
+`mon.Weightings` overlays the standard frequency weightings on the transfer
+panel — any combination of `"A"`, `"B"`, `"C"` and `"D"`, empty for none:
+
+```matlab
+mon.Weightings = ["A" "C"];   % live sweep, lookup tables and background view alike
+```
+
+A weighting is a relative curve — 0 dB at 1 kHz by definition — so each is
+offset to pass through the measured level at 1 kHz, and the legend carries that
+offset. The vertical distance between curve and measurement is then the thing
+the overlay is for: how much of the response the ear discards. Where 1 kHz falls
+outside the measured span, the nearest measured frequency anchors it instead.
+
+Each curve is drawn only across the span of the data it is anchored to and is
+clipped to that data's level range, so it can never rescale the axis — an
+unclipped A-weighting reaches -50 dB by 20 Hz and would flatten every measured
+curve on the panel. A click sweep is plotted against duration rather than
+frequency and carries no overlay.
+
+The curves come from `stimgen.util.weighting_db(f, type)`, evaluated from the
+pole/zero forms in IEC 61672-1 (A, C) and IEC 60651 (B, D) and normalized to
+0 dB at 1 kHz. It also accepts `"Z"` (flat), and it is the same function the
+background analysis weights its band levels with, so the overlay and the
+reported dB(A) cannot disagree.
 
 Nothing obliges you to plot. The event is a plain data stream, so a host application can
 listen to it to log progress, drive a progress bar, or forward it over a network:
@@ -490,7 +542,7 @@ Results are recorded in `CalibrationData.filterDesign`, so a saved `.esgc` says 
 
 ### Changing The Design Sample Rate
 
-An FIR's coefficients are defined in cycles per *sample*, not in Hz. Running a tap set at a different rate than it was fitted for rescales its entire response by the rate ratio: a filter designed at 200 kHz, run at 100 kHz, applies its 20 kHz correction at 10 kHz. Being below the lower Nyquist does not help — that only makes the band representable, not correctly equalized. Nothing in `apply_calibration` compares the two rates, so the failure is silent; `test_filter` is the one place that refuses a mismatch outright.
+An FIR's coefficients are defined in cycles per *sample*, not in Hz. Running a tap set at a different rate than it was fitted for rescales its entire response by the rate ratio: a filter designed at 200 kHz, run at 100 kHz, applies its 20 kHz correction at 10 kHz. Being below the lower Nyquist does not help — that only makes the band representable, not correctly equalized. Both `test_filter` and `apply_calibration` refuse a mismatch (`stimgen:util:filterRateMismatch`); see [Rate Checking](#rate-checking) for what the check does and does not cover.
 
 The measurement itself is not rate bound. The `tone` and `swept_sine` LUTs hold frequency in Hz against voltage, which is a property of the transducer, so **the same calibration can be re-fitted for any rate without re-measuring anything**:
 
@@ -506,9 +558,17 @@ One thing re-fitting cannot recover: the LUT was measured through the output pat
 
 In `CalibrationGui` this is the last field of the Filter Design dialog; the Hardware Sample Rate line turns red and names the design rate whenever a loaded filter does not match the attached adapter.
 
+#### Rate Checking
+
+`stimgen.util.assert_filter_rate` runs before any equalization — from `StimType.apply_calibration` and `SoundFile.apply_calibration` — and raises `stimgen:util:filterRateMismatch` rather than filtering at the wrong rate. `test_filter` refuses the same case with `stimgen:calibration:Engine:filterRateMismatch`, which is separate because there the mismatch is between the filter and the *adapter*, not the stimulus.
+
+The design rate is read from `CalibrationData.filterDesign.sampleRate`, falling back to the filter's own `SampleRate`. A filter carrying neither — designed with normalized frequencies, before either was recorded — cannot be checked; it is allowed through with a log warning, since refusing it would reject the calibration rather than the mistake. Redesign such a filter to make it checkable.
+
+A failed check also clears `Signal`. Assigning `Fs` recomputes the waveform under a `PostSet` listener, and MATLAB downgrades an error raised inside a listener to a warning — so the throw alone would leave a stale, unequalized waveform behind, and `StimPlayer` regenerates only when `Signal` is empty. Clearing it means the error is re-raised at play time, where it reaches the user.
+
 ### How The Filter Is Applied
 
-`stimgen.StimType.apply_calibration` and `stimgen.SoundFile.apply_calibration` both equalize through `stimgen.util.filter_aligned(Hd, x, gd)`, which appends `gd` zeros to the signal, filters, and drops the first `gd` output samples. The result is the same length as the input and aligned with it sample for sample, so equalization does not move a stimulus in time or shorten it. Gating runs after calibration, so the ramp lands on the samples it was meant for.
+`stimgen.StimType.apply_calibration` and `stimgen.SoundFile.apply_calibration` both check the filter's design rate against the stimulus `Fs` (see [Rate Checking](#rate-checking)) and then equalize through `stimgen.util.filter_aligned(Hd, x, gd)`, which appends `gd` zeros to the signal, filters, and drops the first `gd` output samples. The result is the same length as the input and aligned with it sample for sample, so equalization does not move a stimulus in time or shorten it. Gating runs after calibration, so the ramp lands on the samples it was meant for.
 
 Filter length is therefore a free choice acoustically, but not a free choice in latency: a linear-phase FIR cannot be aligned in real time, only after the fact. `filterGrpDelay` is `(NumCoefficients-1)/2` samples — 128 samples (1.3 ms at 97.6 kHz) for a 257-tap design — and that is how much of the filter's output has to exist before the aligned signal can start. This is not an issue for stimuli generated ahead of playback, which is how stimgen works, but it is the reason a filter is not free to make arbitrarily long.
 
@@ -530,6 +590,10 @@ Source: `+stimgen/+calibration/`
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes. Also draws the two off-run views of the transfer axes: `show_calibration` (the lookup tables) and `show_background` (a background capture).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
+
+From `+stimgen/+util/`:
+
+- `weighting_db.m` — A/B/C/D/Z frequency weighting in dB, used by both the transfer-panel [overlays](#weighting-overlays) and the background analysis's band and broadband dB(A).
 
 Host-supplied adapters for lab hardware (TDT and similar) live outside this package; a host
 application implements its own `HwAdapter` subclass to wrap its device interfaces.

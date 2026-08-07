@@ -149,6 +149,12 @@ through the existing `compute_adjusted_voltage("filter", value, level)`, which a
 `"Filtered"` with a calibration that has no equalizer raises `stimgen:SoundFile:NoEqualizer` — run
 `Engine.design_filter` during calibration, or switch to `"Direct"`.
 
+`"Filtered"` with an equalizer designed for a different sample rate raises
+`stimgen:util:filterRateMismatch` and clears `Signal` rather than filtering at the wrong rate — the
+correction would land on the wrong frequencies, invisibly. Redesign with
+`design_filter(..., SampleRate=...)`; the measurement does not have to be repeated. See
+[Rate Checking](stimgen_calibration.md#rate-checking).
+
 ### Level reference
 
 `Normalization` is also a `Constant`, so `LevelReference` selects it per instance via an
@@ -210,6 +216,7 @@ All are mapped to user-facing guidance by `StimPlayer.format_gui_error_message_`
 | `stimgen:SoundFile:InvalidChannel` | requested channel not present in the file |
 | `stimgen:SoundFile:WindowTooLong` | gate window longer than the sound |
 | `stimgen:SoundFile:NoEqualizer` | `"Filtered"` mode with no calibration filter |
+| `stimgen:util:filterRateMismatch` | `"Filtered"` mode with a filter designed for another sample rate |
 | `stimgen:SoundFile:VoltageOutOfRange` | peak output would exceed 10 V |
 | `stimgen:SoundFile:UnknownFile` | selection matched no label, file name, or path |
 | `stimgen:SoundFile:InvalidCatalog` | catalog fields have inconsistent lengths |

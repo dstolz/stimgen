@@ -47,8 +47,17 @@ if type == "filter" && isfield(C.CalibrationData,'filter')
     Hd = C.CalibrationData.filter;
 
     % The taps realize their designed response only at the rate they were
-    % fitted for, and a mismatch is invisible in the output.
-    stimgen.util.assert_filter_rate(C.CalibrationData, double(obj.Fs));
+    % fitted for, and a mismatch is invisible in the output. Drop the waveform
+    % as well as raising: MATLAB downgrades an error raised under a property
+    % listener to a warning, and the half-finished signal left behind would
+    % otherwise be played -- uncalibrated -- by callers that regenerate only
+    % when Signal is empty.
+    try
+        stimgen.util.assert_filter_rate(C.CalibrationData, double(obj.Fs));
+    catch ME
+        obj.Signal = [];
+        rethrow(ME);
+    end
 
     % Equalize in place: same length, same onset sample as the ungated signal.
     y = stimgen.util.filter_aligned(Hd, obj.Signal, ...

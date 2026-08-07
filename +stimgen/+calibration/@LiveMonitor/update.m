@@ -27,6 +27,8 @@ if d.Phase == "start"
     end
     obj.LastStage_ = d.Stage;
     obj.PrevSpectrum_ = {[], []};
+    obj.CurrSpectrum_ = {[], []};
+    obj.LastRecord_ = [];
     obj.drop_('spec_ghost');
     obj.RenderFailed_ = false;
 elseif obj.RenderFailed_
