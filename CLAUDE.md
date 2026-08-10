@@ -198,9 +198,18 @@ known identifiers to user-facing guidance — a new user-triggerable error shoul
 `UserProperties` will not survive a save/load round-trip.
 
 **Logging.** `stimgen.util.vprintf(level, [red], msg, ...)`, gated by the global `GVerbosity`
-(-1 log-only, 0 critical, 1 info, 2 debug, 3 verbose). Writes a daily log under
-`fullfile(tempdir,'stimgen_error_logs')`. It accepts an `MException` directly and expands the
-stack. Deliberately standalone, but shares the `GVerbosity` global with the host.
+(-1 log-only, 0 critical, 1 info, 2 debug, 3 verbose, 4 trace). With values `msg` is a printf
+format string; with none it is literal text, so `ME.message` and Windows paths survive. It
+accepts an `MException` directly. Nothing in the path throws — stimgen logs from inside catch
+blocks.
+
+By default it prints to the command window and appends to a daily log under
+`fullfile(tempdir,'stimgen_error_logs')`. A host that has its own logger installs a
+`stimgen.LogSink` (`stimgen.util.logSink(sink)`), after which every message is forwarded and
+**stimgen writes nothing of its own** — one log per session instead of two. This is the third
+abstract seam, alongside `HardwareHost` and `HwAdapter`, and the same rule applies: new `LogSink`
+methods must be concrete with a safe default (`isEnabled` already is), or every host's subclass
+becomes unconstructable. See `documentation/stimgen_logging.md`.
 
 ## File formats
 

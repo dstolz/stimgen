@@ -1,30 +1,48 @@
 function vprintf(verbose_level,varargin)
-% stimgen.util.vprintf(verbose_level,[red],msg,[moreinputs])
+% stimgen.util.vprintf(verbose_level,msg)
+% stimgen.util.vprintf(verbose_level,red,msg)
+% stimgen.util.vprintf(verbose_level,msg,value1,value2,...)
+% stimgen.util.vprintf(verbose_level,red,msg,value1,value2,...)
+% stimgen.util.vprintf(verbose_level,[red],exception)
 %
-% Prints timestamp and text to the command window based on the current
-% value of the global variable GVerbosity.  GVerbosity is a scalar
-% integer value between -1 and 3:
+% Verbosity-gated console and log printing, and the only logging entry point
+% in the package.
+%
+% Messages are filtered against the global GVerbosity, an integer normally
+% between -1 and 4:
 %  -1 log message, but do not print to screen
-%   0 suppresses nearly all non-critcal messages
-%   1 low, information that may be generally useful to user
+%   0 critical; suppresses nearly all other text
+%   1 low, information that may be generally useful to the user
 %   2 medium, information that can be helpful for debugging
 %   3 high, lots of information about nearly all processes (debugging)
+%   4 trace, per-buffer/per-trial detail
 %
-% Uses fprintf to print text. Additonal values must correspond to the
-% escape characters defined as if calling fprintf directly.
+% Where the message GOES depends on whether a host application has installed a
+% stimgen.LogSink:
 %
-% This function always prints a '\n' character at the end of the line,
-% skipping a line.
+%   installed - the message is forwarded to the host and stimgen writes
+%               nothing of its own, so a host with its own logger ends up with
+%               ONE log describing the session instead of two
+%   none      - stimgen's built-in logger prints to the command window and
+%               appends to a daily file under
+%               fullfile(tempdir,'stimgen_error_logs')
 %
-% Messages at verbose_level <= GVerbosity are also written to a daily log
-% file under fullfile(tempdir,'stimgen_error_logs'). Each log entry records
-% the calling function and line number.  The log file handle is managed
-% internally by this function.
+% Either way stimgen names no host type, so the package still runs standalone.
 %
-% This is the stimgen package's self-contained logger. It deliberately has
-% no dependency on the host application so that stimgen can be used
-% standalone; GVerbosity is shared with any host that uses the same global,
-% so verbosity set by the host still applies here.
+% Format policy:
+%   With values, msg is a printf format string, exactly as documented.
+%   With no values, msg is LITERAL text -- nothing is interpreted -- so a
+%   runtime-built message such as ME.message or 'C:\new\data.mat' survives
+%   intact instead of being mangled by '\n' and '%' conversions.
+% A trailing newline is never needed and is stripped if present.
+%
+% The msg input may also be an MException, or any struct carrying .message.
+% It is forwarded to the host UNEXPANDED, which is what lets a host render the
+% identifier, stack and nested causes as a single record attributed to the
+% catch site.
+%
+% Nothing here throws. stimgen logs from inside catch blocks, and an exception
+% raised while reporting an exception destroys the report.
 %
 % ex:
 %      global GVerbosity
@@ -35,116 +53,88 @@ function vprintf(verbose_level,varargin)
 %      stimgen.util.vprintf(1,1,'This is a red level %d message',1)
 %      18:51:35.958: This is a red level 1 message
 %
-% The msg input can also be an MException object and the entire error
-% message and stack will be printed to the log.
+% See documentation/stimgen_logging.md for the seam overview.
+%
+% See also: stimgen.util.isEnabled, stimgen.LogSink, stimgen.util.logSink
 %
 % Daniel.Stolzberg@gmail.com 2015
 
 % Copyright (C) 2016  Daniel Stolzberg, PhD
-global GVerbosity
 
-if isempty(GVerbosity) || ~isnumeric(GVerbosity), GVerbosity = 1; end
+% The gate comes first and is the only cost a suppressed message pays: no
+% timestamp, no dbstack, no formatting. StimPlayer.update_buffer logs at
+% level 4 from the buffer-write path, so that difference is a timing concern
+% rather than a micro-optimization.
+%
+% The sink is fetched here rather than through stimgen.util.isEnabled, which
+% would fetch it a second time further down. That one saved lookup is about a
+% third of the whole suppressed path.
+sink = stimgen.util.logSink();
 
-if verbose_level > GVerbosity, return; end
-
-curTimeStr = datestr(now,'HH:MM:SS.FFF');
-
-moreinputs = [];
-red = 0;
-
-if nargin == 2
-    msg = varargin{1};
-
-elseif nargin > 2 && ~ischar(varargin{1})
-    red = varargin{1};
-    msg = varargin{2};
-    if nargin > 2
-        moreinputs = varargin(3:end);
+if isempty(sink)
+    if ~stimgen.util.verbosityGate(verbose_level), return; end
+else
+    try
+        if ~sink.isEnabled(verbose_level), return; end
+    catch
+        % A host gate that throws must not silence stimgen.
+        if ~stimgen.util.verbosityGate(verbose_level), return; end
     end
-
-elseif nargin > 2
-    msg = varargin{1};
-    moreinputs = varargin(2:end);
-
 end
 
-% log error
-if isa(msg,'MException')
-    stimgen.util.vprintf(verbose_level,red,msg.identifier);
-    stimgen.util.vprintf(verbose_level,red,msg.message);
-    for i = 1:length(msg.stack)
-        stimgen.util.vprintf(verbose_level,red,'Stack %d\n\tfile:\t%s\n\tname:\t%s\n\tline:\t%d', ...
-            i,msg.stack(i).file,msg.stack(i).name,msg.stack(i).line);
-    end
+if isempty(varargin)
+    % Nothing to say. Historically this left msg undefined and errored inside
+    % the logger, which is the worst possible place to raise.
     return
 end
 
-
-% log message
-logmessage(msg,curTimeStr,moreinputs);
-
-% don't want to display message, just log and return
-if verbose_level == -1, return; end
-
-
-% Print to command window
-if isempty(moreinputs)
-    msgText = char(string(msg));
-    if red
-        fprintf(2,'%s: %s\n',curTimeStr,msgText)
+try
+    % Calling convention: an optional red flag sits between the level and the
+    % message. It is only a flag when something follows it, and only when it is
+    % a numeric or logical scalar -- the old test was ~ischar, which read a
+    % string scalar message as the flag and then failed on it.
+    if numel(varargin) >= 2 && (isnumeric(varargin{1}) || islogical(varargin{1})) ...
+            && isscalar(varargin{1})
+        red    = logical(varargin{1});
+        msg    = varargin{2};
+        values = varargin(3:end);
     else
-        fprintf('%s: %s\n',curTimeStr,msgText)
+        red    = false;
+        msg    = varargin{1};
+        values = varargin(2:end);
     end
-else
-    if red
-        fprintf(2,['%s: ' msg '\n'],curTimeStr,moreinputs{:})
-    else
-        fprintf(['%s: ' msg '\n'],curTimeStr,moreinputs{:})
+
+    if ~isempty(sink)
+        try
+            % Forward the RAW message, before any exception expansion: the host
+            % gets to make one nested record out of an MException instead of
+            % receiving text stimgen already flattened.
+            sink.emit(verbose_level,red,msg,values);
+            return
+        catch sinkErr
+            % A broken host sink must never make stimgen go mute, and must not
+            % latch off either -- latching is the host's job (its own file sink
+            % already does it). Warn once, then let THIS message through to the
+            % built-in logger so it is not simply lost.
+            localWarnOnce(sinkErr);
+        end
     end
+
+    stimgen.util.vprintfFallback(verbose_level,red,msg,values);
+catch vprintfErr
+    % Last resort: say so on stderr and carry on.
+    fprintf(2,'stimgen: dropped a log message (%s)\n',vprintfErr.message);
+end
 end
 
 
-
-
-function logmessage(msg,curTimeStr,moreinputs)
-% Print to log file
-persistent logFid logDate
-
-currentLogDate = datestr(now,'ddmmmyyyy');
-
-needNewLog = isempty(logFid) || ~isnumeric(logFid) || logFid <= 2;
-
-if ~needNewLog
-    try
-        ftell(logFid);
-        needNewLog = ~strcmp(logDate,currentLogDate);
-    catch
-        needNewLog = true;
-    end
+function localWarnOnce(err)
+% One note per session. A sink that fails once usually fails on every message,
+% and a warning storm from inside the logger buries the failure being reported.
+persistent warned
+if isempty(warned)
+    warned = true;
+    fprintf(2,['stimgen: the installed log sink (%s) failed; ' ...
+        'falling back to the built-in logger.\n'],err.message);
 end
-
-if needNewLog
-    if ~isempty(logFid) && logFid > 2
-        fclose(logFid);
-    end
-    errlogs = fullfile(tempdir,'stimgen_error_logs');
-    if ~isfolder(errlogs), mkdir(errlogs); end
-    logFid = fopen(fullfile(errlogs,['error_log_' currentLogDate '.txt']),'at');
-    logDate = currentLogDate;
-
-end
-
-if isnumeric(logFid) && logFid > 2
-    st = dbstack;
-    if length(st)>=3
-        st = st(3);
-    else
-        st = st(end);
-    end
-    if isempty(moreinputs)
-        msgText = char(string(msg));
-        fprintf(logFid,'%s,%s,%d: %s\n',curTimeStr,st.name,st.line,msgText);
-    else
-        fprintf(logFid,['%s,%s,%d: ' msg '\n'],curTimeStr,st.name,st.line,moreinputs{:});
-    end
 end

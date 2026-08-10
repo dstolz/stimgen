@@ -111,14 +111,26 @@ independent.
 ## Logging
 
 `stimgen.util.vprintf(level, ...)` is gated by the global `GVerbosity`
-(`-1` log only, `0` critical, `1` info, `2` debug, `3` verbose) and writes a
-daily log under `fullfile(tempdir,'stimgen_error_logs')`.
+(`-1` log only, `0` critical, `1` info, `2` debug, `3` verbose, `4` trace). By
+default it prints to the command window and writes a daily log under
+`fullfile(tempdir,'stimgen_error_logs')`.
+
+A host application with its own logger can take delivery of every message
+instead, by implementing `stimgen.LogSink` and installing it:
+
+```matlab
+stimgen.util.logSink(myapp.LogBridge());   % forward everything to the host
+stimgen.util.logSink([]);                  % back to the built-in logger
+```
+
+While a sink is installed, `stimgen` writes nothing of its own. See
+[`documentation/stimgen_logging.md`](documentation/stimgen_logging.md).
 
 ## Documentation
 
 See [`documentation/`](documentation/) for per-class guides, including
-`stimgen_overview.md`, `stimgen_StimType.md`, `stimgen_StimPlayer.md`, and
-`stimgen_calibration.md`.
+`stimgen_overview.md`, `stimgen_StimType.md`, `stimgen_StimPlayer.md`,
+`stimgen_calibration.md`, and `stimgen_logging.md`.
 
 ## License
 
