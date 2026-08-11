@@ -21,22 +21,7 @@ through `obj.Patch` when the window closes.
 
 ## Layout
 
-```
-┌ Components ┬──────────── Signal Graph ─────────────┬ Inspector ┐
-│ Constant   │                                       │           │
-│ FileSource │   ┌────────────┐      ┌───────────┐   │  Label    │
-│ Mixer      │   │ LFO1  Osc  │─────▶│ Osc1  Osc │   │  Is Output│
-│ NoiseSrc   │   │ ○ Frequency│ AM 1 │○ Frequency│   │  Frequency│
-│ Oscillator │   │ ○ Amplitude│      │○ Amplitude│──▶│  Amplitude│
-│ PulseTrain │   │ ○ Phase    │      │○ Phase    │ ● │  Phase    │
-│ Sweep      │   └────────────┘      └───────────┘OUT│  Shape    │
-│            ├─────── Preview ───────┬───── Output ──┤           │
-│ Add Node   │ ╱╲╱╲╱╲  selection wfm │ ╱╲╱╲╱╲        │           │
-│ Delete     │                       │ Duration (ms):│           │
-│ Auto Layout│                       │  [100 ] [Play]│           │
-└────────────┴───────────────────────┴───────────────┴───────────┘
- [Preset ▾]  status line                      [Revert] [Close]
-```
+![PatchEditor window on the AMTone preset: component palette on the left; signal graph canvas in the middle with a blue-outlined LFO1 node wired into the green-outlined Osc1 node (wire labelled "AM 1") and Osc1 wired on to OUT; Preview plot showing the 10 Hz modulator and Output plot showing the finished AM tone underneath; LFO1's parameters in the inspector on the right](images/PatchEditor.png)
 
 - **Node boxes** carry one labelled input port per modulatable parameter on the left,
   and one output port on the right. The header is tinted by component kind.
