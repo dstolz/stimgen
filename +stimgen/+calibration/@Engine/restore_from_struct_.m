@@ -21,9 +21,18 @@ if isfield(s, 'ToneLutSource')
     obj.ToneLutSource = s.ToneLutSource;
 end
 
-% Written since acquisition could be demeaned; an older file keeps the
-% default, which is the behavior it was measured under.
-if isfield(s, 'DemeanResponse')
-    obj.DemeanResponse = s.DemeanResponse;
+% Written since acquisition could be AC-coupled; an older file keeps the
+% default, which is the behavior it was measured under. DemeanResponse is the
+% option AC coupling replaced -- it named the same intent (block the input
+% stage's DC) by the weaker means, so a file carrying it restores as AC
+% coupling at the current default corner rather than as "off".
+if isfield(s, 'AcCoupleResponse')
+    obj.AcCoupleResponse = s.AcCoupleResponse;
+elseif isfield(s, 'DemeanResponse')
+    obj.AcCoupleResponse = s.DemeanResponse;
+end
+
+if isfield(s, 'AcCoupleFrequency')
+    obj.AcCoupleFrequency = s.AcCoupleFrequency;
 end
 end

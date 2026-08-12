@@ -11,9 +11,11 @@ function set_configuration(obj, options)
 %   NormativeValue     - (1,1) double, > 0
 %   ExcitationVoltage  - (1,1) double, > 0
 %   MaxOutputVoltage   - (1,1) double, > 0 (rig output ceiling, V)
-%   DemeanResponse     - (1,1) logical. Subtract the mean from each acquired
-%                        record before analyzing it, so an input DC offset does
-%                        not inflate levels or bias burst alignment.
+%   AcCoupleResponse   - (1,1) logical. Zero-phase high-pass each acquired
+%                        record before analyzing it, so an input DC offset or
+%                        slow drift does not inflate levels or bias burst
+%                        alignment.
+%   AcCoupleFrequency  - (1,1) double, > 0. Corner of that high-pass, Hz.
 %   ShowLivePlots      - (1,1) logical
 %   ToneLutSource      - (1,1) string, "tone" or "swept_sine". Which LUT serves
 %                        tone lookups; "swept_sine" overrides any direct tone
@@ -26,7 +28,8 @@ arguments
     options.NormativeValue     (1,1) double {mustBePositive,mustBeFinite} = obj.NormativeValue
     options.ExcitationVoltage  (1,1) double {mustBePositive} = obj.ExcitationVoltage
     options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
-    options.DemeanResponse     (1,1) logical = obj.DemeanResponse
+    options.AcCoupleResponse   (1,1) logical = obj.AcCoupleResponse
+    options.AcCoupleFrequency  (1,1) double {mustBePositive,mustBeFinite} = obj.AcCoupleFrequency
     options.ShowLivePlots      (1,1) logical = obj.ShowLivePlots
     options.ToneLutSource      (1,1) string {mustBeMember(options.ToneLutSource, ["tone", "swept_sine"])} = obj.ToneLutSource
 end
@@ -37,7 +40,8 @@ obj.ReferenceFrequency = options.ReferenceFrequency;
 obj.NormativeValue    = options.NormativeValue;
 obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.MaxOutputVoltage  = options.MaxOutputVoltage;
-obj.DemeanResponse    = options.DemeanResponse;
+obj.AcCoupleResponse  = options.AcCoupleResponse;
+obj.AcCoupleFrequency = options.AcCoupleFrequency;
 obj.ShowLivePlots     = options.ShowLivePlots;
 obj.ToneLutSource     = options.ToneLutSource;
 end

@@ -40,7 +40,8 @@ s.ReferenceFrequency  = obj.ReferenceFrequency;
 s.ExcitationVoltage   = obj.ExcitationVoltage;
 s.MaxOutputVoltage    = obj.MaxOutputVoltage;
 s.ToneLutSource       = obj.ToneLutSource;
-s.DemeanResponse      = obj.DemeanResponse;
+s.AcCoupleResponse    = obj.AcCoupleResponse;
+s.AcCoupleFrequency   = obj.AcCoupleFrequency;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

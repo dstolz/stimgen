@@ -135,7 +135,7 @@ try
 
         % trim_response_ only strips trailing padding; deconvolution needs
         % the intact onset, which holds the low-frequency start of the sweep.
-        response = obj.demean_response_(obj.trim_response_(raw));
+        response = obj.ac_couple_response_(obj.trim_response_(raw));
         responses{rep} = response;
         obj.ResponseSignal = response;
 

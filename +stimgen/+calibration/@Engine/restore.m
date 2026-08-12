@@ -34,12 +34,19 @@ end
 cfg = {};
 scalarFields = ["MicSensitivity", "ReferenceLevel", "ReferenceFrequency", ...
                 "NormativeValue", "MaxOutputVoltage", "ShowLivePlots", ...
-                "ToneLutSource", "DemeanResponse"];
+                "ToneLutSource", "AcCoupleResponse", "AcCoupleFrequency"];
 for k = 1:numel(scalarFields)
     f = scalarFields(k);
     if isfield(s, f) && ~isempty(s.(f))
         cfg = [cfg, {char(f), s.(f)}]; %#ok<AGROW>
     end
+end
+
+% DemeanResponse is the option AC coupling replaced. It named the same intent
+% by the weaker means, so a struct written before the change turns it on at
+% the current default corner rather than being dropped as unknown.
+if ~isfield(s, 'AcCoupleResponse') && isfield(s, 'DemeanResponse') && ~isempty(s.DemeanResponse)
+    cfg = [cfg, {'AcCoupleResponse', logical(s.DemeanResponse)}];
 end
 
 if isfield(s, 'ExcitationVoltage') && ~isempty(s.ExcitationVoltage)

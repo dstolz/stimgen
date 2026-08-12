@@ -109,21 +109,40 @@ end
 
 % ------------------------------------------------------------------------ %
 function s = dc_text_(m, peak)
-% Title clause for the record's DC offset. Two different things are worth
+% Title clause for the record's baseline. Two different things are worth
 % saying, and only one of them at a time:
 %
-%   removed  - the demean option acted on this record. Stated whenever it
-%              did, however small the offset, because the question it answers
-%              is "did the setting take effect", not "is the offset large".
+%   coupled  - the AC coupling option acted on this record. Stated whenever
+%              it did, however small the offset it took off, because the
+%              question it answers is "did the setting take effect", not "is
+%              the offset large". The corner is named because it is the part
+%              that can be set wrong, and a record too short to filter says
+%              so by reporting the DC alone.
 %   present  - the record still carries an offset, and it is big enough to
 %              matter (1% of peak). This is the reading that tells you the
 %              option is worth turning on.
-if isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
-    s = sprintf(', DC removed %s', volt_text_(m.dc_removed_v));
+if isfield(m, 'ac_coupled_hz') && isfinite(m.ac_coupled_hz)
+    s = sprintf(', AC coupled %s', hz_text_(m.ac_coupled_hz));
+    if isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
+        s = sprintf('%s (DC %s removed)', s, volt_text_(m.dc_removed_v));
+    end
+elseif isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
+    s = sprintf(', DC removed %s (record too short to filter)', ...
+        volt_text_(m.dc_removed_v));
 elseif isfield(m, 'dc_v') && isfinite(m.dc_v) && abs(m.dc_v) > 0.01 * max(peak, eps)
     s = sprintf(', DC %s', volt_text_(m.dc_v));
 else
     s = '';
+end
+end
+
+% ------------------------------------------------------------------------ %
+function s = hz_text_(f)
+% Corner frequency without trailing zeros on the whole numbers it usually is.
+if f >= 1000
+    s = sprintf('%.3g kHz', f / 1e3);
+else
+    s = sprintf('%.4g Hz', f);
 end
 end
 

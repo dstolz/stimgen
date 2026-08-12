@@ -84,9 +84,12 @@ function results = test_tones(obj, freqs, levels, options)
 %                             reason for every point not played
 %     tolerance_db, min_snr_db - the criteria applied
 %     repeat_count, burst_duration, gap_duration - test conditions
-%     conduction_delay_s     - click-probe delay the burst windows were cut
-%                              with; NaN when the probe was unreliable and
-%                              per-train correlation was used instead
+%     conduction_delay_s     - median delay the burst windows were cut with,
+%                              measured per acquisition from a probe click
+%                              embedded at the head of each train; NaN when
+%                              every acquisition fell back to whole-record
+%                              cross-correlation
+%     conduction_delay_sd_s  - spread of that delay across acquisitions
 %     passed                - true when every reliable point is within
 %                             ToleranceDb and at least one point was reliable
 %     testedOn              - datetime of the run
@@ -233,17 +236,12 @@ obj.begin_run_();
 obj.emit_live_("tone_test", "start", 'Table', tbl, 'Total', nF, ...
     'RepeatTotal', nReps, 'Progress', 0, axisMeta{:});
 
-try
-    % Same run-start click probe as calibrate_tones: one conduction delay for
-    % the whole test, so every burst window is cut where the response
-    % actually is rather than where a per-train correlation guessed.
-    delayInfo = obj.measure_conduction_delay(MaxDelay=gapDur);
-    if ~delayInfo.valid
-        stimgen.util.vprintf(0, 1, ...
-            ['Falling back to per-train cross-correlation for burst ' ...
-             'segmentation; analysis windows may include pre-response samples.']);
-    end
+% Conduction delays actually used, one per acquisition. NaN marks an
+% acquisition that fell back to whole-record cross-correlation.
+delayAll = nan(1, sum(cellfun(@numel, trains)) * nReps);
+acqNum   = 0;
 
+try
     for li = 1:nL
         levelDb = levels(li);
 
@@ -261,12 +259,18 @@ try
             idx = trains{li}{b};
 
             [seq, schedule] = obj.build_tone_sequence_(freqs(idx), burstDur, gapDur);
+            % The probe click at the head of the record measures the
+            % conduction delay for each acquisition it is part of, exactly
+            % as in calibrate_tones -- the latency need not carry across
+            % records, so it is never assumed to.
+            [seq, xClick, schedule, regionEnd] = obj.add_click_probe_(seq, schedule, maxLag);
 
             % Each burst carries its own LUT voltage, which is the whole point
             % of the test: calibrate_tones scales the entire train by one
             % excitation voltage, but here the per-point drive IS the quantity
-            % under test.
+            % under test. The probe click plays at the excitation voltage.
             x = seq;
+            x(xClick ~= 0) = obj.ExcitationVoltage;
             for k = 1:numel(idx)
                 s = schedule(k);
                 span = s.onset : s.onset + s.nsamples - 1;
@@ -281,12 +285,27 @@ try
                     freqs(idx(1))/1000, freqs(idx(end))/1000, levelDb);
 
                 response = obj.Adapter.play_and_record(x);
-                response = obj.demean_response_(response(:).');
+                response = obj.ac_couple_response_(response(:).');
                 obj.ResponseSignal = response;
 
+                % This record's own probe click sets the lag its windows
+                % are cut with; nothing is assumed about any other record.
+                acqNum    = acqNum + 1;
+                delayInfo = obj.click_latency_(xClick, response, maxLag, regionEnd);
+                obj.ConductionDelay = delayInfo;
                 if delayInfo.valid
                     lag = delayInfo.delay_samples;
+                    delayAll(acqNum) = delayInfo.delay_s;
+                    stimgen.util.vprintf(2, 'Tone test acquisition %d: conduction delay %.2f ms', ...
+                        acqNum, delayInfo.delay_s * 1e3);
                 else
+                    stimgen.util.vprintf(0, 1, ...
+                        ['Tone test acquisition %d: the probe click could not ' ...
+                         'measure the conduction delay; falling back to ' ...
+                         'whole-record cross-correlation. Analysis windows may ' ...
+                         'include pre-response samples. If the delay exceeds the ' ...
+                         '%.1f ms search bound, increase GapDuration.'], ...
+                        acqNum, gapDur * 1e3);
                     [lag, atBound] = obj.align_response_(x, response, maxLag);
                     if atBound
                         stimgen.util.vprintf(0, 1, ...
@@ -404,12 +423,10 @@ end
 results.worst = worst_point_(freqs, levels, error_db, reliable);
 
 results.skipped        = skipped;
-% NaN records that the windows were cut by per-train correlation instead.
-if delayInfo.valid
-    results.conduction_delay_s = delayInfo.delay_s;
-else
-    results.conduction_delay_s = nan;
-end
+% Median and spread over acquisitions; NaN means every acquisition fell
+% back to whole-record cross-correlation.
+results.conduction_delay_s    = median(delayAll, 'omitnan');
+results.conduction_delay_sd_s = std(delayAll, 'omitnan');
 results.tolerance_db   = options.ToleranceDb;
 results.min_snr_db     = options.MinSnrDb;
 results.repeat_count   = nReps;

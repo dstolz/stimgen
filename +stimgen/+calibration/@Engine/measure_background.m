@@ -128,13 +128,15 @@ try
                  'supply, and the input channel the adapter is reading.']);
         end
 
-        % The analysis gets the record as acquired whatever DemeanResponse
+        % The analysis gets the record as acquired whatever AcCoupleResponse
         % says: analyze_background_ removes each record's mean itself, and
         % reports it as dc_offset_v -- an acquisition-health number that
-        % demeaning first would silently turn into zero. The displayed copy
-        % follows the option, so the panel shows what was analyzed.
+        % AC coupling first would silently turn into zero -- and the band
+        % levels are meant to describe the floor the room actually has, not a
+        % high-passed view of it. The displayed copy follows the option, so
+        % the panel shows the record in the form the sweeps would see it.
         records{rep} = y;
-        obj.ResponseSignal = obj.demean_response_(y);
+        obj.ResponseSignal = obj.ac_couple_response_(y);
 
         % The last slot of the progress bar belongs to the analysis, which runs
         % once over every record and is not free at high sample rates.

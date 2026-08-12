@@ -75,12 +75,18 @@ classdef Engine < handle
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         MaxOutputVoltage    (1,1) double {mustBePositive,mustBeFinite}      = 10    % V full scale
-        % Subtract the mean from every acquired record before it is analyzed.
-        % A DC offset on the input stage adds to the RMS, biases the
-        % cross-correlation that segments a burst train, and puts a spike at
-        % 0 Hz that leaks into the lowest analysis bins. Off by default so a
-        % rig's existing numbers do not change underneath it.
-        DemeanResponse      (1,1) logical                                   = false
+        % AC-couple every acquired record before it is analyzed: a zero-phase
+        % high-pass at AcCoupleFrequency. A DC offset on the input stage adds
+        % to the RMS, biases the cross-correlation that segments a burst
+        % train, and puts a spike at 0 Hz that leaks into the lowest analysis
+        % bins; slow baseline drift does all three while averaging to nearly
+        % nothing, so a filter catches what subtracting a mean cannot. Off by
+        % default so a rig's existing numbers do not change underneath it.
+        AcCoupleResponse    (1,1) logical                                   = false
+        % Corner of that high-pass, in Hz. Well below anything a calibration
+        % measures, but above the drift and mains-adjacent rumble it is there
+        % to block.
+        AcCoupleFrequency   (1,1) double {mustBePositive,mustBeFinite}      = 20    % Hz
         ShowLivePlots       (1,1) logical                                   = false
         % Which LUT serves "tone" lookups (and the "filter" lookups anchored to
         % them). "swept_sine" overrides any direct tone calibration whenever
@@ -106,13 +112,16 @@ classdef Engine < handle
     end
 
     properties (SetAccess = protected, SetObservable)
-        % Acquisition latency measured by measure_conduction_delay: acoustic
-        % propagation from the speaker to the microphone plus the converters'
-        % round-trip latency, as one bulk delay. Measured with a click probe
-        % at the start of each tone acquisition, and observable so a host GUI
-        % can report it as soon as it lands. Not persisted in a .esgc -- it
-        % describes the rig's geometry at measurement time, not the LUTs --
-        % but the tone tables record the value their windows were cut with.
+        % Acquisition latency: acoustic propagation from the speaker to the
+        % microphone plus the converters' round-trip latency, as one bulk
+        % delay. Measured from a click embedded at the head of every tone
+        % acquisition (each play_and_record of a burst train), because the
+        % latency is only guaranteed within a record -- it need not carry
+        % across records of different lengths. Updated per acquisition, and
+        % observable so a host GUI reports it as it lands. Not persisted in
+        % a .esgc -- it describes the rig at measurement time, not the LUTs
+        % -- but the tone tables record the values their windows were cut
+        % with. measure_conduction_delay fills it from a standalone probe.
         ConductionDelay (1,1) struct = struct( ...
             'delay_s', nan, 'delay_samples', nan, 'fs', nan, ...
             'peak_v', nan, 'noise_v', nan, 'corr', nan, ...
@@ -124,7 +133,9 @@ classdef Engine < handle
         Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
-        LastDcRemoved_ (1,1) double = nan  % DC demean_response_ took off the current record; NaN when it took none
+        LastDcRemoved_ (1,1) double = nan   % DC ac_couple_response_ took off the current record; NaN when it took none
+        LastAcCoupleHz_ (1,1) double = nan  % corner it high-passed that record at; NaN when it did not filter
+        AcCoupleFilter_ = []                % cached high-pass design for the current (fs, corner)
     end
 
     properties (Dependent)
@@ -356,11 +367,12 @@ classdef Engine < handle
             m.rms_v    = sqrt(mean(y .^ 2));
             m.clipping = h.responseClippingLikely;
 
-            % What the record still carries, and what DemeanResponse took off
-            % it. Reported together so the waveform panel can say which of the
-            % two it is showing rather than leaving it to be judged by eye.
-            m.dc_v         = mean(y);
-            m.dc_removed_v = obj.LastDcRemoved_;
+            % What the record still carries, and what AC coupling took off it.
+            % Reported together so the waveform panel can say which of the two
+            % it is showing rather than leaving it to be judged by eye.
+            m.dc_v          = mean(y);
+            m.dc_removed_v  = obj.LastDcRemoved_;
+            m.ac_coupled_hz = obj.LastAcCoupleHz_;
         end
 
         function render_engine_state_(obj, reset)
@@ -390,6 +402,8 @@ classdef Engine < handle
 
         r = measure_(obj, signal, mode, options) % Acquire and compute measurement metric.
         [y, schedule] = build_tone_sequence_(obj, freqs, burstDur, gapDur) % Assemble one gated tone-burst train.
+        [y, xClick, schedule, regionEnd] = add_click_probe_(obj, seq, schedule, maxLagN) % Prepend a delay probe click to a tone train.
+        info = click_latency_(obj, xClick, y, maxLagN, regionEnd) % Latency of a click's response within its own record.
         [lag, atBound] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
         [exBurst, rsBurst, rsSteady, steadySpan] = extract_burst_(obj, x, response, s, lag) % Cut one scheduled burst from an excitation/response pair.
         [name, lut] = resolve_tone_lut_(obj) % Which LUT serves tone lookups, and its contents.
@@ -413,10 +427,53 @@ classdef Engine < handle
         out = aggregate_headroom_(obj, metricsArray) % Aggregate headroom metrics over repeats.
         m = sweep_transfer_rms_(obj, x, y, freqs, fs, band) % Equivalent steady-tone RMS from a swept-sine pair.
         y = trim_response_(obj, y) % Trim trailing response buffer padding.
-        y = demean_response_(obj, y) % Remove the DC offset when DemeanResponse is set.
+        y = ac_couple_response_(obj, y) % Zero-phase high-pass when AcCoupleResponse is set.
         cd = commit_cal_data_(obj) % Build calibration output struct.
         reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
         throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.
+
+        function d = ac_couple_filter_(obj, fs, fc)
+            % d = ac_couple_filter_(obj, fs, fc)
+            % Second-order Butterworth high-pass for this sample rate and
+            % corner, as a digitalFilter.
+            %
+            % A designfilt object rather than butter's b/a pair for two
+            % reasons. It carries second-order sections, which the normalized
+            % corner needs -- 20 Hz against a 200 kHz TDT rate is 2e-4 of
+            % Nyquist, and a direct form at that ratio loses its poles to
+            % rounding. And filtfilt takes it as one argument, where the
+            % (sections, gain) pair is ambiguous with a transfer function and
+            % warns per call.
+            %
+            % Cached because a sweep designs the same filter once per
+            % acquisition and neither input changes within a run.
+            %
+            % [] when there is no filter to design: an engine with no adapter
+            % has no sample rate, and a corner at or above Nyquist has no
+            % high-pass. Both are rig configuration rather than a fault in the
+            % measurement, so the record goes on unfiltered -- and because the
+            % verdict is cached with everything else, a sweep says so once
+            % rather than once per acquisition.
+            c = obj.AcCoupleFilter_;
+            if ~isempty(c) && isequaln(c.fs, fs) && isequaln(c.fc, fc)
+                d = c.d;
+                return
+            end
+            if ~isfinite(fs) || fs <= 0
+                d = [];
+                stimgen.util.vprintf(0, 1, ...
+                    'AC coupling skipped: no sample rate is available from the adapter.');
+            elseif fc >= fs / 2
+                d = [];
+                stimgen.util.vprintf(0, 1, ...
+                    'AC coupling skipped: the %.4g Hz corner is at or above Nyquist for %.10g Hz.', ...
+                    fc, fs);
+            else
+                d = designfilt('highpassiir', FilterOrder=2, ...
+                    HalfPowerFrequency=fc, SampleRate=fs);
+            end
+            obj.AcCoupleFilter_ = struct('fs', fs, 'fc', fc, 'd', d);
+        end
 
         function t = empty_table_(~, n)
             % Allocate a calibration table struct for in-progress runs.

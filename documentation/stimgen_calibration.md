@@ -168,25 +168,38 @@ eng.set_configuration( ...
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
     MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
-    DemeanResponse=true, ...    % strip the input DC offset before analysis (default false)
+    AcCoupleResponse=true, ...  % high-pass the acquired record before analysis (default false)
+    AcCoupleFrequency=20, ...   % Hz corner of that high-pass (default 20)
     ShowLivePlots=true);        % broadcast progress during sweeps (default false)
 ```
 
-`DemeanResponse` subtracts the mean from every acquired record before anything is
-computed from it, at every acquisition site: the reference, the background, the tone
-and click sweeps, the swept sine, and both verification runs. Turn it on when the
-input stage carries a DC offset — it adds to the measured RMS, biases the
-cross-correlation that segments a burst train, and puts a spike at 0 Hz that leaks
-into the lowest analysis bins. It is off by default so an existing rig's numbers do
-not change underneath it, and it applies only to what is measured next; nothing
-already in the tables is re-analyzed.
+`AcCoupleResponse` high-passes every acquired record before anything is computed
+from it, at every acquisition site: the reference, the background, the tone and
+click sweeps, the swept sine, and both verification runs. Turn it on when the
+input stage carries a DC offset or a wandering baseline — either adds to the
+measured RMS, biases the cross-correlation that segments a burst train, and puts
+low-frequency energy in the spectrum that leaks into the lowest analysis bins.
+Drift is the case subtracting a mean cannot reach: wander over a record averages
+to nearly nothing, so a mean subtraction leaves it in place. It is off by default
+so an existing rig's numbers do not change underneath it, and it applies only to
+what is measured next; nothing already in the tables is re-analyzed.
+
+The filter is a second-order Butterworth run forwards and backwards, so it shifts
+nothing in time — the per-burst analysis windows and the conduction-delay probe
+still find the response where they expect it, which a causal high-pass would break.
+Set `AcCoupleFrequency` well below the lowest frequency you calibrate: the response
+is already about 3 dB down at the corner itself. The record's mean is removed before
+it is filtered, so the filter never has to settle across a large DC step at the
+record's edges, and a record too short to filter keeps that mean removal alone.
 
 Two things it deliberately does not do. `measure_background` is handed the record
 as acquired either way — its analysis already removes each record's mean and
-reports it as `dc_offset_v`, which demeaning first would zero out — so there only
-the record kept for display follows the setting. And whatever the setting, the
-`LiveUpdate` metrics report both `dc_v` (the offset still in `Response`) and
-`dc_removed_v` (what was taken off it, NaN when nothing was), which
+reports it as `dc_offset_v`, which coupling first would zero out, and its band
+levels are meant to describe the floor the room actually has — so there only the
+record kept for display follows the setting. And whatever the setting, the
+`LiveUpdate` metrics report `dc_v` (the offset still in `Response`),
+`dc_removed_v` (what was taken off it) and `ac_coupled_hz` (the corner it was
+filtered at), the last two NaN when the record was not coupled, which
 `LiveMonitor` states in the waveform title so the option's effect is legible
 rather than inferred.
 
@@ -253,20 +266,24 @@ LUT.
 
 The conduction delay — acoustic propagation from the speaker to the
 microphone plus the converters' round-trip latency, as one bulk offset — is
-measured once at the start of the run by `measure_conduction_delay`: a short
-click train is played and its response is cross-correlated against the
-excitation. A click is the right probe because its autocorrelation is a
-single sharp peak; estimating the delay from the tone train itself (which is
-what earlier versions did, once per train) gives the correlation a
+measured **per acquisition**, from a brief probe click embedded at the head
+of every train the run plays. A click is the right probe because its
+autocorrelation is a single sharp peak; estimating the delay from the tone
+train itself (which is what earlier versions did) gives the correlation a
 quasi-periodic ridge to wander along, and every analysis window then lands
 early by the unaccounted delay — visibly including pre-response silence in
-the waveform panel's measured span. The result lands in the engine's
-observable `ConductionDelay` property, is logged with its equivalent air
-path at 343 m/s, and is recorded in the committed table as
-`tone.conduction_delay_s`. If the click response does not stand clearly
-above the record's noise (dead microphone, muted speaker), the measurement
-is stored with `valid=false` and the run falls back to the old per-train
-cross-correlation rather than trusting it.
+the waveform panel's measured span. The probe rides in the very record it
+corrects because acquisition latency is only guaranteed *within* a record:
+it can differ with record length and buffer size, so a delay measured on
+one record cannot be assumed for another. Each measurement lands in the
+engine's observable `ConductionDelay` property as it happens; the run's
+median and spread are logged and recorded in the committed table as
+`tone.conduction_delay_s` / `tone.conduction_delay_sd_s`. If a record's
+click response cannot be trusted (nothing above the noise, or nothing
+within the search bound aligns), that record is warned about and falls
+back to whole-record cross-correlation. `measure_conduction_delay` remains
+as a standalone probe for checking a rig by hand; it shares the same
+estimator, so the two cannot disagree about what a latency is.
 
 Bursts are separated in *time*, not in frequency, so the analysis holds for any
 frequency list: adjacent points may sit closer together than their spectral
@@ -288,10 +305,11 @@ Two error paths are specific to this arrangement:
 
 - `stimgen:calibration:Engine:sequenceTooLong` — `MaxSequenceDuration` cannot
   hold even one burst with its gaps.
-- A warning that the conduction delay probe could not be trusted (no click
-  response above the noise, or nothing within the search bound aligns), after
-  which the run falls back to per-train cross-correlation. If the true delay
-  exceeds the bound, increase `GapDuration`.
+- A warning that an acquisition's conduction delay probe could not be trusted
+  (no click response above the noise, or nothing within the search bound
+  aligns), after which that acquisition falls back to whole-record
+  cross-correlation. If the true delay exceeds the bound, increase
+  `GapDuration`.
 
 ### Step 6 — Test The Tone Table
 
@@ -516,7 +534,8 @@ prefer a `LiveMonitor`.
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
-| `DemeanResponse` | false | Subtract the mean from each acquired record before analyzing it, so an input DC offset does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
+| `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
+| `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
 | `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
 
@@ -596,7 +615,7 @@ Two consequences of the lower rate: the equalized band is clipped to the new Nyq
 
 One thing re-fitting cannot recover: the LUT was measured through the output path at its original rate, so any rate-dependent behaviour of the DAC's reconstruction filtering is baked into it. `test_filter`, run on hardware at the new rate, is what settles whether that matters.
 
-In `CalibrationGui` this is the last field of the Filter Design dialog; the Hardware Sample Rate line turns red and names the design rate whenever a loaded filter does not match the attached adapter.
+In `CalibrationGui` this is the last field of the Filter Design dialog; the Sample Rate line turns red and names the design rate whenever a loaded filter does not match the attached adapter.
 
 #### Rate Checking
 

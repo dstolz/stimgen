@@ -1,6 +1,6 @@
 # stimgen.calibration.CalibrationGui
 
-![CalibrationGui in offline mode: measurement controls and calibrate buttons disabled on the left, empty Temporal/Spectral/Transfer Curve plots on the right, and a "No adapter attached" status message](images/CalibrationGui.png)
+![CalibrationGui in offline mode: the controls column on the left split into Microphone Reference, Hardware, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer](images/CalibrationGui.png)
 
 Source file: +stimgen/+calibration/CalibrationGui.m  
 Related reference: [stimgen_calibration.md](stimgen_calibration.md)
@@ -183,6 +183,30 @@ CalibrationGui runtime init will not produce a usable adapter when:
 3. Required tags exist but module Fs is unresolved or zero.
 4. Interfaces are present but cannot connect at runtime.
 
+## Controls Layout
+
+The left column is a scrolling stack of titled sections above a footer that does
+not scroll. Each section holds the settings a step consumes and then the button
+that consumes them, so a control is found by what it is about rather than by its
+position in one long list:
+
+| Section | Contents |
+|---|---|
+| Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
+| Hardware | Sample Rate and Conduction Delay (read-only, reported by the adapter), Max Output Voltage, AC Couple Acquired Signal and its corner |
+| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
+| Verification & Equalization | Test Tones, then Design Filter beside Test Calibration |
+| Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
+| Footer (pinned) | Stop, Reset Calibration, and the status line |
+
+Stop and the status line are in the footer because they are what is needed while
+a sweep is running, when the stack may be scrolled anywhere. The status line
+clips at one line; its tooltip always carries the whole message, which matters
+for the test verdicts and background summaries that are wider than the column.
+
+The remaining display options — spectrum y-axis unit and weighting overlays —
+are checkable items on the **View** menu rather than controls in this column.
+
 ## GUI Menu Workflow (Current)
 
 File menu actions:
@@ -227,41 +251,44 @@ Recommended sequence:
 
 ## Conduction Delay
 
-The Conduction Delay row (below Hardware Sample Rate) reports the rig's
+The Conduction Delay row (below Sample Rate, in the Hardware section) reports the rig's
 speaker-to-microphone delay: acoustic propagation plus the converters'
-round-trip latency, as one bulk offset. It is measured automatically at the
-start of every Calibrate Tones and Test Tones run by
-[`Engine.measure_conduction_delay`](stimgen_calibration.md#step-5--calibrate-tones)
-— a brief click train is played and its response latency is read by
-cross-correlation against the excitation — and every burst analysis window in
-that run is shifted by the result, so levels are measured over the response
+round-trip latency, as one bulk offset. During every Calibrate Tones and
+Test Tones run it is measured separately for each acquisition, from a brief
+probe click embedded at the head of each played train (see
+[the calibration guide](stimgen_calibration.md#step-5--calibrate-tones)) —
+per acquisition because that latency is only guaranteed within a record and
+need not repeat between records. Each record's burst analysis windows are
+shifted by its own measured delay, so levels are measured over the response
 rather than over the silence before it arrives.
 
 The readout shows the delay in milliseconds with its equivalent air path at
 343 m/s as a sanity check: a value far from the actual microphone distance
 means converter latency dominates, which is normal for some devices but worth
-knowing. It updates the moment the probe lands (the GUI listens to the
+knowing. It updates as each acquisition's probe lands (the GUI listens to the
 engine's observable `ConductionDelay` property), not when the run finishes.
-**Measurement unreliable** in red means the click response was not clearly
-above the noise or could not be aligned within the search bound
-(`GapDuration`); the run then falls back to per-train cross-correlation and
-the analysis windows may include pre-response samples. `Not measured` simply
-means no tone run has happened yet — clicks and swept sine runs do not probe,
-because neither cuts per-burst windows.
+**Measurement unreliable** in red means the last record's click response was
+not clearly above the noise or could not be aligned within the search bound
+(`GapDuration`); that record then falls back to whole-record
+cross-correlation and its analysis windows may include pre-response samples.
+`Not measured` simply means no tone run has happened yet — clicks and swept
+sine runs do not probe, because neither cuts per-burst windows.
 
-## Demean Acquired Signal
+## AC Couple Acquired Signal
 
-The Demean Acquired Signal checkbox sets `Engine.DemeanResponse`. With it checked, the mean is subtracted from every record the engine acquires before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
+The AC Couple Acquired Signal checkbox sets `Engine.AcCoupleResponse`. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
 
-Check it when the input stage carries a DC offset. An offset adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts a spike at 0 Hz that leaks into the lowest analysis bins.
+Check it when the input stage carries a DC offset or a wandering baseline. Either adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts low-frequency energy in the spectrum that leaks into the lowest analysis bins. Drift is the case a plain mean subtraction cannot reach: wander over a record averages to nearly nothing, so subtracting the mean leaves it entirely in place.
 
 Semantics to be aware of:
 
+- **Set the corner well below the lowest frequency you calibrate.** The filter is a second-order Butterworth, so the response is already down about 3 dB at the corner itself and rolls off below it. 20 Hz is the default and suits an audio rig; raise it to sit above mains hum, lower it if the calibration reaches into the low tens of Hz. A corner at or above Nyquist is skipped with a message rather than applied.
+- **It shifts nothing in time.** The filter runs forwards and backwards (`filtfilt`), so the per-burst analysis windows and the conduction-delay probe still find the response where they expect it. A causal high-pass would move it out from under them.
 - **It applies to what is measured next, not to what is already stored.** Checking the box does not re-analyze or redraw the record already on the waveform panel; re-run the measurement. Existing tables are not re-analyzed either, so a table measured with it off and one measured with it on should not be mixed.
-- **The waveform panel title says which of the two you are looking at**, so the setting's effect does not have to be judged by eye: `DC removed 12.34 mV` whenever the option acted on the record, and `DC 12.34 mV` when an offset is still there and is worth more than 1% of the peak — the reading that tells you the option is worth turning on. Neither clause appears when the record is centered and nothing was removed.
-- The mean is removed *after* the trailing buffer padding is trimmed, so trimming still sees the zeros that mark the padding.
-- Measure Background is the one step it does not change the analysis of. That analysis already removes each record's mean and reports it as `dc_offset_v` acquisition health, so it is handed the record as acquired whatever this setting says — demeaning first would turn its own DC-offset reading into zero. Only the displayed record follows the option.
-- Like the other parameters it reaches the engine when a run is started, and it is persisted in the `.esgc` file, so a loaded calibration records how its records were conditioned.
+- **The waveform panel title says what happened to the record**, so the setting's effect does not have to be judged by eye: `AC coupled 20 Hz (DC 12.34 mV removed)` whenever the option acted on the record, and `DC 12.34 mV` when an offset is still there and is worth more than 1% of the peak — the reading that tells you the option is worth turning on. Neither clause appears when the record is centered and nothing was removed.
+- The record's mean is removed before it is filtered, and both happen *after* the trailing buffer padding is trimmed. Trimming still sees the zeros that mark the padding, and the filter never has to settle across a large DC step at the record's edges — which it would ring on for far longer than its padding covers, right where the delay-probe click sits. A record too short to filter at all keeps the mean removal alone and says so in the title.
+- Measure Background is the one step it does not change the analysis of. That analysis already removes each record's mean and reports it as `dc_offset_v` acquisition health, and its band levels are meant to describe the floor the room actually has — so it is handed the record as acquired whatever this setting says. Only the displayed record follows the option.
+- Like the other parameters both reach the engine when a run is started, and both are persisted in the `.esgc` file, so a loaded calibration records how its records were conditioned. A file saved before this replaced the older Demean Acquired Signal option loads with AC coupling on at the default corner if demeaning had been on.
 
 ## Tone Lookup From Swept Sine
 
@@ -399,7 +426,7 @@ Design Filter prompts for the equalizer design options before running, and remem
 
 **Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
 
-Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Hardware Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Calibration (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
+Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Calibration (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
 
 The status line reports the resulting tap count, correction span and design rate, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
@@ -416,7 +443,7 @@ Either run is cancellable with Stop, and with live plots on the transfer panel f
 
 Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
 
-Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, Demean Acquired Signal, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
+Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, AC Couple Acquired Signal and its corner, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
 
 ## Button Enable Rules
 

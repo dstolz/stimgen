@@ -11,12 +11,14 @@ function calibrate_tones(obj, freqs, repeatCount, options)
 % silence and played with a single play_and_record per repeat, instead of one
 % hardware transaction per frequency. Each burst is then recovered from the
 % recording at its known position -- offset by the rig's conduction delay,
-% measured once at the start of the run with a click probe (see
-% measure_conduction_delay) -- and measured spectrally over its steady-state
-% middle with the same flat-top periodogram estimate the per-frequency
-% version used, so the LUT stays on its original scale. If the click probe
-% cannot be trusted (no response above the noise), the delay falls back to a
-% per-train cross-correlation.
+% measured from a probe click embedded at the head of that same acquisition
+% (see add_click_probe_/click_latency_) -- and measured spectrally over its
+% steady-state middle with the same flat-top periodogram estimate the
+% per-frequency version used, so the LUT stays on its original scale. The
+% probe rides in the record it corrects because acquisition latency is only
+% guaranteed within a record; it can differ with record length and buffer
+% size. If a record's probe cannot be trusted (no click response above the
+% noise), that record falls back to whole-record cross-correlation.
 %
 % Because the bursts are separated in time rather than in frequency, the
 % analysis holds for any frequency list: adjacent points may sit closer
@@ -99,26 +101,25 @@ obj.emit_live_("tone", "start", 'Table', tone_data, 'Total', n, ...
     'RepeatTotal', repeatCount, axisMeta{:});
 
 try
-    % One click-probe latency measurement for the whole run: the delay is a
-    % property of the rig -- speaker-to-mic distance plus converter latency
-    % -- so it is measured once here rather than re-estimated from every
-    % train, where a tonal record gives the cross-correlation a
-    % quasi-periodic ridge to wander along and the analysis window lands
-    % early by exactly the unaccounted delay. GapDuration bounds the search
-    % because it is the largest delay the segmentation can absorb.
-    delayInfo = obj.measure_conduction_delay(MaxDelay=gapDur);
-    if ~delayInfo.valid
-        stimgen.util.vprintf(0, 1, ...
-            ['Falling back to per-train cross-correlation for burst ' ...
-             'segmentation; analysis windows may include pre-response samples.']);
-    end
-
     trainStarts = 1:burstsPerTrain:n;
+    % Conduction delays actually used, one per acquisition, for the
+    % committed metrics. NaN marks an acquisition that fell back to
+    % whole-record cross-correlation.
+    delayAll = nan(repeatCount, numel(trainStarts));
+
     for b = 1:numel(trainStarts)
         obj.throw_if_cancelled_();
         idx = trainStarts(b) : min(trainStarts(b) + burstsPerTrain - 1, n);
 
         [seq, schedule] = obj.build_tone_sequence_(freqs(idx), burstDur, gapDur);
+        % The probe click at the head of the record is what measures the
+        % conduction delay for this acquisition. Embedded rather than
+        % measured once up front because acquisition latency is only
+        % guaranteed within a record: it can differ with record length and
+        % buffer size, so a delay from a separate short probe record need
+        % not hold for this train. GapDuration bounds the delay search --
+        % it is the largest delay the segmentation can absorb.
+        [seq, xClick, schedule, regionEnd] = obj.add_click_probe_(seq, schedule, maxLag);
         x = obj.ExcitationVoltage .* seq;
         obj.ExcitationSignal = x;
 
@@ -129,20 +130,31 @@ try
         for rep = 1:repeatCount
             obj.throw_if_cancelled_();
             response = obj.Adapter.play_and_record(x);
-            response = obj.demean_response_(response(:).');
+            response = obj.ac_couple_response_(response(:).');
             obj.ResponseSignal = response;
 
+            % This record's own probe click sets the lag its windows are
+            % cut with; nothing is assumed about any other record.
+            delayInfo = obj.click_latency_(xClick, response, maxLag, regionEnd);
+            obj.ConductionDelay = delayInfo;
             if delayInfo.valid
                 lag = delayInfo.delay_samples;
+                delayAll(rep, b) = delayInfo.delay_s;
+                stimgen.util.vprintf(2, 'Train %d rep %d: conduction delay %.2f ms', ...
+                    b, rep, delayInfo.delay_s * 1e3);
             else
+                stimgen.util.vprintf(0, 1, ...
+                    ['Train %d rep %d: the probe click could not measure the ' ...
+                     'conduction delay; falling back to whole-record ' ...
+                     'cross-correlation. Analysis windows may include ' ...
+                     'pre-response samples. If the delay exceeds the %.1f ms ' ...
+                     'search bound, increase GapDuration.'], b, rep, gapDur * 1e3);
                 [lag, atBound] = obj.align_response_(x, response, maxLag);
                 if atBound
                     stimgen.util.vprintf(0, 1, ...
                         ['Response delay reached the %.1f ms search bound; burst ' ...
                          'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
                 end
-                stimgen.util.vprintf(2, 'Train %d rep %d: acquisition delay %.2f ms', ...
-                    b, rep, lag / fs * 1e3);
             end
 
             for k = 1:numel(idx)
@@ -213,12 +225,15 @@ catch ME
 end
 
 % Commit only on full success.
-% NaN records that the windows were cut by per-train correlation instead.
-if delayInfo.valid
-    conductionDelayS = delayInfo.delay_s;
-else
-    conductionDelayS = nan;
-end
+% Median and spread over acquisitions: the spread is the record of how much
+% the latency actually moved between records, which is the very thing the
+% embedded probe exists to absorb. NaN means every acquisition fell back to
+% cross-correlation.
+conductionDelayS   = median(delayAll(:), 'omitnan');
+conductionDelaySdS = std(delayAll(:), 'omitnan');
+stimgen.util.vprintf(1, ...
+    'Conduction delay over %d acquisition(s): median %.2f ms, sd %.3f ms', ...
+    nnz(isfinite(delayAll)), conductionDelayS * 1e3, conductionDelaySdS * 1e3);
 cd_out = obj.commit_cal_data_();
 toneSensitivity = tone_data.spl_db(:) - 20*log10(max(obj.ExcitationVoltage, eps));
 toneRepeatability = obj.repeatability_stats_(toneMeasAll);
@@ -240,7 +255,8 @@ cd_out.tone = struct( ...
     'voltage',     tone_data.voltage(:), ...
     'burst_duration', burstDur, ...
     'gap_duration',   gapDur, ...
-    'conduction_delay_s', conductionDelayS, ...
+    'conduction_delay_s',    conductionDelayS, ...
+    'conduction_delay_sd_s', conductionDelaySdS, ...
     'metrics', struct( ...
         'frequency_response_hz', freqs(:), ...
         'frequency_response_db_spl', tone_data.spl_db(:), ...

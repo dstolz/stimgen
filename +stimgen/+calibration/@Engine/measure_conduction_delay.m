@@ -2,59 +2,55 @@ function info = measure_conduction_delay(obj, options)
 % info = measure_conduction_delay(obj)
 % info = measure_conduction_delay(obj, Name=Value)
 %
-% Measure the rig's acquisition latency -- acoustic propagation from the
-% speaker to the microphone plus the converters' round-trip latency, as one
-% bulk delay -- by playing a short train of clicks and cross-correlating the
-% response against the excitation. A click is the right probe because its
-% autocorrelation is a single sharp peak; a tone train gives the correlation
-% a quasi-periodic ridge to wander along, which is exactly how a per-train
-% estimate lands the analysis window early by the unaccounted delay.
+% Standalone probe of the rig's acquisition latency -- acoustic propagation
+% from the speaker to the microphone plus the converters' round-trip
+% latency, as one bulk delay -- by playing a click and measuring its
+% response latency against the excitation. A click is the right probe
+% because its autocorrelation is a single sharp peak.
 %
-% calibrate_tones and test_tones call this once at the start of each run --
-% the delay is a property of the rig, not of the stimulus, so it is not
-% re-estimated before every tone -- and cut every burst window with the
-% result. The measurement lands in the observable ConductionDelay property,
-% so an attached GUI reports it the moment it exists.
+% Tone runs do NOT call this: calibrate_tones and test_tones embed a probe
+% click at the head of every acquisition instead (see add_click_probe_),
+% because latency is only guaranteed within a record -- it need not carry
+% across records of different lengths, so a delay measured here on a short
+% record cannot be assumed to hold for a two-second train. This method
+% remains for probing a rig by hand; both paths share click_latency_, so
+% they cannot disagree about what a latency is.
 %
-% The clicks are spaced further apart than the largest delay considered, so
-% the bounded cross-correlation cannot lock onto the wrong click; using
-% several of them buys signal over a single click without ambiguity.
-%
-% The result is judged before it is trusted: the click response must stand
-% clearly above the record's robust noise level, and the correlation peak
-% must not sit on the search bound. A failed measurement is stored with
-% valid=false and warned about; callers fall back to their own alignment.
+% The result is judged before it is trusted -- the click response must
+% stand clearly above the record's noise and the measured lag must explain
+% where that response actually sits. A failed measurement is stored with
+% valid=false and warned about.
 %
 % Parameters:
 %   MaxDelay      - (1,1) double largest delay considered, in seconds
-%                   (default 0.05). Tone runs pass their GapDuration, which
-%                   is the largest delay their segmentation can absorb.
+%                   (default 0.05)
 %   ClickDuration - (1,1) double click length in seconds (default 100e-6);
 %                   clamped up to one sample at the current rate.
-%   NumClicks     - (1,1) double clicks in the probe train (default 3)
+%   NumClicks     - (1,1) double clicks in the probe train (default 1).
+%                   More clicks buy signal in a noisy room, but a delay
+%                   near the click spacing aliases; leave at 1 unless the
+%                   single-click response is too weak to detect.
 %
 % Returns:
 %   info - struct, also stored in obj.ConductionDelay:
-%     delay_s       - measured delay in seconds (NaN-free; check valid)
+%     delay_s       - measured delay in seconds (check valid)
 %     delay_samples - the same delay in samples at fs
 %     fs            - sample rate the measurement was taken at
 %     peak_v        - peak of the demeaned click response
 %     noise_v       - robust noise level of the record
-%     corr          - normalized correlation at the chosen lag, 0..1; low
-%                     with a strong response means nothing in the search
-%                     bound aligns, i.e. the true delay exceeds MaxDelay
+%     corr          - normalized correlation at the chosen lag; diagnostic
 %     at_bound      - correlation peak sat on the MaxDelay search bound
 %     valid         - the measurement is trustworthy
 %     measuredOn    - datetime of the measurement
 %
 % See also: stimgen.calibration.Engine/calibrate_tones,
 %           stimgen.calibration.Engine/test_tones,
-%           stimgen.calibration.Engine/align_response_
+%           stimgen.calibration.Engine/click_latency_
 arguments
     obj
     options.MaxDelay      (1,1) double {mustBePositive, mustBeFinite} = 0.05
     options.ClickDuration (1,1) double {mustBePositive, mustBeFinite} = 100e-6
-    options.NumClicks     (1,1) double {mustBeInteger, mustBePositive} = 3
+    options.NumClicks     (1,1) double {mustBeInteger, mustBePositive} = 1
 end
 obj.assert_adapter_();
 fs = obj.Fs;
@@ -76,72 +72,34 @@ obj.ExcitationSignal = x;
 
 obj.throw_if_cancelled_();
 y = obj.Adapter.play_and_record(x);
-y = obj.demean_response_(obj.trim_response_(y(:).'));
+y = obj.ac_couple_response_(obj.trim_response_(y(:).'));
 obj.ResponseSignal = y;
 
-% The correlation always runs demeaned, whatever DemeanResponse says: a DC
-% offset biases xcorr toward zero lag, which is the very error this
-% measurement exists to remove.
-y0 = y - mean(y);
-
-[lagN, atBound] = obj.align_response_(x, y0, maxLagN);
-
-% A click response towers over a mostly-silent record; a peak that does not
-% is a disconnected microphone or a muted speaker, and its correlation lag
-% is noise.
-peakV  = max([abs(y0), 0]);
-noiseV = 1.4826 * median(abs(y0));
-peakOk = isfinite(peakV) && peakV > 10 * max(noiseV, eps);
-
-% How well the chosen lag actually aligns the two records, as a normalized
-% correlation coefficient. A strong response is not enough on its own: a
-% delay larger than MaxDelay leaves the bounded search nothing but noise to
-% pick from, and the peak it picks is not necessarily on the bound -- the
-% lag is garbage while peakOk still holds. Only genuine alignment makes
-% this coefficient large.
-n = max(min(numel(x), numel(y0) - lagN), 0);
-if n > 0
-    xa   = x(1:n);
-    ya   = y0(lagN + (1:n));
-    corr = abs(sum(xa .* ya)) / (norm(xa) * norm(ya) + eps);
-else
-    corr = 0;
-end
-
-valid = peakOk && corr >= 0.1 && ~atBound;
-
-info = struct( ...
-    'delay_s',       lagN / fs, ...
-    'delay_samples', lagN, ...
-    'fs',            fs, ...
-    'peak_v',        peakV, ...
-    'noise_v',       noiseV, ...
-    'corr',          corr, ...
-    'at_bound',      atBound, ...
-    'valid',         valid, ...
-    'measuredOn',    datetime('now'));
+% The whole record is probe: x is nonzero only at the clicks already.
+info = obj.click_latency_(x, y, maxLagN, numel(y));
 obj.ConductionDelay = info;
 
-if valid
+if info.valid
     stimgen.util.vprintf(1, ...
         ['Conduction delay: %.2f ms (%d samples at %.10g Hz; ~%.2f m of air ' ...
          'at 343 m/s, converter latency included)'], ...
-        info.delay_s * 1e3, lagN, fs, info.delay_s * 343);
-elseif ~peakOk
+        info.delay_s * 1e3, info.delay_samples, fs, info.delay_s * 343);
+elseif info.peak_v <= 10 * max(info.noise_v, eps)
     stimgen.util.vprintf(0, 1, ...
         ['Conduction delay could not be measured: the click response (peak ' ...
          '%.4f V) does not stand above the noise (%.4f V). Check the ' ...
-         'microphone and speaker.'], peakV, noiseV);
+         'microphone and speaker.'], info.peak_v, info.noise_v);
 else
     stimgen.util.vprintf(0, 1, ...
         ['Conduction delay could not be measured: a click response is present ' ...
          'but no delay within the %.1f ms search bound aligns it with the ' ...
-         'excitation. The true delay is probably larger; raise the bound ' ...
-         '(GapDuration on a tone run).'], options.MaxDelay * 1e3);
+         'excitation. The true delay is probably larger; raise MaxDelay.'], ...
+        options.MaxDelay * 1e3);
 end
 
-% The span marks where the click responses were found, so the waveform panel
+% The span marks where the click response was found, so the waveform panel
 % shows what the delay was read from.
 obj.emit_live_("latency", "measure", ...
-    'Span', [onsets(1) + lagN, min(onsets(end) + clickN - 1 + lagN, numel(y))]);
+    'Span', [onsets(1) + info.delay_samples, ...
+             min(onsets(end) + clickN - 1 + info.delay_samples, numel(y))]);
 end

@@ -4,8 +4,8 @@ function reset_calibration(obj)
 % anything the user configured to get here: the attached Adapter, and every
 % persistent parameter (MicSensitivity -- including one set by
 % calibrate_reference -- ReferenceLevel, ReferenceFrequency, NormativeValue,
-% ExcitationVoltage, MaxOutputVoltage, DemeanResponse, ShowLivePlots,
-% ToneLutSource) are left
+% ExcitationVoltage, MaxOutputVoltage, AcCoupleResponse, AcCoupleFrequency,
+% ShowLivePlots, ToneLutSource) are left
 % untouched.
 %
 % Clears CalibrationData (tone/click/swept_sine tables, any designed filter,

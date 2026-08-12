@@ -75,7 +75,7 @@ classdef CalibrationGui < handle
         NormativeField
         ExcitationField
         MaxOutputField
-        DemeanCheck
+        AcCoupleCheck
         ShowLivePlotsCheck
         TransferLogXCheck
         ToneSweptSineCheck
@@ -175,11 +175,11 @@ classdef CalibrationGui < handle
         function build_ui_(obj)
             obj.Figure = uifigure( ...
                 Name='Stim Calibration', ...
-                Position=[120 80 1320 760], ...
+                Position=[120 60 1360 820], ...
                 CloseRequestFcn=@(src,~) obj.on_close_(src));
 
             obj.Grid = uigridlayout(obj.Figure, [1 2]);
-            obj.Grid.ColumnWidth = {360, '1x'};
+            obj.Grid.ColumnWidth = {380, '1x'};
             obj.Grid.RowHeight = {'1x'};
 
             obj.build_menu_();
@@ -284,195 +284,187 @@ classdef CalibrationGui < handle
         end
 
         function build_controls_panel_(obj)
-            panel = uipanel(obj.Grid, Title='Controls');
-            panel.Layout.Row = 1;
-            panel.Layout.Column = 1;
+            % Left column: a scrolling stack of titled sections above a footer
+            % that does not scroll. One flat list of 23 rows made the reading
+            % order carry the whole workflow; the sections carry it instead, so
+            % a row is found by what it is about rather than by counting down
+            % from the top. Each section holds the settings a step consumes and
+            % then the button that consumes them.
+            %
+            % Stop and the status line are in the footer because they are the
+            % two things needed while a sweep is running, when the stack may be
+            % scrolled anywhere.
+            col = uigridlayout(obj.Grid, [2 1]);
+            col.Layout.Row = 1;
+            col.Layout.Column = 1;
+            col.RowHeight = {'1x', 66};
+            col.ColumnWidth = {'1x'};
+            col.Padding = [0 0 0 0];
+            col.RowSpacing = 6;
 
-            g = uigridlayout(panel, [24 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
-            g.ColumnWidth = {'1x', '1x'};
-            g.Scrollable = 'on';
+            stack = uigridlayout(col, [5 1]);
+            stack.Layout.Row = 1;
+            stack.Layout.Column = 1;
+            stack.ColumnWidth = {'1x'};
+            stack.Padding = [0 0 0 0];
+            stack.RowSpacing = 6;
+            stack.Scrollable = 'on';
 
-            refLevelLabel = uilabel(g, Text='Reference Level (dB SPL)', HorizontalAlignment='right');
-            refLevelLabel.Layout.Row = 1;
-            refLevelLabel.Layout.Column = 1;
-            obj.RefLevelField = uieditfield(g, 'numeric');
-            obj.RefLevelField.Layout.Row = 1;
-            obj.RefLevelField.Layout.Column = 2;
-            obj.RefLevelField.Limits = [1, 160];
-            obj.RefLevelField.ValueDisplayFormat = '%.1f';
+            h = zeros(1, 5);
 
-            refFreqLabel = uilabel(g, Text='Reference Frequency (Hz)', HorizontalAlignment='right');
-            refFreqLabel.Layout.Row = 2;
-            refFreqLabel.Layout.Column = 1;
-            obj.RefFreqField = uieditfield(g, 'numeric');
-            obj.RefFreqField.Layout.Row = 2;
-            obj.RefFreqField.Layout.Column = 2;
-            obj.RefFreqField.Limits = [20, 200000];
-            obj.RefFreqField.ValueDisplayFormat = '%.1f';
+            [g, h(1)] = obj.add_section_(stack, 1, 'Microphone Reference', [24 24 24 30]);
+            obj.build_reference_section_(g);
 
-            micSensLabel = uilabel(g, Text='Mic Sensitivity (V/Pa)', HorizontalAlignment='right');
-            micSensLabel.Layout.Row = 3;
-            micSensLabel.Layout.Column = 1;
-            obj.MicSensField = uieditfield(g, 'numeric');
-            obj.MicSensField.Layout.Row = 3;
-            obj.MicSensField.Layout.Column = 2;
-            obj.MicSensField.Limits = [eps, 100];
-            obj.MicSensField.ValueDisplayFormat = '%.5f';
+            [g, h(2)] = obj.add_section_(stack, 2, 'Hardware', [24 24 24 24]);
+            obj.build_hardware_section_(g);
 
-            normativeLabel = uilabel(g, Text='Normative Value (dB SPL)', HorizontalAlignment='right');
-            normativeLabel.Layout.Row = 4;
-            normativeLabel.Layout.Column = 1;
-            obj.NormativeField = uieditfield(g, 'numeric');
-            obj.NormativeField.Layout.Row = 4;
-            obj.NormativeField.Layout.Column = 2;
-            obj.NormativeField.Limits = [1, 180];
-            obj.NormativeField.ValueDisplayFormat = '%.1f';
+            [g, h(3)] = obj.add_section_(stack, 3, 'Calibration', [24 24 30 30 24]);
+            obj.build_calibration_section_(g);
 
-            excitationLabel = uilabel(g, Text='Excitation Voltage (V)', HorizontalAlignment='right');
-            excitationLabel.Layout.Row = 5;
-            excitationLabel.Layout.Column = 1;
-            obj.ExcitationField = uieditfield(g, 'numeric');
-            obj.ExcitationField.Layout.Row = 5;
-            obj.ExcitationField.Layout.Column = 2;
-            obj.ExcitationField.Limits = [eps, 10];
-            obj.ExcitationField.ValueDisplayFormat = '%.3f';
+            [g, h(4)] = obj.add_section_(stack, 4, 'Verification & Equalization', [30 30]);
+            obj.build_verification_section_(g);
 
-            maxOutputLabel = uilabel(g, Text='Max Output Voltage (V)', HorizontalAlignment='right');
-            maxOutputLabel.Layout.Row = 6;
-            maxOutputLabel.Layout.Column = 1;
-            obj.MaxOutputField = uieditfield(g, 'numeric');
-            obj.MaxOutputField.Layout.Row = 6;
-            obj.MaxOutputField.Layout.Column = 2;
-            obj.MaxOutputField.Limits = [eps, 1000];
-            obj.MaxOutputField.ValueDisplayFormat = '%.1f';
-            obj.MaxOutputField.Tooltip = stimgen.util.tooltip('CalibrationGui', 'MaxOutputVoltage');
+            [g, h(5)] = obj.add_section_(stack, 5, 'Display', [24 24]);
+            obj.build_display_section_(g);
 
-            sampleRateLabelCaption = uilabel(g, Text='Hardware Sample Rate', HorizontalAlignment='right');
-            sampleRateLabelCaption.Layout.Row = 7;
-            sampleRateLabelCaption.Layout.Column = 1;
-            obj.SampleRateLabel = uilabel(g, Text='No adapter', HorizontalAlignment='left');
-            obj.SampleRateLabel.Layout.Row = 7;
-            obj.SampleRateLabel.Layout.Column = 2;
+            stack.RowHeight = num2cell(h);
+
+            obj.build_footer_(col);
+        end
+
+        function [g, h] = add_section_(~, parent, row, titleText, rowHeights)
+            % [g, h] = add_section_(obj, parent, row, titleText, rowHeights)
+            % Titled section panel in the controls column, returning its
+            % label/widget grid and the pixel height the column must reserve
+            % for it. The height is computed rather than left as '1x' because
+            % the column scrolls, and a scrollable grid collapses a '1x' row to
+            % its minimum.
+            p = uipanel(parent, Title=titleText);
+            p.Layout.Row = row;
+            p.Layout.Column = 1;
+
+            g = uigridlayout(p, [numel(rowHeights) 2]);
+            g.RowHeight = num2cell(rowHeights);
+            % Captions get the wider share: they carry the units, the fields
+            % hold three or four digits.
+            g.ColumnWidth = {'1.3x', '1x'};
+            g.Padding = [8 6 8 6];
+            g.RowSpacing = 4;
+            g.ColumnSpacing = 8;
+
+            h = sum(rowHeights) + 4*(numel(rowHeights)-1) + 12 + 26;
+        end
+
+        function build_reference_section_(obj, g)
+            % What the acoustic calibrator produces, and the sensitivity
+            % measuring it yields.
+            obj.RefLevelField = numeric_row_(g, 1, 'Reference Level (dB SPL)', ...
+                [1, 160], '%.1f');
+            obj.RefFreqField = numeric_row_(g, 2, 'Reference Frequency (Hz)', ...
+                [20, 200000], '%.1f');
+            obj.MicSensField = numeric_row_(g, 3, 'Mic Sensitivity (V/Pa)', ...
+                [eps, 100], '%.5f');
+
+            obj.BtnReference = action_button_(g, 4, 1, 'Measure Reference', ...
+                'BtnReference', @(~,~) obj.on_measure_reference_());
+
+            % Background sits with the reference step, the other measurement
+            % that plays nothing, and after it: the noise floor is only a level
+            % in dB SPL once the reference has set the scale it is read on.
+            obj.BtnBackground = action_button_(g, 4, 2, 'Measure Background', ...
+                'BtnBackground', @(~,~) obj.on_measure_background_());
+        end
+
+        function build_hardware_section_(obj, g)
+            % Facts about the rig: two the adapter reports, and the settings
+            % that describe the signal path it acquires through.
+            obj.SampleRateLabel = readout_row_(g, 1, 'Sample Rate', 'No adapter', '');
 
             % Measured by the click probe at the start of every tone
-            % acquisition; sits with the other hardware facts because it is
-            % one -- speaker-to-mic distance plus converter latency.
-            conductionDelayCaption = uilabel(g, Text='Conduction Delay', HorizontalAlignment='right');
-            conductionDelayCaption.Layout.Row = 8;
-            conductionDelayCaption.Layout.Column = 1;
-            obj.ConductionDelayLabel = uilabel(g, Text='Not measured', HorizontalAlignment='left');
-            obj.ConductionDelayLabel.Layout.Row = 8;
-            obj.ConductionDelayLabel.Layout.Column = 2;
-            obj.ConductionDelayLabel.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ConductionDelay');
-            conductionDelayCaption.Tooltip = obj.ConductionDelayLabel.Tooltip;
+            % acquisition; a hardware fact like the others -- speaker-to-mic
+            % distance plus converter latency.
+            obj.ConductionDelayLabel = readout_row_(g, 2, 'Conduction Delay', ...
+                'Not measured', stimgen.util.tooltip('CalibrationGui', 'ConductionDelay'));
 
-            % An acquisition setting, so it sits with the hardware rows rather
-            % than with the display toggles below: it changes the numbers that
-            % go into the table, not how they are drawn.
-            demeanLabel = uilabel(g, Text='Demean Acquired Signal', HorizontalAlignment='right');
-            demeanLabel.Layout.Row = 9;
-            demeanLabel.Layout.Column = 1;
-            obj.DemeanCheck = uicheckbox(g, Text='');
-            obj.DemeanCheck.Layout.Row = 9;
-            obj.DemeanCheck.Layout.Column = 2;
-            obj.DemeanCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'DemeanResponse');
+            obj.MaxOutputField = numeric_row_(g, 3, 'Max Output Voltage (V)', ...
+                [eps, 1000], '%.1f', stimgen.util.tooltip('CalibrationGui', 'MaxOutputVoltage'));
 
-            showPlotsLabel = uilabel(g, Text='Show Engine Live Plots', HorizontalAlignment='right');
-            showPlotsLabel.Layout.Row = 10;
-            showPlotsLabel.Layout.Column = 1;
-            obj.ShowLivePlotsCheck = uicheckbox(g, Text='');
-            obj.ShowLivePlotsCheck.Layout.Row = 10;
-            obj.ShowLivePlotsCheck.Layout.Column = 2;
-            obj.ShowLivePlotsCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ShowLivePlots');
+            % An acquisition setting, so it sits here rather than with the
+            % display toggles: it changes the numbers that go into the table,
+            % not how they are drawn. The corner frequency is fixed at
+            % Engine's 20 Hz default and is not exposed here.
+            obj.AcCoupleCheck = check_row_(g, 4, 'AC Couple Acquired Signal', ...
+                stimgen.util.tooltip('CalibrationGui', 'AcCoupleResponse'));
+        end
 
-            transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
-            transferLogXLabel.Layout.Row = 11;
-            transferLogXLabel.Layout.Column = 1;
-            obj.TransferLogXCheck = uicheckbox(g, Text='', Value=true, ...
-                ValueChangedFcn=@(~,~) obj.on_transfer_log_x_());
-            obj.TransferLogXCheck.Layout.Row = 11;
-            obj.TransferLogXCheck.Layout.Column = 2;
+        function build_calibration_section_(obj, g)
+            % The sweeps and the two settings every sweep is run at: the drive
+            % voltage it plays at, and the level its table is anchored to.
+            obj.ExcitationField = numeric_row_(g, 1, 'Excitation Voltage (V)', ...
+                [eps, 10], '%.3f');
+            obj.NormativeField = numeric_row_(g, 2, 'Normative Value (dB SPL)', ...
+                [1, 180], '%.1f');
 
-            toneSweptLabel = uilabel(g, Text='Tone Lookup From Swept Sine', HorizontalAlignment='right');
-            toneSweptLabel.Layout.Row = 12;
-            toneSweptLabel.Layout.Column = 1;
-            obj.ToneSweptSineCheck = uicheckbox(g, Text='', ...
-                ValueChangedFcn=@(~,~) obj.on_tone_lut_source_());
-            obj.ToneSweptSineCheck.Layout.Row = 12;
-            obj.ToneSweptSineCheck.Layout.Column = 2;
-            obj.ToneSweptSineCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine');
+            % Tones get the full width and the two optional sweeps share the
+            % row below: the layout says which one an experiment normally needs.
+            obj.BtnTones = action_button_(g, 3, [1 2], 'Calibrate Tones', ...
+                'BtnTones', @(~,~) obj.on_calibrate_tones_());
+            obj.BtnClicks = action_button_(g, 4, 1, 'Calibrate Clicks', ...
+                'BtnClicks', @(~,~) obj.on_calibrate_clicks_());
+            obj.BtnSweptSine = action_button_(g, 4, 2, 'Calibrate Swept Sine', ...
+                'BtnSweptSine', @(~,~) obj.on_calibrate_swept_sine_());
 
-            obj.BtnReference = uibutton(g, Text='Measure Reference', ...
-                ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 13;
-            obj.BtnReference.Layout.Column = [1 2];
-            obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
+            % Directly under the sweep it redirects tone lookups to.
+            obj.ToneSweptSineCheck = check_row_(g, 5, 'Tone Lookup From Swept Sine', ...
+                stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine'), ...
+                @(~,~) obj.on_tone_lut_source_());
+        end
 
-            % Sits with the reference step, the other measurement that plays
-            % nothing, and after it: the noise floor is only a level in dB SPL
-            % once the reference has set the scale it is read on.
-            obj.BtnBackground = uibutton(g, Text='Measure Background', ...
-                ButtonPushedFcn=@(~,~) obj.on_measure_background_());
-            obj.BtnBackground.Layout.Row = 14;
-            obj.BtnBackground.Layout.Column = [1 2];
-            obj.BtnBackground.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnBackground');
+        function build_verification_section_(obj, g)
+            % Test Tones is ahead of the equalizer: a filter designed on a
+            % table whose levels are wrong inherits that error. Design and its
+            % own verification then share a row, since neither is much use
+            % without the other.
+            obj.BtnTestTones = action_button_(g, 1, [1 2], 'Test Tones', ...
+                'BtnTestTones', @(~,~) obj.on_test_tones_());
+            obj.BtnFilter = action_button_(g, 2, 1, 'Design Filter', ...
+                'BtnFilter', @(~,~) obj.on_design_filter_());
+            obj.BtnTestCalibration = action_button_(g, 2, 2, 'Test Calibration', ...
+                'BtnTestCalibration', @(~,~) obj.on_test_calibration_());
+        end
 
-            obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
-                ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 15;
-            obj.BtnTones.Layout.Column = [1 2];
-            obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
+        function build_display_section_(obj, g)
+            % Toggles that change only what is drawn. The rest of the drawing
+            % options are checkable items on the View menu.
+            obj.ShowLivePlotsCheck = check_row_(g, 1, 'Show Engine Live Plots', ...
+                stimgen.util.tooltip('CalibrationGui', 'ShowLivePlots'));
+            obj.TransferLogXCheck = check_row_(g, 2, 'Transfer Plot Log X-Axis', ...
+                '', @(~,~) obj.on_transfer_log_x_());
+            obj.TransferLogXCheck.Value = true;
+        end
 
-            obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
-                ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 16;
-            obj.BtnClicks.Layout.Column = [1 2];
-            obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
+        function build_footer_(obj, col)
+            % Pinned below the scrolling stack: during a run these are the only
+            % two controls that matter, and neither may scroll out of reach.
+            foot = uigridlayout(col, [2 2]);
+            foot.Layout.Row = 2;
+            foot.Layout.Column = 1;
+            foot.RowHeight = {30, 24};
+            foot.ColumnWidth = {'1x', '1x'};
+            foot.Padding = [0 4 0 4];
+            foot.RowSpacing = 4;
 
-            obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
-                ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 17;
-            obj.BtnSweptSine.Layout.Column = [1 2];
-            obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
+            obj.BtnStop = action_button_(foot, 1, 1, 'Stop', 'BtnStop', ...
+                @(~,~) obj.on_stop_());
+            obj.BtnStop.BackgroundColor = [0.7 0.15 0.15];
+            obj.BtnStop.FontColor = [1 1 1];
+            obj.BtnStop.Enable = 'off';
 
-            % Sits next to the sweep that builds the table it checks, ahead of
-            % the equalizer: a filter designed on a table whose levels are
-            % wrong inherits that error.
-            obj.BtnTestTones = uibutton(g, Text='Test Tones', ...
-                ButtonPushedFcn=@(~,~) obj.on_test_tones_());
-            obj.BtnTestTones.Layout.Row = 18;
-            obj.BtnTestTones.Layout.Column = [1 2];
-            obj.BtnTestTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestTones');
+            obj.BtnReset = action_button_(foot, 1, 2, 'Reset Calibration', ...
+                'BtnReset', @(~,~) obj.on_reset_calibration_());
 
-            obj.BtnFilter = uibutton(g, Text='Design Filter', ...
-                ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 19;
-            obj.BtnFilter.Layout.Column = [1 2];
-            obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
-
-            obj.BtnTestCalibration = uibutton(g, Text='Test Calibration', ...
-                ButtonPushedFcn=@(~,~) obj.on_test_calibration_());
-            obj.BtnTestCalibration.Layout.Row = 20;
-            obj.BtnTestCalibration.Layout.Column = [1 2];
-            obj.BtnTestCalibration.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestCalibration');
-
-            obj.BtnStop = uibutton(g, Text='Stop', ...
-                BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
-                Enable='off', ...
-                ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 21;
-            obj.BtnStop.Layout.Column = [1 2];
-            obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
-
-            obj.BtnReset = uibutton(g, Text='Reset Calibration', ...
-                ButtonPushedFcn=@(~,~) obj.on_reset_calibration_());
-            obj.BtnReset.Layout.Row = 22;
-            obj.BtnReset.Layout.Column = [1 2];
-            obj.BtnReset.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReset');
-
-            obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 23;
+            obj.StatusLabel = uilabel(foot, Text='Ready.', HorizontalAlignment='left');
+            obj.StatusLabel.Layout.Row = 2;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -1205,7 +1197,7 @@ classdef CalibrationGui < handle
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
                     MaxOutputVoltage=obj.MaxOutputField.Value, ...
-                    DemeanResponse=obj.DemeanCheck.Value, ...
+                    AcCoupleResponse=obj.AcCoupleCheck.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
                     ToneLutSource=toneLutSource);
                 ok = true;
@@ -1222,7 +1214,7 @@ classdef CalibrationGui < handle
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
-            obj.DemeanCheck.Value = obj.Engine.DemeanResponse;
+            obj.AcCoupleCheck.Value = obj.Engine.AcCoupleResponse;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
             obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
         end
@@ -1755,8 +1747,115 @@ classdef CalibrationGui < handle
                 obj.StatusLabel.FontColor = [0 0 0];
             end
             obj.StatusLabel.Text = msg;
+            % A result line -- a test verdict, a background summary -- is
+            % routinely wider than the controls column, and the label clips it.
+            % The tooltip is where the rest of it stays reachable.
+            obj.StatusLabel.Tooltip = msg;
         end
     end
+end
+
+% -------------------------------------------------------------------------
+% Row builders for the controls column. One call per row keeps a section's
+% code the same shape as the section on screen, and puts the tooltip on the
+% caption as well as the widget so the whole row is a hover target.
+
+function fld = numeric_row_(g, row, labelText, limits, format, tip)
+% fld = numeric_row_(g, row, labelText, limits, format)
+% fld = numeric_row_(g, row, labelText, limits, format, tip)
+% Right-aligned caption and a numeric edit field.
+arguments
+    g
+    row (1,1) double
+    labelText (1,:) char
+    limits (1,2) double
+    format (1,:) char
+    tip (1,:) char = ''
+end
+lbl = uilabel(g, Text=labelText, HorizontalAlignment='right');
+lbl.Layout.Row = row;
+lbl.Layout.Column = 1;
+
+fld = uieditfield(g, 'numeric');
+fld.Layout.Row = row;
+fld.Layout.Column = 2;
+fld.Limits = limits;
+fld.ValueDisplayFormat = format;
+
+if ~isempty(tip)
+    lbl.Tooltip = tip;
+    fld.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function chk = check_row_(g, row, labelText, tip, callback)
+% chk = check_row_(g, row, labelText)
+% chk = check_row_(g, row, labelText, tip)
+% chk = check_row_(g, row, labelText, tip, callback)
+% Right-aligned caption and an unlabelled checkbox, so a toggle lines up with
+% the fields above it instead of starting its own column.
+arguments
+    g
+    row (1,1) double
+    labelText (1,:) char
+    tip (1,:) char = ''
+    callback = []
+end
+lbl = uilabel(g, Text=labelText, HorizontalAlignment='right');
+lbl.Layout.Row = row;
+lbl.Layout.Column = 1;
+
+chk = uicheckbox(g, Text='');
+chk.Layout.Row = row;
+chk.Layout.Column = 2;
+
+if ~isempty(callback)
+    chk.ValueChangedFcn = callback;
+end
+if ~isempty(tip)
+    lbl.Tooltip = tip;
+    chk.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function val = readout_row_(g, row, labelText, initialText, tip)
+% val = readout_row_(g, row, labelText, initialText, tip)
+% Right-aligned caption and a left-aligned label the GUI writes into. A label
+% rather than a disabled field: nothing here is editable, and greyed-out text
+% would be harder to read than the value deserves.
+arguments
+    g
+    row (1,1) double
+    labelText (1,:) char
+    initialText (1,:) char
+    tip (1,:) char = ''
+end
+lbl = uilabel(g, Text=labelText, HorizontalAlignment='right');
+lbl.Layout.Row = row;
+lbl.Layout.Column = 1;
+
+val = uilabel(g, Text=initialText, HorizontalAlignment='left');
+val.Layout.Row = row;
+val.Layout.Column = 2;
+
+if ~isempty(tip)
+    lbl.Tooltip = tip;
+    val.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function btn = action_button_(g, row, columns, labelText, tooltipKey, callback)
+% btn = action_button_(g, row, columns, labelText, tooltipKey, callback)
+% Action button spanning the given column(s). Every button in this window has
+% an entry in the CalibrationGui tooltip section, so the key is looked up here
+% rather than passed as text.
+btn = uibutton(g, Text=labelText, ButtonPushedFcn=callback);
+btn.Layout.Row = row;
+btn.Layout.Column = columns;
+btn.Tooltip = stimgen.util.tooltip('CalibrationGui', tooltipKey);
 end
 
 % -------------------------------------------------------------------------

@@ -31,7 +31,8 @@ classdef LiveUpdate < event.EventData
     %   Elapsed      - seconds since the run started
     %   Metrics      - scalars for the current measurement (see default_metrics).
     %                  dc_v is the offset still in Response; dc_removed_v is the
-    %                  offset DemeanResponse took off it, NaN when it took none
+    %                  offset AC coupling took off it and ac_coupled_hz the corner
+    %                  it high-passed at, both NaN when the record was not coupled
     %   Context      - engine parameters needed to interpret the data
     %                  (see default_context)
     %
@@ -139,6 +140,7 @@ classdef LiveUpdate < event.EventData
                 'rms_v',          nan, ...
                 'dc_v',           nan, ...
                 'dc_removed_v',   nan, ...
+                'ac_coupled_hz',  nan, ...
                 'full_scale_v',   nan, ...
                 'clipping',       false);
         end
