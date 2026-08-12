@@ -128,6 +128,11 @@ try
                  'supply, and the input channel the adapter is reading.']);
         end
 
+        % After the all-zero test, not before: a stuck DC record demeans to
+        % zeros, and it should be reported as the stuck input it is rather
+        % than as a disconnected one.
+        y = obj.demean_response_(y);
+
         records{rep} = y;
         obj.ResponseSignal = y;
 

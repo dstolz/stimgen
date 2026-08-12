@@ -114,7 +114,7 @@ These are not required for basic tone delivery but improve accuracy for speciali
 - **Calibrate Clicks** — sweep across click durations. Dialog collects a duration vector (in ms) and repeat count. Leave the vector blank for the default octave series from 0.01 ms to 5.12 ms. Any requested duration shorter than one sample at the current sample rate is skipped, and the skipped values are listed in the log.
 - **Calibrate Swept Sine** — broadband transfer function measurement. Dialog collects chirp duration and repeat count.
 - **Design Filter** — designs an equalization FIR filter from the tone LUT, or from the swept sine LUT if no tone calibration exists. Requires one of those two calibrations to have already completed. A dialog collects the design options (filter length, design method, interpolation, smoothing, correction limit, band — see [Reference: Filter Design Options](#reference-filter-design-options)), and the result opens in `fvtool`.
-- **Test Filter** — verifies the designed filter empirically: plays the sweep raw and again through the filter, measures both responses, and reports the ripple of the equalized response against the speaker's own. Enabled once a filter exists and hardware is attached; the result is stored in the calibration as `filterTest`.
+- **Test Calibration** — verifies the calibration empirically, matched to what the filter was designed from. A filter designed from the tone table is tested with actual discrete tones (the same run as Test Tones): tones are played at the drive voltages the lookup table asks for and the levels that come back are compared to the levels requested, stored as `toneTest`. A swept sine design is tested with the sweep: played raw and again through the filter, reporting the ripple of the equalized response against the speaker's own, stored as `filterTest`. Enabled once a filter exists and hardware is attached.
 
 **Test Tones** (Step 6 above) follows Tone Lookup From Swept Sine, so after switching a rig to the swept sine table, re-run it: the table serving tone lookups has changed, and it is the one that now has to be right.
 
@@ -168,8 +168,18 @@ eng.set_configuration( ...
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
     MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
+    DemeanResponse=true, ...    % strip the input DC offset before analysis (default false)
     ShowLivePlots=true);        % broadcast progress during sweeps (default false)
 ```
+
+`DemeanResponse` subtracts the mean from every acquired record before anything is
+computed from it, at every acquisition site: the reference, the background, the tone
+and click sweeps, the swept sine, and both verification runs. Turn it on when the
+input stage carries a DC offset — it adds to the measured RMS, biases the
+cross-correlation that segments a burst train, and puts a spike at 0 Hz that leaks
+into the lowest analysis bins. It is off by default so an existing rig's numbers do
+not change underneath it, and it applies only to what is measured next; nothing
+already in the tables is re-analyzed.
 
 `ShowLivePlots` does not itself draw anything. It gates a `LiveUpdate` event that
 the engine broadcasts for every measurement; attach a
@@ -342,7 +352,9 @@ measurement is the filter+speaker chain — the transfer function a calibrated s
 actually passes through. Options: `Duration`, `RepeatCount`, `TailDuration`, `NumPoints`,
 and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized response at
 or below which the test is reported passed. In `CalibrationGui` this runs from the
-**Test Filter** button.
+**Test Calibration** button when the filter was designed from the swept sine; for a
+filter designed from the tone table that button runs the discrete-tone LUT test
+(`test_tones`) instead, and `test_filter` stays available programmatically.
 
 ### Step 8 — Save
 
@@ -477,6 +489,7 @@ prefer a `LiveMonitor`.
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
+| `DemeanResponse` | false | Subtract the mean from each acquired record before analyzing it, so an input DC offset does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
 | `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
 

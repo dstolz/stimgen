@@ -185,7 +185,7 @@ try
             stimgen.util.vprintf(1, '[%d/%d] Capturing %s sweep for filter test...', ...
                 rep, nReps, condNames(c));
             raw = obj.Adapter.play_and_record(x);
-            response = obj.trim_response_(raw);
+            response = obj.demean_response_(obj.trim_response_(raw));
             obj.ResponseSignal = response;
 
             % Both conditions deconvolve against the raw chirp - see the note

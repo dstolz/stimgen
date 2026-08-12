@@ -34,7 +34,7 @@ end
 cfg = {};
 scalarFields = ["MicSensitivity", "ReferenceLevel", "ReferenceFrequency", ...
                 "NormativeValue", "MaxOutputVoltage", "ShowLivePlots", ...
-                "ToneLutSource"];
+                "ToneLutSource", "DemeanResponse"];
 for k = 1:numel(scalarFields)
     f = scalarFields(k);
     if isfield(s, f) && ~isempty(s.(f))

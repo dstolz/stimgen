@@ -222,8 +222,21 @@ Recommended sequence:
    those levels come back. Do this before trusting a calibration in an
    experiment; it is the only step that measures whether the lookup works
 6. Optional: Calibrate Clicks and/or Calibrate Swept Sine
-7. Optional: Design Filter, then Test Filter to verify it empirically
+7. Optional: Design Filter, then Test Calibration to verify it empirically
 8. Save .esgc
+
+## Demean Acquired Signal
+
+The Demean Acquired Signal checkbox sets `Engine.DemeanResponse`. With it checked, the mean is subtracted from every record the engine acquires before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
+
+Check it when the input stage carries a DC offset. An offset adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts a spike at 0 Hz that leaks into the lowest analysis bins.
+
+Semantics to be aware of:
+
+- **It applies to what is measured next, not to what is already stored.** Existing tables are not re-analyzed, so a table measured with it off and one measured with it on should not be mixed.
+- The mean is removed *after* the trailing buffer padding is trimmed, so trimming still sees the zeros that mark the padding.
+- Background capture demeans after its all-zero test, so a stuck-DC input is still reported as a stuck input rather than as a disconnected one.
+- Like the other parameters it reaches the engine when a run is started, and it is persisted in the `.esgc` file, so a loaded calibration records how its records were conditioned.
 
 ## Tone Lookup From Swept Sine
 
@@ -361,26 +374,31 @@ Design Filter prompts for the equalizer design options before running, and remem
 
 **Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
 
-Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Hardware Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter refuses such a filter rather than reporting the rate error as a design failure.
+Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Hardware Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Calibration (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
 
 The status line reports the resulting tap count, correction span and design rate, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
-## Test Filter
+## Test Calibration
 
-Test Filter verifies the designed filter empirically with `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified. The run is cancellable with Stop, and with live plots on, the transfer panel shows the raw response fill in and then be replaced by the flattened one.
+Test Calibration verifies the calibration empirically, and which verification runs follows what the filter was designed from (`CalibrationData.filterSource`):
+
+- **Filter designed from the tone table** — the button runs the same discrete-tone verification as Test Tones (`Engine.test_tones`): actual tones are played at the drive voltages the lookup table asks for, and the levels that come back are compared to the levels requested. The tone table, not the sweep, is what scales a `Tone` stimulus, so it is the thing to verify. The usual tone-test dialog collects the frequency/level grid, and the result is stored in `CalibrationData.toneTest`.
+- **Filter designed from the swept sine** — the button runs `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified.
+
+Either run is cancellable with Stop, and with live plots on the transfer panel fills in as the measurement proceeds — for the sweep branch, the raw response first and then the flattened one. The sweep flatness test remains available programmatically as `eng.test_filter()` regardless of the filter's source.
 
 ## Reset Calibration
 
 Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
 
-Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
+Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, Demean Acquired Signal, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
 
 ## Button Enable Rules
 
 1. Measure Reference, Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
 2. Test Tones: enabled when tone **or** swept sine calibration data exists **and** an adapter is attached — verification is a live measurement. The condition is deliberately not tone-only: with Tone Lookup From Swept Sine checked, the sweep is the table a `Tone` stimulus is scaled by, so it is the one that has to be verified.
 3. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
-4. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
+4. Test Calibration: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
 5. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
 6. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
 

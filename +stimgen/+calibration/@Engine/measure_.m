@@ -28,7 +28,7 @@ if options.Record
 else
     raw = obj.Adapter.play_and_record(signal);
 end
-y   = obj.trim_response_(raw);
+y   = obj.demean_response_(obj.trim_response_(raw));
 obj.ResponseSignal = y;
 obj.ResponseTHD    = thd(y, obj.Fs);
 

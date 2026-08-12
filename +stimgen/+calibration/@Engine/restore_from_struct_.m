@@ -20,4 +20,10 @@ end
 if isfield(s, 'ToneLutSource')
     obj.ToneLutSource = s.ToneLutSource;
 end
+
+% Written since acquisition could be demeaned; an older file keeps the
+% default, which is the behavior it was measured under.
+if isfield(s, 'DemeanResponse')
+    obj.DemeanResponse = s.DemeanResponse;
+end
 end

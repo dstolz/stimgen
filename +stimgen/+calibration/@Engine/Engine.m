@@ -75,6 +75,12 @@ classdef Engine < handle
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         MaxOutputVoltage    (1,1) double {mustBePositive,mustBeFinite}      = 10    % V full scale
+        % Subtract the mean from every acquired record before it is analyzed.
+        % A DC offset on the input stage adds to the RMS, biases the
+        % cross-correlation that segments a burst train, and puts a spike at
+        % 0 Hz that leaks into the lowest analysis bins. Off by default so a
+        % rig's existing numbers do not change underneath it.
+        DemeanResponse      (1,1) logical                                   = false
         ShowLivePlots       (1,1) logical                                   = false
         % Which LUT serves "tone" lookups (and the "filter" lookups anchored to
         % them). "swept_sine" overrides any direct tone calibration whenever
@@ -385,6 +391,7 @@ classdef Engine < handle
         out = aggregate_headroom_(obj, metricsArray) % Aggregate headroom metrics over repeats.
         m = sweep_transfer_rms_(obj, x, y, freqs, fs, band) % Equivalent steady-tone RMS from a swept-sine pair.
         y = trim_response_(obj, y) % Trim trailing response buffer padding.
+        y = demean_response_(obj, y) % Remove the DC offset when DemeanResponse is set.
         cd = commit_cal_data_(obj) % Build calibration output struct.
         reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
         throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.

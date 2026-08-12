@@ -27,6 +27,10 @@ end
 if obj.ShowVoltage
     yyaxis(ax, 'left');
 end
+% show_background may have left this axis on a manual ylim sized to the
+% noise floor; reset it so a run's own data sets the scale instead of
+% clipping against whatever was shown here last.
+ax.YLimMode = 'auto';
 
 render_ribbon_(obj, ax, xd, T, valid);
 

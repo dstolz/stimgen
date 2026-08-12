@@ -41,6 +41,11 @@ specs = { ...
     'click',      'duration',  1e6,  's-', [0.75 0.30 0.10], 'click (\mus)'};
 
 yyaxis(ax, 'left');
+% show_background leaves this axis on a manual ylim sized to the noise
+% floor; without resetting it here, a calibration curve viewed afterward
+% inherits that fixed range and clips against it instead of fitting its
+% own data.
+ax.YLimMode = 'auto';
 allX = [];
 allV = [];
 freqX = [];   % the frequency-keyed LUTs only, for the weighting overlay

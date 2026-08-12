@@ -268,7 +268,7 @@ try
                     freqs(idx(1))/1000, freqs(idx(end))/1000, levelDb);
 
                 response = obj.Adapter.play_and_record(x);
-                response = response(:).';
+                response = obj.demean_response_(response(:).');
                 obj.ResponseSignal = response;
 
                 [lag, atBound] = obj.align_response_(x, response, maxLag);

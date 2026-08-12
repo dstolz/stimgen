@@ -46,12 +46,13 @@ if ~all(resolvable)
     durs = durs(resolvable);
 end
 
-so            = stimgen.ClickTrain;
-so.Fs         = fs;
-so.Duration   = 0.05;
-so.Rate       = 1;
-so.WindowFcn  = "";
-so.OnsetDelay = 0.01;
+% Everything is set at construction, before the listeners attach: the class
+% default ClickDuration (20 us) is less than one sample at the lower TDT
+% rates, so assigning Fs to an already-listening object would fail
+% update_signal -- downgraded under the listener to one warning per property
+% assigned here -- until the first real duration lands.
+so = stimgen.ClickTrain('Fs', fs, 'ClickDuration', durs(1), ...
+    'Duration', 0.05, 'Rate', 1, 'WindowFcn', "", 'OnsetDelay', 0.01);
 
 n          = numel(durs);
 click_data = obj.empty_table_(n);

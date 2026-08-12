@@ -26,9 +26,13 @@ if isempty(y) || fs <= 0
 end
 
 % Created before the traces so it stays behind them without a uistack call,
-% which UIAxes does not reliably support.
+% which UIAxes does not reliably support. That only holds for opaque
+% objects: UIAxes renders alpha-blended patches in a separate compositing
+% pass that lands on top of fully-opaque lines no matter the creation or
+% Children order, so this is drawn as a flat opaque tint (pre-blended
+% against a white background) rather than a translucent overlay.
 hSpan = obj.gobj_('sig_span', @() patch(ax, XData=NaN, YData=NaN, ...
-    FaceColor=[0.20 0.45 0.85], FaceAlpha=0.12, EdgeColor='none', ...
+    FaceColor=[0.90 0.93 0.98], FaceAlpha=1, EdgeColor='none', ...
     HandleVisibility='off'));
 
 [t, yv] = stimgen.calibration.LiveMonitor.envelope_decimate_(y, fs, obj.MaxPoints);
