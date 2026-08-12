@@ -112,9 +112,10 @@ Points needing more than Max Output Voltage are skipped rather than played, and 
 These are not required for basic tone delivery but improve accuracy for specialized stimuli:
 
 - **Calibrate Clicks** — sweep across click durations. Dialog collects a duration vector (in ms) and repeat count. Leave the vector blank for the default octave series from 0.01 ms to 5.12 ms. Any requested duration shorter than one sample at the current sample rate is skipped, and the skipped values are listed in the log.
+- **Test Clicks** — the click counterpart of Test Tones, and worth running for the same reason: clicks are played at the drive voltages the click table asks for and the peak levels that come back are compared to the levels requested. Defaults probe midway between the calibrated durations, at three levels. Short durations at low levels are the first to fall below the SNR floor, and are reported as excluded rather than failed. Stored as `clickTest`. Enabled once a click calibration exists and hardware is attached.
 - **Calibrate Swept Sine** — broadband transfer function measurement. Dialog collects chirp duration and repeat count.
 - **Design Filter** — designs an equalization FIR filter from the tone LUT, or from the swept sine LUT if no tone calibration exists. Requires one of those two calibrations to have already completed. A dialog collects the design options (filter length, design method, interpolation, smoothing, correction limit, band — see [Reference: Filter Design Options](#reference-filter-design-options)), and the result opens in `fvtool`.
-- **Test Calibration** — verifies the calibration empirically, matched to what the filter was designed from. A filter designed from the tone table is tested with actual discrete tones (the same run as Test Tones): tones are played at the drive voltages the lookup table asks for and the levels that come back are compared to the levels requested, stored as `toneTest`. A swept sine design is tested with the sweep: played raw and again through the filter, reporting the ripple of the equalized response against the speaker's own, stored as `filterTest`. Enabled once a filter exists and hardware is attached.
+- **Test Filter** — verifies the equalizer empirically, matched to what the filter was designed from. A filter designed from the tone table is tested with actual discrete tones (the same run as Test Tones): tones are played at the drive voltages the lookup table asks for and the levels that come back are compared to the levels requested, stored as `toneTest`. A swept sine design is tested with the sweep: played raw and again through the filter, reporting the ripple of the equalized response against the speaker's own, stored as `filterTest`. Enabled once a filter exists and hardware is attached.
 
 **Test Tones** (Step 6 above) follows Tone Lookup From Swept Sine, so after switching a rig to the swept sine table, re-run it: the table serving tone lookups has changed, and it is the one that now has to be right.
 
@@ -357,6 +358,15 @@ In `CalibrationGui` this runs from the **Test Tones** button.
 durs = [0.05 0.1 0.2 0.5 1.0] ./ 1000;  % 50 µs to 1 ms
 eng.calibrate_clicks(durs, 3);
 
+% ...and its own closed loop, the click counterpart of test_tones: plays a
+% click at the voltage the LUT asks for and compares the peak level that
+% comes back. Defaults probe midway between the calibrated durations, at
+% NormativeValue and 10/20 dB below it.
+r = eng.test_clicks();                  % also stored in CalibrationData.clickTest
+r = eng.test_clicks([80 240] .* 1e-6, [60 70 80], RepeatCount=2);
+fprintf('worst %.2f dB at %.1f us / %g dB SPL (passed: %d)\n', ...
+    r.max_abs_error_db, r.worst.duration*1e6, r.worst.level_db, r.passed);
+
 % Swept-sine (broadband transfer function, 1-second chirp, 4 averages):
 eng.calibrate_swept_sine(1, [], 4);
 
@@ -397,7 +407,7 @@ measurement is the filter+speaker chain — the transfer function a calibrated s
 actually passes through. Options: `Duration`, `RepeatCount`, `TailDuration`, `NumPoints`,
 and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized response at
 or below which the test is reported passed. In `CalibrationGui` this runs from the
-**Test Calibration** button when the filter was designed from the swept sine; for a
+**Test Filter** button when the filter was designed from the swept sine; for a
 filter designed from the tone table that button runs the discrete-tone LUT test
 (`test_tones`) instead, and `test_filter` stays available programmatically.
 
@@ -563,6 +573,7 @@ otherwise written only by the calibration runs themselves.
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
 | `toneTest` | `test_tones` | struct recording the tone-LUT verification run: the `frequency`-by-`level_db` grid, `lut_source`, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-frequency breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
+| `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 | `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
 

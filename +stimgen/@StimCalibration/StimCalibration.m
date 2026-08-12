@@ -178,6 +178,17 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         end
 
         % ---------------------------------------------------------- %
+        function results = test_clicks(obj, varargin)
+            % results = test_clicks(obj)
+            % results = test_clicks(obj, durs, levels, Name=Value)
+            % Verify the click lookup table: play clicks at the drive voltages
+            % the LUT asks for and compare the levels that come back to the
+            % ones requested. Delegates to Engine, arguments and all; results
+            % are stored in CalibrationData.clickTest.
+            results = obj.Engine.test_clicks(varargin{:});
+        end
+
+        % ---------------------------------------------------------- %
         function load_calibration(obj, ffn)
             % load_calibration(obj)
             % load_calibration(obj, ffn)

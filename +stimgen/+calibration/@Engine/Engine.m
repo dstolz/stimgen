@@ -35,6 +35,8 @@ classdef Engine < handle
     %   toneTest         - struct recording a test_tones verification run, so
     %                      a saved calibration carries the evidence that its
     %                      tone LUT reproduces the levels it promises
+    %   clickTest        - struct recording a test_clicks verification run,
+    %                      the same evidence for the click LUT
     %   background       - struct recording a measure_background capture: the
     %                      noise floor, in band levels and tonal components,
     %                      that the rest of the tables were measured over

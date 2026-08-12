@@ -48,7 +48,7 @@ The `Engine`'s parameters are `SetAccess = protected`, so every setter here rout
 ## Key methods
 
 - `compute_adjusted_voltage(...)` — proxy to the Engine; called by `stimgen.StimType.apply_calibration()` to convert a requested dB SPL level into an output voltage.
-- `design_filter(...)` / `test_filter(...)` / `test_tones(...)` — proxies to `Engine.design_filter`, `Engine.test_filter` and `Engine.test_tones`, arguments and all.
+- `design_filter(...)` / `test_filter(...)` / `test_tones(...)` / `test_clicks(...)` — proxies to `Engine.design_filter`, `Engine.test_filter`, `Engine.test_tones` and `Engine.test_clicks`, arguments and all.
 - `load_calibration(filename)` / `save_calibration(filename)` — read/write `.esgc` files. Called with no argument, each prompts for a file. `load_calibration` replaces the `Engine` outright.
 - `toStruct()` / `saveobj()` / `loadobj(s)` — serialization. `loadobj` rebuilds an offline instance and repopulates it through `Engine.restore(s)`.
 

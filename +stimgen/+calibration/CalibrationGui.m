@@ -109,8 +109,9 @@ classdef CalibrationGui < handle
         BtnClicks
         BtnSweptSine
         BtnTestTones
+        BtnTestClicks
         BtnFilter
-        BtnTestCalibration
+        BtnTestFilter
         BtnStop
         BtnReset
 
@@ -502,16 +503,19 @@ classdef CalibrationGui < handle
         end
 
         function build_verification_section_(obj, g)
-            % Test Tones is ahead of the equalizer: a filter designed on a
-            % table whose levels are wrong inherits that error. Design and its
-            % own verification then share a row, since neither is much use
-            % without the other.
-            obj.BtnTestTones = action_button_(g, 1, [1 2], 'Test Tones', ...
+            % The two lookup-table tests share the top row, each under the
+            % sweep it verifies in the section above. Both are ahead of the
+            % equalizer: a filter designed on a table whose levels are wrong
+            % inherits that error. Design and its own verification then share
+            % the row below, since neither is much use without the other.
+            obj.BtnTestTones = action_button_(g, 1, 1, 'Test Tones', ...
                 'BtnTestTones', @(~,~) obj.on_test_tones_());
+            obj.BtnTestClicks = action_button_(g, 1, 2, 'Test Clicks', ...
+                'BtnTestClicks', @(~,~) obj.on_test_clicks_());
             obj.BtnFilter = action_button_(g, 2, 1, 'Design Filter', ...
                 'BtnFilter', @(~,~) obj.on_design_filter_());
-            obj.BtnTestCalibration = action_button_(g, 2, 2, 'Test Calibration', ...
-                'BtnTestCalibration', @(~,~) obj.on_test_calibration_());
+            obj.BtnTestFilter = action_button_(g, 2, 2, 'Test Filter', ...
+                'BtnTestFilter', @(~,~) obj.on_test_filter_());
         end
 
         function build_display_section_(obj, g)
@@ -958,6 +962,57 @@ classdef CalibrationGui < handle
             end
         end
 
+        function on_test_clicks_(obj)
+            if ~obj.apply_controls_to_engine_()
+                return
+            end
+            obj.with_busy_state_(@() obj.run_test_clicks_(), 'Testing click lookup table...', true);
+        end
+
+        function run_test_clicks_(obj)
+            % Verify the click LUT empirically: Engine.test_clicks plays clicks
+            % at the drive voltages the table asks for and compares the levels
+            % that come back to the ones requested. Stored in
+            % CalibrationData.clickTest by the engine.
+            [durs, levels, repeatCount, wasCancelled] = obj.prompt_click_test_parameters_();
+            if wasCancelled
+                obj.set_status_('Click LUT test cancelled.', false);
+                return
+            end
+
+            % Prompt is in ms; Engine.test_clicks takes seconds. The plots are
+            % deliberately left showing the test's own curve rather than
+            % refreshed back to the committed LUTs -- the measured level
+            % against the requested one is the result.
+            r = obj.Engine.test_clicks(durs ./ 1e3, levels, RepeatCount=repeatCount);
+
+            if r.passed
+                verdict = 'PASS';
+            else
+                verdict = 'FAIL';
+            end
+            msg = sprintf( ...
+                'Click LUT test %s: worst error %.2f dB at %.1f \x00B5s / %g dB SPL, bias %+.2f dB (tolerance %.1f dB).', ...
+                verdict, r.max_abs_error_db, r.worst.duration * 1e6, ...
+                r.worst.level_db, r.bias_db, r.tolerance_db);
+
+            nSkipped = numel(r.skipped.duration);
+            if nSkipped > 0
+                msg = sprintf('%s %d point(s) skipped as unreachable.', msg, nSkipped);
+            end
+            obj.set_status_(msg, ~r.passed);
+
+            if ~r.passed
+                uialert(obj.Figure, sprintf(['%s\n\nLevels are not being reproduced within ' ...
+                    'tolerance. A uniform bias usually means the reference measurement or ' ...
+                    'Normative Value moved since the sweep; errors at scattered durations ' ...
+                    'mean the table is too sparse to interpolate through -- recalibrate ' ...
+                    'clicks with a finer duration list. Very short clicks are the first to ' ...
+                    'fail on SNR, since they put little energy into the room.'], msg), ...
+                    'Click LUT Test Failed', Icon='warning');
+            end
+        end
+
         function on_design_filter_(obj)
             obj.with_busy_state_(@() obj.run_design_filter_(), 'Designing filter...');
         end
@@ -993,7 +1048,7 @@ classdef CalibrationGui < handle
             obj.set_status_(msg, isOverride);
         end
 
-        function on_test_calibration_(obj)
+        function on_test_filter_(obj)
             % Verify the calibration the way it will actually be used. A
             % filter designed from the tone table is checked with real
             % discrete tones -- played at the drive voltages the lookup
@@ -1265,7 +1320,7 @@ classdef CalibrationGui < handle
                 '3b) Optional but recommended: with the calibrator removed and the rig running as it normally does, click "Measure Background" to record the noise floor every later measurement sits on. Nothing is played. The result is plotted as band levels and saved with the calibration; View > Background Noise Analysis brings it back.\n\n', ...
                 '4) Click "Calibrate Tones" (required for tone lookup), or run "Calibrate Swept Sine" and check "Tone Lookup From Swept Sine" to serve tone lookups from the sweep instead (overrides any direct tone calibration while checked).\n\n', ...
                 '5) Click "Test Tones" to check the table: tones are played at the levels the table says to use, and the levels that come back are compared to the ones requested. Do this before trusting the calibration in an experiment.\n\n', ...
-                '6) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine".\n\n', ...
+                '6) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine". A click table gets the same treatment as the tone table -- "Test Clicks" plays clicks at the levels it says to use and reports what came back.\n\n', ...
                 '7) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
                 '8) Save calibration with File > Save .esgc.']);
             uialert(obj.Figure, msg, 'Calibration Quick Start', Icon='info');
@@ -1358,6 +1413,16 @@ classdef CalibrationGui < handle
                 obj.BtnTestTones.Enable = 'off';
             end
 
+            % The click table has no alternative source: only calibrate_clicks
+            % ever writes it, so its own data is the condition.
+            hasClickLut = obj.Engine.IsCalibrated && ...
+                isfield(C, 'click') && ~isempty(C.click);
+            if hasClickLut && hasAdapter
+                obj.BtnTestClicks.Enable = 'on';
+            else
+                obj.BtnTestClicks.Enable = 'off';
+            end
+
             if hasLut
                 obj.BtnFilter.Enable = 'on';
             else
@@ -1369,9 +1434,9 @@ classdef CalibrationGui < handle
             hasFilter = obj.Engine.IsCalibrated && ...
                 isfield(C, 'filter') && ~isempty(C.filter);
             if hasFilter && hasAdapter
-                obj.BtnTestCalibration.Enable = 'on';
+                obj.BtnTestFilter.Enable = 'on';
             else
-                obj.BtnTestCalibration.Enable = 'off';
+                obj.BtnTestFilter.Enable = 'off';
             end
         end
 
@@ -1598,6 +1663,46 @@ classdef CalibrationGui < handle
             obj.set_pref_('toneTestFreqs', char(freqsText));
             obj.set_pref_('toneTestLevels', char(levelsText));
             obj.set_pref_('toneTestRepeats', char(repeatsText));
+            wasCancelled = false;
+        end
+
+        function [durs, levels, repeatCount, wasCancelled] = prompt_click_test_parameters_(obj)
+            % Collect the duration/level grid for the click LUT test. Both
+            % lists default to empty, which hands the choice to
+            % Engine.test_clicks: the midpoints between LUT points, at
+            % NormativeValue and 10/20 dB below it. Durations are in
+            % milliseconds here, as they are for the click sweep itself.
+            dursPref    = obj.get_pref_('clickTestDurationsMs', '');
+            levelsPref  = obj.get_pref_('clickTestLevels', '');
+            repeatsPref = obj.get_pref_('clickTestRepeats', '2');
+
+            prompts = {
+                'Test click durations (ms), e.g. 0.02 0.08 0.32. Leave empty to probe midway between the calibrated durations, where the table is interpolating:', ...
+                'Requested levels (dB SPL), e.g. 50 60 70. Leave empty for the normative value and 10/20 dB below it:', ...
+                'Number of averages (positive integer):'
+            };
+            defaults = {dursPref, levelsPref, repeatsPref};
+            answer = inputdlg(prompts, 'Test Click Lookup Table', [1 90; 1 90; 1 90], defaults);
+
+            if isempty(answer)
+                durs = [];
+                levels = [];
+                repeatCount = 2;
+                wasCancelled = true;
+                return
+            end
+
+            dursText    = strtrim(string(answer{1}));
+            levelsText  = strtrim(string(answer{2}));
+            repeatsText = strtrim(string(answer{3}));
+
+            durs        = obj.parse_numeric_vector_(dursText, 'test click durations');
+            levels      = obj.parse_numeric_vector_(levelsText, 'requested levels');
+            repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
+
+            obj.set_pref_('clickTestDurationsMs', char(dursText));
+            obj.set_pref_('clickTestLevels', char(levelsText));
+            obj.set_pref_('clickTestRepeats', char(repeatsText));
             wasCancelled = false;
         end
 
@@ -1933,8 +2038,9 @@ classdef CalibrationGui < handle
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
                 obj.BtnTestTones.Enable = 'off';
+                obj.BtnTestClicks.Enable = 'off';
                 obj.BtnFilter.Enable = 'off';
-                obj.BtnTestCalibration.Enable = 'off';
+                obj.BtnTestFilter.Enable = 'off';
                 obj.BtnReset.Enable = 'off';
                 if cancellable
                     obj.BtnStop.Enable = 'on';

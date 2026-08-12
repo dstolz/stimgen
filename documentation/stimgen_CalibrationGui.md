@@ -194,7 +194,7 @@ position in one long list:
 |---|---|
 | Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
 | Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
-| Verification & Equalization | Test Tones, then Design Filter beside Test Calibration |
+| Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Footer (pinned) | Stop, Reset Calibration, and the status line |
 
@@ -267,8 +267,9 @@ Recommended sequence:
 5. Test Tones — play tones at the levels the table says to use and check that
    those levels come back. Do this before trusting a calibration in an
    experiment; it is the only step that measures whether the lookup works
-6. Optional: Calibrate Clicks and/or Calibrate Swept Sine
-7. Optional: Design Filter, then Test Calibration to verify it empirically
+6. Optional: Calibrate Clicks and/or Calibrate Swept Sine. A click table earns
+   the same closed loop as the tone table — Test Clicks
+7. Optional: Design Filter, then Test Filter to verify it empirically
 8. Save .esgc
 
 ## Conduction Delay
@@ -432,6 +433,39 @@ run is cancellable with Stop. With live plots on, the transfer panel fills in
 the measured level against frequency one requested level at a time — a correct
 table draws a flat line at the level under test.
 
+## Test Clicks
+
+Test Clicks is the same closed loop on the click calibration: `Engine.test_clicks`
+asks the lookup table what voltage a click of a given duration needs for a given
+dB SPL, plays one click at exactly that voltage, measures its peak the way
+Calibrate Clicks measures one, and reports the difference. The drive voltage comes
+from `compute_adjusted_voltage("click", …)` — the same call
+`StimType.apply_calibration` makes when it scales a `ClickTrain`.
+
+The dialog collects a duration list (in milliseconds, as the click sweep's does),
+a level list, and an average count, all remembered as preferences. Both lists may
+be left empty:
+
+| Field | Empty means | Why |
+|---|---|---|
+| Test click durations (ms) | geometric midpoints between successive LUT durations, at most 10 | The durations the sweep never measured, where `makima` is doing all the work; at the LUT's own durations the interpolant reproduces the measurement by construction |
+| Requested levels (dB SPL) | Normative Value and 10 and 20 dB below it | Checks that level scales as 20·log10 of drive voltage away from `NormativeValue`, not just that one point of the table is right |
+| Number of averages | 2 | A second pass gives the ±1 SD ribbon |
+
+There is no burst schedule and no conduction delay to resolve: a click is brief
+and broadband, so the peak of the record is the peak of the click wherever in the
+record it landed. Durations below one sample at the current rate are dropped with
+a message, the same floor Calibrate Clicks applies; unreachable and
+noise-dominated points are treated exactly as in Test Tones. Expect short
+durations to be the first to fall below the SNR floor at low requested levels —
+they put little energy into the room — and to be reported as excluded rather than
+failed.
+
+The status line reports the verdict, the worst error and the duration it occurred
+at, and the mean bias against the pass tolerance (default 3 dB); the full result
+is stored in `CalibrationData.clickTest`. With live plots on, the transfer panel
+draws measured level against click duration in µs, one requested level at a time.
+
 ## Filter Design Dialog
 
 Design Filter prompts for the equalizer design options before running, and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
@@ -450,13 +484,13 @@ Design Filter prompts for the equalizer design options before running, and remem
 
 **Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
 
-Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Calibration (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
+Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
 
 The status line reports the resulting tap count, correction span and design rate, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
-## Test Calibration
+## Test Filter
 
-Test Calibration verifies the calibration empirically, and which verification runs follows what the filter was designed from (`CalibrationData.filterSource`):
+Test Filter verifies the equalizer empirically, and which verification runs follows what the filter was designed from (`CalibrationData.filterSource`):
 
 - **Filter designed from the tone table** — the button runs the same discrete-tone verification as Test Tones (`Engine.test_tones`): actual tones are played at the drive voltages the lookup table asks for, and the levels that come back are compared to the levels requested. The tone table, not the sweep, is what scales a `Tone` stimulus, so it is the thing to verify. The usual tone-test dialog collects the frequency/level grid, and the result is stored in `CalibrationData.toneTest`.
 - **Filter designed from the swept sine** — the button runs `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified.
@@ -473,10 +507,11 @@ Everything else is left untouched: the attached adapter, the loaded protocol/hos
 
 1. Measure Reference, Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
 2. Test Tones: enabled when tone **or** swept sine calibration data exists **and** an adapter is attached — verification is a live measurement. The condition is deliberately not tone-only: with Tone Lookup From Swept Sine checked, the sweep is the table a `Tone` stimulus is scaled by, so it is the one that has to be verified.
-3. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
-4. Test Calibration: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
-5. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
-6. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
+3. Test Clicks: enabled when click calibration data exists **and** an adapter is attached. Only `calibrate_clicks` ever writes that table, so unlike Test Tones there is no alternative source to account for.
+4. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
+5. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
+6. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
+7. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
 
 ## Runtime Ownership And Independence
 
