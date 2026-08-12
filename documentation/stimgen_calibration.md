@@ -181,6 +181,15 @@ into the lowest analysis bins. It is off by default so an existing rig's numbers
 not change underneath it, and it applies only to what is measured next; nothing
 already in the tables is re-analyzed.
 
+Two things it deliberately does not do. `measure_background` is handed the record
+as acquired either way — its analysis already removes each record's mean and
+reports it as `dc_offset_v`, which demeaning first would zero out — so there only
+the record kept for display follows the setting. And whatever the setting, the
+`LiveUpdate` metrics report both `dc_v` (the offset still in `Response`) and
+`dc_removed_v` (what was taken off it, NaN when nothing was), which
+`LiveMonitor` states in the waveform title so the option's effect is legible
+rather than inferred.
+
 `ShowLivePlots` does not itself draw anything. It gates a `LiveUpdate` event that
 the engine broadcasts for every measurement; attach a
 [`stimgen.calibration.LiveMonitor`](#watching-a-run) to render it, or listen to it
@@ -236,12 +245,28 @@ eng.calibrate_tones(freqs, 3, BurstDuration=0.2, GapDuration=0.1, ...
 The whole sweep is pregenerated as a train of gated tone bursts separated by
 silence and played with **one `play_and_record` per pass**, rather than one
 hardware transaction per frequency. Each burst is then cut back out of the
-recording at its known position — offset by the bulk acquisition delay, which
-is measured once per train by cross-correlating excitation against response —
-and measured spectrally over its steady-state middle. That per-burst estimate
+recording at its known position — offset by the rig's conduction delay — and
+measured spectrally over its steady-state middle. That per-burst estimate
 is the same flat-top periodogram the per-frequency version used, so the LUT
 stays on its original scale and remains directly comparable to the swept-sine
 LUT.
+
+The conduction delay — acoustic propagation from the speaker to the
+microphone plus the converters' round-trip latency, as one bulk offset — is
+measured once at the start of the run by `measure_conduction_delay`: a short
+click train is played and its response is cross-correlated against the
+excitation. A click is the right probe because its autocorrelation is a
+single sharp peak; estimating the delay from the tone train itself (which is
+what earlier versions did, once per train) gives the correlation a
+quasi-periodic ridge to wander along, and every analysis window then lands
+early by the unaccounted delay — visibly including pre-response silence in
+the waveform panel's measured span. The result lands in the engine's
+observable `ConductionDelay` property, is logged with its equivalent air
+path at 343 m/s, and is recorded in the committed table as
+`tone.conduction_delay_s`. If the click response does not stand clearly
+above the record's noise (dead microphone, muted speaker), the measurement
+is stored with `valid=false` and the run falls back to the old per-train
+cross-correlation rather than trusting it.
 
 Bursts are separated in *time*, not in frequency, so the analysis holds for any
 frequency list: adjacent points may sit closer together than their spectral
@@ -263,8 +288,10 @@ Two error paths are specific to this arrangement:
 
 - `stimgen:calibration:Engine:sequenceTooLong` — `MaxSequenceDuration` cannot
   hold even one burst with its gaps.
-- A warning that the response delay reached the search bound, meaning burst
-  segmentation may be misaligned. Increase `GapDuration`.
+- A warning that the conduction delay probe could not be trusted (no click
+  response above the noise, or nothing within the search bound aligns), after
+  which the run falls back to per-train cross-correlation. If the true delay
+  exceeds the bound, increase `GapDuration`.
 
 ### Step 6 — Test The Tone Table
 

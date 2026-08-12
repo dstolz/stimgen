@@ -105,11 +105,26 @@ classdef Engine < handle
         ResponseTHD      (1,1) double = nan
     end
 
+    properties (SetAccess = protected, SetObservable)
+        % Acquisition latency measured by measure_conduction_delay: acoustic
+        % propagation from the speaker to the microphone plus the converters'
+        % round-trip latency, as one bulk delay. Measured with a click probe
+        % at the start of each tone acquisition, and observable so a host GUI
+        % can report it as soon as it lands. Not persisted in a .esgc -- it
+        % describes the rig's geometry at measurement time, not the LUTs --
+        % but the tone tables record the value their windows were cut with.
+        ConductionDelay (1,1) struct = struct( ...
+            'delay_s', nan, 'delay_samples', nan, 'fs', nan, ...
+            'peak_v', nan, 'noise_v', nan, 'corr', nan, ...
+            'at_bound', false, 'valid', false, 'measuredOn', NaT)
+    end
+
     properties (Access = private)
         CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
         Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
+        LastDcRemoved_ (1,1) double = nan  % DC demean_response_ took off the current record; NaN when it took none
     end
 
     properties (Dependent)
@@ -143,6 +158,7 @@ classdef Engine < handle
         set_configuration(obj, options) % Update engine calibration parameters.
         set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
         calibrate_reference(obj) % Measure microphone sensitivity by recording an acoustic calibrator (plays nothing).
+        info = measure_conduction_delay(obj, options) % Measure speaker-to-mic conduction delay with a click probe.
         results = measure_background(obj, duration, repeatCount, options) % Capture and characterize the background with nothing presented.
         calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
@@ -339,6 +355,12 @@ classdef Engine < handle
             m.peak_v   = h.responsePeakV;
             m.rms_v    = sqrt(mean(y .^ 2));
             m.clipping = h.responseClippingLikely;
+
+            % What the record still carries, and what DemeanResponse took off
+            % it. Reported together so the waveform panel can say which of the
+            % two it is showing rather than leaving it to be judged by eye.
+            m.dc_v         = mean(y);
+            m.dc_removed_v = obj.LastDcRemoved_;
         end
 
         function render_engine_state_(obj, reset)

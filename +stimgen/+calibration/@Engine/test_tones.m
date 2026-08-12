@@ -84,6 +84,9 @@ function results = test_tones(obj, freqs, levels, options)
 %                             reason for every point not played
 %     tolerance_db, min_snr_db - the criteria applied
 %     repeat_count, burst_duration, gap_duration - test conditions
+%     conduction_delay_s     - click-probe delay the burst windows were cut
+%                              with; NaN when the probe was unreliable and
+%                              per-train correlation was used instead
 %     passed                - true when every reliable point is within
 %                             ToleranceDb and at least one point was reliable
 %     testedOn              - datetime of the run
@@ -231,6 +234,16 @@ obj.emit_live_("tone_test", "start", 'Table', tbl, 'Total', nF, ...
     'RepeatTotal', nReps, 'Progress', 0, axisMeta{:});
 
 try
+    % Same run-start click probe as calibrate_tones: one conduction delay for
+    % the whole test, so every burst window is cut where the response
+    % actually is rather than where a per-train correlation guessed.
+    delayInfo = obj.measure_conduction_delay(MaxDelay=gapDur);
+    if ~delayInfo.valid
+        stimgen.util.vprintf(0, 1, ...
+            ['Falling back to per-train cross-correlation for burst ' ...
+             'segmentation; analysis windows may include pre-response samples.']);
+    end
+
     for li = 1:nL
         levelDb = levels(li);
 
@@ -271,11 +284,15 @@ try
                 response = obj.demean_response_(response(:).');
                 obj.ResponseSignal = response;
 
-                [lag, atBound] = obj.align_response_(x, response, maxLag);
-                if atBound
-                    stimgen.util.vprintf(0, 1, ...
-                        ['Response delay reached the %.1f ms search bound; burst ' ...
-                         'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
+                if delayInfo.valid
+                    lag = delayInfo.delay_samples;
+                else
+                    [lag, atBound] = obj.align_response_(x, response, maxLag);
+                    if atBound
+                        stimgen.util.vprintf(0, 1, ...
+                            ['Response delay reached the %.1f ms search bound; burst ' ...
+                             'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
+                    end
                 end
 
                 for k = 1:numel(idx)
@@ -387,6 +404,12 @@ end
 results.worst = worst_point_(freqs, levels, error_db, reliable);
 
 results.skipped        = skipped;
+% NaN records that the windows were cut by per-train correlation instead.
+if delayInfo.valid
+    results.conduction_delay_s = delayInfo.delay_s;
+else
+    results.conduction_delay_s = nan;
+end
 results.tolerance_db   = options.ToleranceDb;
 results.min_snr_db     = options.MinSnrDb;
 results.repeat_count   = nReps;

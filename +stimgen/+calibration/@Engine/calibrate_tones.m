@@ -10,10 +10,13 @@ function calibrate_tones(obj, freqs, repeatCount, options)
 % The sweep is pregenerated as one train of gated tone bursts separated by
 % silence and played with a single play_and_record per repeat, instead of one
 % hardware transaction per frequency. Each burst is then recovered from the
-% recording at its known position -- offset by the bulk acquisition delay,
-% measured once per train by cross-correlation -- and measured spectrally
-% over its steady-state middle with the same flat-top periodogram estimate
-% the per-frequency version used, so the LUT stays on its original scale.
+% recording at its known position -- offset by the rig's conduction delay,
+% measured once at the start of the run with a click probe (see
+% measure_conduction_delay) -- and measured spectrally over its steady-state
+% middle with the same flat-top periodogram estimate the per-frequency
+% version used, so the LUT stays on its original scale. If the click probe
+% cannot be trusted (no response above the noise), the delay falls back to a
+% per-train cross-correlation.
 %
 % Because the bursts are separated in time rather than in frequency, the
 % analysis holds for any frequency list: adjacent points may sit closer
@@ -96,6 +99,20 @@ obj.emit_live_("tone", "start", 'Table', tone_data, 'Total', n, ...
     'RepeatTotal', repeatCount, axisMeta{:});
 
 try
+    % One click-probe latency measurement for the whole run: the delay is a
+    % property of the rig -- speaker-to-mic distance plus converter latency
+    % -- so it is measured once here rather than re-estimated from every
+    % train, where a tonal record gives the cross-correlation a
+    % quasi-periodic ridge to wander along and the analysis window lands
+    % early by exactly the unaccounted delay. GapDuration bounds the search
+    % because it is the largest delay the segmentation can absorb.
+    delayInfo = obj.measure_conduction_delay(MaxDelay=gapDur);
+    if ~delayInfo.valid
+        stimgen.util.vprintf(0, 1, ...
+            ['Falling back to per-train cross-correlation for burst ' ...
+             'segmentation; analysis windows may include pre-response samples.']);
+    end
+
     trainStarts = 1:burstsPerTrain:n;
     for b = 1:numel(trainStarts)
         obj.throw_if_cancelled_();
@@ -115,14 +132,18 @@ try
             response = obj.demean_response_(response(:).');
             obj.ResponseSignal = response;
 
-            [lag, atBound] = obj.align_response_(x, response, maxLag);
-            if atBound
-                stimgen.util.vprintf(0, 1, ...
-                    ['Response delay reached the %.1f ms search bound; burst ' ...
-                     'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
+            if delayInfo.valid
+                lag = delayInfo.delay_samples;
+            else
+                [lag, atBound] = obj.align_response_(x, response, maxLag);
+                if atBound
+                    stimgen.util.vprintf(0, 1, ...
+                        ['Response delay reached the %.1f ms search bound; burst ' ...
+                         'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
+                end
+                stimgen.util.vprintf(2, 'Train %d rep %d: acquisition delay %.2f ms', ...
+                    b, rep, lag / fs * 1e3);
             end
-            stimgen.util.vprintf(2, 'Train %d rep %d: acquisition delay %.2f ms', ...
-                b, rep, lag / fs * 1e3);
 
             for k = 1:numel(idx)
                 obj.throw_if_cancelled_();
@@ -192,6 +213,12 @@ catch ME
 end
 
 % Commit only on full success.
+% NaN records that the windows were cut by per-train correlation instead.
+if delayInfo.valid
+    conductionDelayS = delayInfo.delay_s;
+else
+    conductionDelayS = nan;
+end
 cd_out = obj.commit_cal_data_();
 toneSensitivity = tone_data.spl_db(:) - 20*log10(max(obj.ExcitationVoltage, eps));
 toneRepeatability = obj.repeatability_stats_(toneMeasAll);
@@ -213,6 +240,7 @@ cd_out.tone = struct( ...
     'voltage',     tone_data.voltage(:), ...
     'burst_duration', burstDur, ...
     'gap_duration',   gapDur, ...
+    'conduction_delay_s', conductionDelayS, ...
     'metrics', struct( ...
         'frequency_response_hz', freqs(:), ...
         'frequency_response_db_spl', tone_data.spl_db(:), ...

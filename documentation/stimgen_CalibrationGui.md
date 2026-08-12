@@ -225,6 +225,30 @@ Recommended sequence:
 7. Optional: Design Filter, then Test Calibration to verify it empirically
 8. Save .esgc
 
+## Conduction Delay
+
+The Conduction Delay row (below Hardware Sample Rate) reports the rig's
+speaker-to-microphone delay: acoustic propagation plus the converters'
+round-trip latency, as one bulk offset. It is measured automatically at the
+start of every Calibrate Tones and Test Tones run by
+[`Engine.measure_conduction_delay`](stimgen_calibration.md#step-5--calibrate-tones)
+— a brief click train is played and its response latency is read by
+cross-correlation against the excitation — and every burst analysis window in
+that run is shifted by the result, so levels are measured over the response
+rather than over the silence before it arrives.
+
+The readout shows the delay in milliseconds with its equivalent air path at
+343 m/s as a sanity check: a value far from the actual microphone distance
+means converter latency dominates, which is normal for some devices but worth
+knowing. It updates the moment the probe lands (the GUI listens to the
+engine's observable `ConductionDelay` property), not when the run finishes.
+**Measurement unreliable** in red means the click response was not clearly
+above the noise or could not be aligned within the search bound
+(`GapDuration`); the run then falls back to per-train cross-correlation and
+the analysis windows may include pre-response samples. `Not measured` simply
+means no tone run has happened yet — clicks and swept sine runs do not probe,
+because neither cuts per-burst windows.
+
 ## Demean Acquired Signal
 
 The Demean Acquired Signal checkbox sets `Engine.DemeanResponse`. With it checked, the mean is subtracted from every record the engine acquires before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
@@ -233,9 +257,10 @@ Check it when the input stage carries a DC offset. An offset adds to the measure
 
 Semantics to be aware of:
 
-- **It applies to what is measured next, not to what is already stored.** Existing tables are not re-analyzed, so a table measured with it off and one measured with it on should not be mixed.
+- **It applies to what is measured next, not to what is already stored.** Checking the box does not re-analyze or redraw the record already on the waveform panel; re-run the measurement. Existing tables are not re-analyzed either, so a table measured with it off and one measured with it on should not be mixed.
+- **The waveform panel title says which of the two you are looking at**, so the setting's effect does not have to be judged by eye: `DC removed 12.34 mV` whenever the option acted on the record, and `DC 12.34 mV` when an offset is still there and is worth more than 1% of the peak — the reading that tells you the option is worth turning on. Neither clause appears when the record is centered and nothing was removed.
 - The mean is removed *after* the trailing buffer padding is trimmed, so trimming still sees the zeros that mark the padding.
-- Background capture demeans after its all-zero test, so a stuck-DC input is still reported as a stuck input rather than as a disconnected one.
+- Measure Background is the one step it does not change the analysis of. That analysis already removes each record's mean and reports it as `dc_offset_v` acquisition health, so it is handed the record as acquired whatever this setting says — demeaning first would turn its own DC-offset reading into zero. Only the displayed record follows the option.
 - Like the other parameters it reaches the engine when a run is started, and it is persisted in the `.esgc` file, so a loaded calibration records how its records were conditioned.
 
 ## Tone Lookup From Swept Sine

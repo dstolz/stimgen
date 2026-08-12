@@ -234,6 +234,7 @@ classdef LiveMonitor < handle
             % Human-readable name for a run stage.
             switch stage
                 case "tone",       s = 'Tone sweep';
+                case "latency",    s = 'Conduction delay';
                 case "click",      s = 'Click sweep';
                 case "swept_sine", s = 'Swept sine';
                 case "filter_test", s = 'Filter test';

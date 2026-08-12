@@ -128,13 +128,13 @@ try
                  'supply, and the input channel the adapter is reading.']);
         end
 
-        % After the all-zero test, not before: a stuck DC record demeans to
-        % zeros, and it should be reported as the stuck input it is rather
-        % than as a disconnected one.
-        y = obj.demean_response_(y);
-
+        % The analysis gets the record as acquired whatever DemeanResponse
+        % says: analyze_background_ removes each record's mean itself, and
+        % reports it as dc_offset_v -- an acquisition-health number that
+        % demeaning first would silently turn into zero. The displayed copy
+        % follows the option, so the panel shows what was analyzed.
         records{rep} = y;
-        obj.ResponseSignal = y;
+        obj.ResponseSignal = obj.demean_response_(y);
 
         % The last slot of the progress bar belongs to the analysis, which runs
         % once over every record and is not free at high sample rates.

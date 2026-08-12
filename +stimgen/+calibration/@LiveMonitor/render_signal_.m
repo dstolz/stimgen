@@ -74,20 +74,84 @@ end
 [tSpan, ySpan] = span_patch_(d, fs, yl);
 set(hSpan, XData=tSpan, YData=ySpan);
 
+% Forced every frame rather than trusted to creation order: this axis is
+% shared across a whole session, and a reference or background measurement
+% run earlier creates sig_resp with no excitation data at all. The first
+% time a real excitation ghost exists to draw -- once an actual calibration
+% run starts -- sig_exc is created fresh at that point, after sig_resp
+% already exists, which would otherwise leave the ghost sitting in front of
+% the response it is meant to sit behind.
+frontToBack = gobjects(0);
+for key = ["sig_clip", "sig_resp", "sig_exc", "sig_span"]
+    if obj.has_(key)
+        frontToBack(end+1) = obj.H_.(key); %#ok<AGROW>
+    end
+end
+restack_(ax, frontToBack);
+
 ylim(ax, [-yl yl]);
 xlim(ax, [t(1) max(t(end), t(1) + eps)]);
 grid(ax, 'on');
 xlabel(ax, 'time (ms)');
 ylabel(ax, 'volts');
 
+dcTxt = dc_text_(d.Metrics, peak);
+
 if d.Metrics.clipping
-    title(ax, sprintf('Response  \\bfCLIPPING\\rm  |  peak %.3f V, RMS %.3f V', peak, rms_), ...
-        Color=[0.75 0 0]);
+    title(ax, sprintf('Response  \\bfCLIPPING\\rm  |  peak %.3f V, RMS %.3f V%s', ...
+        peak, rms_, dcTxt), Color=[0.75 0 0]);
 else
     headroomDb = 20 * log10(max(fsv, eps) / max(peak, eps));
-    title(ax, sprintf('Response  |  peak %.3f V (%.1f dB headroom), RMS %.3f V', ...
-        peak, headroomDb, rms_), Color=[0 0 0]);
+    title(ax, sprintf('Response  |  peak %.3f V (%.1f dB headroom), RMS %.3f V%s', ...
+        peak, headroomDb, rms_, dcTxt), Color=[0 0 0]);
 end
+end
+
+% ------------------------------------------------------------------------ %
+function s = dc_text_(m, peak)
+% Title clause for the record's DC offset. Two different things are worth
+% saying, and only one of them at a time:
+%
+%   removed  - the demean option acted on this record. Stated whenever it
+%              did, however small the offset, because the question it answers
+%              is "did the setting take effect", not "is the offset large".
+%   present  - the record still carries an offset, and it is big enough to
+%              matter (1% of peak). This is the reading that tells you the
+%              option is worth turning on.
+if isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
+    s = sprintf(', DC removed %s', volt_text_(m.dc_removed_v));
+elseif isfield(m, 'dc_v') && isfinite(m.dc_v) && abs(m.dc_v) > 0.01 * max(peak, eps)
+    s = sprintf(', DC %s', volt_text_(m.dc_v));
+else
+    s = '';
+end
+end
+
+% ------------------------------------------------------------------------ %
+function s = volt_text_(v)
+% Volts in the unit that reads without leading zeros at this scale.
+if abs(v) < 0.1
+    s = sprintf('%.2f mV', v * 1e3);
+else
+    s = sprintf('%.3f V', v);
+end
+end
+
+% ------------------------------------------------------------------------ %
+function restack_(ax, frontToBack)
+% restack_(ax, frontToBack)
+% Force ax.Children into the given front-to-back order (frontToBack(1) ends
+% up on top). ax.Children lists the most recently created/modified object
+% first, so setting it directly is the reliable substitute for creation
+% order here -- uistack does not work reliably on UIAxes, which is exactly
+% why this panel tried to lean on creation order in the first place.
+frontToBack = frontToBack(isgraphics(frontToBack));
+if isempty(frontToBack)
+    return
+end
+kids = ax.Children;
+rest = kids(~ismember(kids, frontToBack));
+ax.Children = [frontToBack(:); rest(:)];
 end
 
 % ------------------------------------------------------------------------ %

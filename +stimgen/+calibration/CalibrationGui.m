@@ -80,7 +80,14 @@ classdef CalibrationGui < handle
         TransferLogXCheck
         ToneSweptSineCheck
         SampleRateLabel
+        ConductionDelayLabel
         StatusLabel
+
+        % Listener on the engine's ConductionDelay property, so the readout
+        % updates the moment the run-start click probe lands rather than
+        % waiting for the run to finish. Rebound whenever the engine is
+        % swapped (run_load_).
+        DelayListener_
 
         % Buttons
         BtnReference
@@ -123,6 +130,7 @@ classdef CalibrationGui < handle
             obj.Host   = host;
 
             obj.build_ui_();
+            obj.bind_engine_listeners_();
             obj.sync_controls_();
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
@@ -145,6 +153,9 @@ classdef CalibrationGui < handle
             if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
                 delete(obj.Monitor);
             end
+            % Same reason: the engine must not keep calling back into a
+            % label that died with the figure.
+            delete(obj.DelayListener_);
         end
 
         function set_adapter(obj, adapter)
@@ -277,8 +288,8 @@ classdef CalibrationGui < handle
             panel.Layout.Row = 1;
             panel.Layout.Column = 1;
 
-            g = uigridlayout(panel, [23 2]);
-            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
+            g = uigridlayout(panel, [24 2]);
+            g.RowHeight = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 24, '1x'};
             g.ColumnWidth = {'1x', '1x'};
             g.Scrollable = 'on';
 
@@ -344,45 +355,57 @@ classdef CalibrationGui < handle
             obj.SampleRateLabel.Layout.Row = 7;
             obj.SampleRateLabel.Layout.Column = 2;
 
+            % Measured by the click probe at the start of every tone
+            % acquisition; sits with the other hardware facts because it is
+            % one -- speaker-to-mic distance plus converter latency.
+            conductionDelayCaption = uilabel(g, Text='Conduction Delay', HorizontalAlignment='right');
+            conductionDelayCaption.Layout.Row = 8;
+            conductionDelayCaption.Layout.Column = 1;
+            obj.ConductionDelayLabel = uilabel(g, Text='Not measured', HorizontalAlignment='left');
+            obj.ConductionDelayLabel.Layout.Row = 8;
+            obj.ConductionDelayLabel.Layout.Column = 2;
+            obj.ConductionDelayLabel.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ConductionDelay');
+            conductionDelayCaption.Tooltip = obj.ConductionDelayLabel.Tooltip;
+
             % An acquisition setting, so it sits with the hardware rows rather
             % than with the display toggles below: it changes the numbers that
             % go into the table, not how they are drawn.
             demeanLabel = uilabel(g, Text='Demean Acquired Signal', HorizontalAlignment='right');
-            demeanLabel.Layout.Row = 8;
+            demeanLabel.Layout.Row = 9;
             demeanLabel.Layout.Column = 1;
             obj.DemeanCheck = uicheckbox(g, Text='');
-            obj.DemeanCheck.Layout.Row = 8;
+            obj.DemeanCheck.Layout.Row = 9;
             obj.DemeanCheck.Layout.Column = 2;
             obj.DemeanCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'DemeanResponse');
 
             showPlotsLabel = uilabel(g, Text='Show Engine Live Plots', HorizontalAlignment='right');
-            showPlotsLabel.Layout.Row = 9;
+            showPlotsLabel.Layout.Row = 10;
             showPlotsLabel.Layout.Column = 1;
             obj.ShowLivePlotsCheck = uicheckbox(g, Text='');
-            obj.ShowLivePlotsCheck.Layout.Row = 9;
+            obj.ShowLivePlotsCheck.Layout.Row = 10;
             obj.ShowLivePlotsCheck.Layout.Column = 2;
             obj.ShowLivePlotsCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ShowLivePlots');
 
             transferLogXLabel = uilabel(g, Text='Transfer Plot Log X-Axis', HorizontalAlignment='right');
-            transferLogXLabel.Layout.Row = 10;
+            transferLogXLabel.Layout.Row = 11;
             transferLogXLabel.Layout.Column = 1;
             obj.TransferLogXCheck = uicheckbox(g, Text='', Value=true, ...
                 ValueChangedFcn=@(~,~) obj.on_transfer_log_x_());
-            obj.TransferLogXCheck.Layout.Row = 10;
+            obj.TransferLogXCheck.Layout.Row = 11;
             obj.TransferLogXCheck.Layout.Column = 2;
 
             toneSweptLabel = uilabel(g, Text='Tone Lookup From Swept Sine', HorizontalAlignment='right');
-            toneSweptLabel.Layout.Row = 11;
+            toneSweptLabel.Layout.Row = 12;
             toneSweptLabel.Layout.Column = 1;
             obj.ToneSweptSineCheck = uicheckbox(g, Text='', ...
                 ValueChangedFcn=@(~,~) obj.on_tone_lut_source_());
-            obj.ToneSweptSineCheck.Layout.Row = 11;
+            obj.ToneSweptSineCheck.Layout.Row = 12;
             obj.ToneSweptSineCheck.Layout.Column = 2;
             obj.ToneSweptSineCheck.Tooltip = stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine');
 
             obj.BtnReference = uibutton(g, Text='Measure Reference', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_reference_());
-            obj.BtnReference.Layout.Row = 12;
+            obj.BtnReference.Layout.Row = 13;
             obj.BtnReference.Layout.Column = [1 2];
             obj.BtnReference.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReference');
 
@@ -391,25 +414,25 @@ classdef CalibrationGui < handle
             % once the reference has set the scale it is read on.
             obj.BtnBackground = uibutton(g, Text='Measure Background', ...
                 ButtonPushedFcn=@(~,~) obj.on_measure_background_());
-            obj.BtnBackground.Layout.Row = 13;
+            obj.BtnBackground.Layout.Row = 14;
             obj.BtnBackground.Layout.Column = [1 2];
             obj.BtnBackground.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnBackground');
 
             obj.BtnTones = uibutton(g, Text='Calibrate Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_tones_());
-            obj.BtnTones.Layout.Row = 14;
+            obj.BtnTones.Layout.Row = 15;
             obj.BtnTones.Layout.Column = [1 2];
             obj.BtnTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTones');
 
             obj.BtnClicks = uibutton(g, Text='Calibrate Clicks', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_clicks_());
-            obj.BtnClicks.Layout.Row = 15;
+            obj.BtnClicks.Layout.Row = 16;
             obj.BtnClicks.Layout.Column = [1 2];
             obj.BtnClicks.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnClicks');
 
             obj.BtnSweptSine = uibutton(g, Text='Calibrate Swept Sine', ...
                 ButtonPushedFcn=@(~,~) obj.on_calibrate_swept_sine_());
-            obj.BtnSweptSine.Layout.Row = 16;
+            obj.BtnSweptSine.Layout.Row = 17;
             obj.BtnSweptSine.Layout.Column = [1 2];
             obj.BtnSweptSine.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnSweptSine');
 
@@ -418,19 +441,19 @@ classdef CalibrationGui < handle
             % wrong inherits that error.
             obj.BtnTestTones = uibutton(g, Text='Test Tones', ...
                 ButtonPushedFcn=@(~,~) obj.on_test_tones_());
-            obj.BtnTestTones.Layout.Row = 17;
+            obj.BtnTestTones.Layout.Row = 18;
             obj.BtnTestTones.Layout.Column = [1 2];
             obj.BtnTestTones.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestTones');
 
             obj.BtnFilter = uibutton(g, Text='Design Filter', ...
                 ButtonPushedFcn=@(~,~) obj.on_design_filter_());
-            obj.BtnFilter.Layout.Row = 18;
+            obj.BtnFilter.Layout.Row = 19;
             obj.BtnFilter.Layout.Column = [1 2];
             obj.BtnFilter.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnFilter');
 
             obj.BtnTestCalibration = uibutton(g, Text='Test Calibration', ...
                 ButtonPushedFcn=@(~,~) obj.on_test_calibration_());
-            obj.BtnTestCalibration.Layout.Row = 19;
+            obj.BtnTestCalibration.Layout.Row = 20;
             obj.BtnTestCalibration.Layout.Column = [1 2];
             obj.BtnTestCalibration.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnTestCalibration');
 
@@ -438,18 +461,18 @@ classdef CalibrationGui < handle
                 BackgroundColor=[0.7 0.15 0.15], FontColor=[1 1 1], ...
                 Enable='off', ...
                 ButtonPushedFcn=@(~,~) obj.on_stop_());
-            obj.BtnStop.Layout.Row = 20;
+            obj.BtnStop.Layout.Row = 21;
             obj.BtnStop.Layout.Column = [1 2];
             obj.BtnStop.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnStop');
 
             obj.BtnReset = uibutton(g, Text='Reset Calibration', ...
                 ButtonPushedFcn=@(~,~) obj.on_reset_calibration_());
-            obj.BtnReset.Layout.Row = 21;
+            obj.BtnReset.Layout.Row = 22;
             obj.BtnReset.Layout.Column = [1 2];
             obj.BtnReset.Tooltip = stimgen.util.tooltip('CalibrationGui', 'BtnReset');
 
             obj.StatusLabel = uilabel(g, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 22;
+            obj.StatusLabel.Layout.Row = 23;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -972,8 +995,10 @@ classdef CalibrationGui < handle
             obj.Engine = eng;
             % The monitor follows an engine, not this object; a load that
             % swaps the engine has to move it across or it would keep
-            % rendering the discarded one.
+            % rendering the discarded one. The delay listener follows the
+            % engine the same way.
             obj.Monitor.attach(eng);
+            obj.bind_engine_listeners_();
             obj.sync_controls_();
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
@@ -1213,6 +1238,7 @@ classdef CalibrationGui < handle
 
         function update_runtime_state_(obj)
             obj.refresh_sample_rate_label_();
+            obj.refresh_conduction_delay_label_();
 
             obj.update_background_menu_();
 
@@ -1262,6 +1288,37 @@ classdef CalibrationGui < handle
             else
                 obj.BtnTestCalibration.Enable = 'off';
             end
+        end
+
+        function bind_engine_listeners_(obj)
+            % Follow the current engine's ConductionDelay property. The click
+            % probe fires at the start of a run, while this window sits in
+            % with_busy_state_ showing only "Running tone calibration...", so
+            % without the listener the delay would not be seen until the run
+            % finished.
+            delete(obj.DelayListener_);
+            obj.DelayListener_ = addlistener(obj.Engine, 'ConductionDelay', ...
+                'PostSet', @(~,~) obj.refresh_conduction_delay_label_());
+        end
+
+        function refresh_conduction_delay_label_(obj)
+            % Speaker-to-mic delay from the run-start click probe. The
+            % equivalent air path at 343 m/s is the sanity check -- a reading
+            % far from the actual mic distance means converter latency
+            % dominates, or the probe locked onto the wrong thing.
+            d = obj.Engine.ConductionDelay;
+            if d.valid
+                txt = sprintf('%.2f ms  (~%.2f m at 343 m/s)', ...
+                    d.delay_s * 1e3, d.delay_s * 343);
+                obj.ConductionDelayLabel.FontColor = [0 0 0];
+            elseif d.at_bound || isfinite(d.delay_s)
+                txt = 'Measurement unreliable';
+                obj.ConductionDelayLabel.FontColor = [0.7 0 0];
+            else
+                txt = 'Not measured';
+                obj.ConductionDelayLabel.FontColor = [0 0 0];
+            end
+            obj.ConductionDelayLabel.Text = txt;
         end
 
         function refresh_sample_rate_label_(obj)

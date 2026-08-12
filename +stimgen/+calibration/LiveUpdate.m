@@ -9,8 +9,9 @@ classdef LiveUpdate < event.EventData
     % can log or forward the stream instead of plotting it.
     %
     % Properties:
-    %   Stage        - "reference" | "background" | "tone" | "click" |
-    %                  "swept_sine" | "tone_test" | "filter_test" | "manual"
+    %   Stage        - "reference" | "background" | "latency" | "tone" |
+    %                  "click" | "swept_sine" | "tone_test" | "filter_test" |
+    %                  "manual"
     %   Phase        - "start" | "measure" | "done"
     %   Fs           - sample rate of Excitation/Response (Hz)
     %   Excitation   - excitation waveform sent to the hardware (V)
@@ -28,7 +29,9 @@ classdef LiveUpdate < event.EventData
     %   Repeat/RepeatTotal - pass being measured, and how many there are
     %   Progress     - fraction of the whole run complete, 0..1
     %   Elapsed      - seconds since the run started
-    %   Metrics      - scalars for the current measurement (see default_metrics)
+    %   Metrics      - scalars for the current measurement (see default_metrics).
+    %                  dc_v is the offset still in Response; dc_removed_v is the
+    %                  offset DemeanResponse took off it, NaN when it took none
     %   Context      - engine parameters needed to interpret the data
     %                  (see default_context)
     %
@@ -134,6 +137,8 @@ classdef LiveUpdate < event.EventData
                 'h3_db',          nan, ...
                 'peak_v',         nan, ...
                 'rms_v',          nan, ...
+                'dc_v',           nan, ...
+                'dc_removed_v',   nan, ...
                 'full_scale_v',   nan, ...
                 'clipping',       false);
         end
