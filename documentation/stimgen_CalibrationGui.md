@@ -1,6 +1,6 @@
 # stimgen.calibration.CalibrationGui
 
-![CalibrationGui in offline mode: the controls column on the left split into Microphone Reference, Hardware, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer](images/CalibrationGui.png)
+![CalibrationGui in offline mode: the controls column on the left split into Microphone Reference, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer](images/CalibrationGui.png)
 
 Source file: +stimgen/+calibration/CalibrationGui.m  
 Related reference: [stimgen_calibration.md](stimgen_calibration.md)
@@ -193,7 +193,6 @@ position in one long list:
 | Section | Contents |
 |---|---|
 | Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
-| Hardware | Sample Rate and Conduction Delay (read-only, reported by the adapter), Max Output Voltage, AC Couple Acquired Signal and its corner |
 | Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones, then Design Filter beside Test Calibration |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
@@ -206,6 +205,25 @@ for the test verdicts and background summaries that are wider than the column.
 
 The remaining display options — spectrum y-axis unit and weighting overlays —
 are checkable items on the **View** menu rather than controls in this column.
+
+Rig facts and acquisition settings live in their own window, opened from
+**Hardware > Hardware Settings...**: the Sample Rate and Conduction Delay
+readouts (read-only, reported by the adapter), Max Output Voltage, and AC
+Couple Acquired Signal. They are set once per rig, not once per sweep, so
+they earn a window over a place in the per-sweep column. The window is
+non-modal and may stay open during a run — the Conduction Delay readout
+updates live as each acquisition's probe lands. Its two settings push to the
+engine the moment they change, rather than when the next run starts, since
+the window may be closed by then.
+
+Every field and toggle in this column, the Hardware Settings window's two
+settings, and the View menu's spectrum unit and
+weighting overlays, are remembered across MATLAB sessions as
+`StimCalibrationGui` preferences. They are written when the window closes and
+after each successful measurement start, and reapplied the next time the
+window opens — per field, and only where the engine still holds its factory
+default, so settings carried by a supplied engine, or by a loaded or
+in-progress calibration, always win over remembered ones.
 
 ## GUI Menu Workflow (Current)
 
@@ -222,6 +240,10 @@ File menu actions:
 A toolbar above the plots mirrors the five non-submenu actions as icon buttons
 (built by `build_toolbar_`) for one-click access; it does not add any behavior
 beyond the File menu.
+
+The **Hardware** menu holds one item, **Hardware Settings...**, which opens
+the [hardware window](#controls-layout) described above (reopening it when it
+already exists brings it forward rather than making another).
 
 Recent Protocols and Recent Calibrations each list up to nine most-recently-used
 paths (newest first), persisted across MATLAB sessions as `StimCalibrationGui`
@@ -251,7 +273,8 @@ Recommended sequence:
 
 ## Conduction Delay
 
-The Conduction Delay row (below Sample Rate, in the Hardware section) reports the rig's
+The Conduction Delay row (below Sample Rate, in the Hardware > Hardware
+Settings... window) reports the rig's
 speaker-to-microphone delay: acoustic propagation plus the converters'
 round-trip latency, as one bulk offset. During every Calibrate Tones and
 Test Tones run it is measured separately for each acquisition, from a brief
@@ -265,8 +288,9 @@ rather than over the silence before it arrives.
 The readout shows the delay in milliseconds with its equivalent air path at
 343 m/s as a sanity check: a value far from the actual microphone distance
 means converter latency dominates, which is normal for some devices but worth
-knowing. It updates as each acquisition's probe lands (the GUI listens to the
-engine's observable `ConductionDelay` property), not when the run finishes.
+knowing. While the window is open it updates as each acquisition's probe lands
+(the GUI listens to the engine's observable `ConductionDelay` property), not
+when the run finishes; opened after a run, it shows the last measured value.
 **Measurement unreliable** in red means the last record's click response was
 not clearly above the noise or could not be aligned within the search bound
 (`GapDuration`); that record then falls back to whole-record
@@ -276,7 +300,7 @@ sine runs do not probe, because neither cuts per-burst windows.
 
 ## AC Couple Acquired Signal
 
-The AC Couple Acquired Signal checkbox sets `Engine.AcCoupleResponse`. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
+The AC Couple Acquired Signal checkbox (in the Hardware > Hardware Settings... window) sets `Engine.AcCoupleResponse` the moment it changes. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
 
 Check it when the input stage carries a DC offset or a wandering baseline. Either adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts low-frequency energy in the spectrum that leaks into the lowest analysis bins. Drift is the case a plain mean subtraction cannot reach: wander over a record averages to nearly nothing, so subtracting the mean leaves it entirely in place.
 

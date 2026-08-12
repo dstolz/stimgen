@@ -10,6 +10,12 @@ classdef CalibrationGui < handle
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
+    % Settings are remembered across MATLAB sessions as StimCalibrationGui
+    % preferences: the controls-column fields and toggles, the View menu's
+    % spectrum unit and weighting overlays, and the per-dialog measurement
+    % parameters. Values carried by a supplied engine, or by a loaded or
+    % in-progress calibration, always take precedence over remembered ones.
+    %
     % All drawing is done by a stimgen.calibration.LiveMonitor attached to this
     % window's axes: during a run it renders the engine's LiveUpdate stream
     % (gated by the Show Engine Live Plots checkbox), and between runs the same
@@ -74,14 +80,21 @@ classdef CalibrationGui < handle
         MicSensField
         NormativeField
         ExcitationField
-        MaxOutputField
-        AcCoupleCheck
         ShowLivePlotsCheck
         TransferLogXCheck
         ToneSweptSineCheck
+        StatusLabel
+
+        % Hardware Settings window (Hardware > Hardware Settings...). Created
+        % on demand, so these handles are empty until it is first opened and
+        % dead once it is closed -- everything that writes them guards on
+        % validity. The settings themselves live on the Engine; the window is
+        % only a view of them.
+        HardwareDialog_
+        MaxOutputField
+        AcCoupleCheck
         SampleRateLabel
         ConductionDelayLabel
-        StatusLabel
 
         % Listener on the engine's ConductionDelay property, so the readout
         % updates the moment the run-start click probe lands rather than
@@ -130,6 +143,7 @@ classdef CalibrationGui < handle
             obj.Host   = host;
 
             obj.build_ui_();
+            obj.restore_settings_prefs_();
             obj.bind_engine_listeners_();
             obj.sync_controls_();
             obj.refresh_all_plots_();
@@ -156,6 +170,11 @@ classdef CalibrationGui < handle
             % Same reason: the engine must not keep calling back into a
             % label that died with the figure.
             delete(obj.DelayListener_);
+            % The Hardware Settings window is owned by this object, not by
+            % the main figure, so it does not die with either on its own.
+            if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
+                delete(obj.HardwareDialog_);
+            end
         end
 
         function set_adapter(obj, adapter)
@@ -278,6 +297,14 @@ classdef CalibrationGui < handle
                     MenuSelectedFcn=@(src,~) obj.on_spectrum_units_(src));
             end
 
+            % Rig facts and acquisition settings live in their own window
+            % rather than the controls column: they are set once per rig, not
+            % once per sweep, and the column reads better carrying only the
+            % per-sweep workflow.
+            hwMenu = uimenu(obj.Figure, Text='Hardware');
+            uimenu(hwMenu, Text='Hardware Settings...', ...
+                MenuSelectedFcn=@(~,~) obj.on_hardware_settings_());
+
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start', ...
                 MenuSelectedFcn=@(~,~) obj.on_show_quick_start_());
@@ -302,7 +329,7 @@ classdef CalibrationGui < handle
             col.Padding = [0 0 0 0];
             col.RowSpacing = 6;
 
-            stack = uigridlayout(col, [5 1]);
+            stack = uigridlayout(col, [4 1]);
             stack.Layout.Row = 1;
             stack.Layout.Column = 1;
             stack.ColumnWidth = {'1x'};
@@ -310,21 +337,18 @@ classdef CalibrationGui < handle
             stack.RowSpacing = 6;
             stack.Scrollable = 'on';
 
-            h = zeros(1, 5);
+            h = zeros(1, 4);
 
             [g, h(1)] = obj.add_section_(stack, 1, 'Microphone Reference', [24 24 24 30]);
             obj.build_reference_section_(g);
 
-            [g, h(2)] = obj.add_section_(stack, 2, 'Hardware', [24 24 24 24]);
-            obj.build_hardware_section_(g);
-
-            [g, h(3)] = obj.add_section_(stack, 3, 'Calibration', [24 24 30 30 24]);
+            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
             obj.build_calibration_section_(g);
 
-            [g, h(4)] = obj.add_section_(stack, 4, 'Verification & Equalization', [30 30]);
+            [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30]);
             obj.build_verification_section_(g);
 
-            [g, h(5)] = obj.add_section_(stack, 5, 'Display', [24 24]);
+            [g, h(4)] = obj.add_section_(stack, 4, 'Display', [24 24]);
             obj.build_display_section_(g);
 
             stack.RowHeight = num2cell(h);
@@ -375,9 +399,32 @@ classdef CalibrationGui < handle
                 'BtnBackground', @(~,~) obj.on_measure_background_());
         end
 
-        function build_hardware_section_(obj, g)
-            % Facts about the rig: two the adapter reports, and the settings
-            % that describe the signal path it acquires through.
+        function on_hardware_settings_(obj)
+            % Open (or refocus) the Hardware Settings window: the facts the
+            % adapter reports and the settings that describe the signal path
+            % it acquires through. Non-modal, so it can stay up during a run
+            % -- the conduction delay readout updates live as each
+            % acquisition's click probe lands, same as it did in the column.
+            if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
+                figure(obj.HardwareDialog_);
+                return
+            end
+
+            pos = obj.Figure.Position;
+            obj.HardwareDialog_ = uifigure( ...
+                Name='Hardware Settings', ...
+                Position=[pos(1)+40 pos(2)+pos(4)-260 400 132], ...
+                Resize='off');
+
+            g = uigridlayout(obj.HardwareDialog_, [4 2]);
+            g.RowHeight = {24 24 24 24};
+            % Same split as the controls column's sections: captions carry
+            % the units, the fields hold a few digits.
+            g.ColumnWidth = {'1.3x', '1x'};
+            g.Padding = [8 8 8 8];
+            g.RowSpacing = 4;
+            g.ColumnSpacing = 8;
+
             obj.SampleRateLabel = readout_row_(g, 1, 'Sample Rate', 'No adapter', '');
 
             % Measured by the click probe at the start of every tone
@@ -389,12 +436,46 @@ classdef CalibrationGui < handle
             obj.MaxOutputField = numeric_row_(g, 3, 'Max Output Voltage (V)', ...
                 [eps, 1000], '%.1f', stimgen.util.tooltip('CalibrationGui', 'MaxOutputVoltage'));
 
-            % An acquisition setting, so it sits here rather than with the
-            % display toggles: it changes the numbers that go into the table,
-            % not how they are drawn. The corner frequency is fixed at
-            % Engine's 20 Hz default and is not exposed here.
+            % An acquisition setting, not a display one: it changes the
+            % numbers that go into the table, not how they are drawn. The
+            % corner frequency is fixed at Engine's 20 Hz default and is not
+            % exposed here.
             obj.AcCoupleCheck = check_row_(g, 4, 'AC Couple Acquired Signal', ...
                 stimgen.util.tooltip('CalibrationGui', 'AcCoupleResponse'));
+
+            % Settings push to the engine as they change: the window may be
+            % closed by run time, so apply-at-next-run would silently depend
+            % on whether it happened to be open then.
+            obj.MaxOutputField.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
+            obj.AcCoupleCheck.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
+
+            obj.sync_hardware_dialog_();
+            obj.refresh_sample_rate_label_();
+            obj.refresh_conduction_delay_label_();
+        end
+
+        function on_hardware_setting_changed_(obj)
+            try
+                obj.Engine.set_configuration( ...
+                    MaxOutputVoltage=obj.MaxOutputField.Value, ...
+                    AcCoupleResponse=obj.AcCoupleCheck.Value);
+                obj.set_status_('Hardware settings applied.', false);
+            catch ME
+                obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
+                % Put the rejected control back to what the engine holds.
+                obj.sync_hardware_dialog_();
+            end
+        end
+
+        function sync_hardware_dialog_(obj)
+            % The engine owns these settings; the window, when open, is only
+            % a view of them. Called wherever the engine may have changed
+            % under the window -- construction, load, engine swap.
+            if isempty(obj.HardwareDialog_) || ~isvalid(obj.HardwareDialog_)
+                return
+            end
+            obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
+            obj.AcCoupleCheck.Value = obj.Engine.AcCoupleResponse;
         end
 
         function build_calibration_section_(obj, g)
@@ -557,6 +638,9 @@ classdef CalibrationGui < handle
         end
 
         function on_close_(obj, fig)
+            % Settings are snapshotted before anything is torn down: the
+            % monitor still holds the display state being saved.
+            obj.save_settings_prefs_();
             % Release the monitor before the axes it draws into are deleted.
             % The engine may outlive this window -- it might be shared with a
             % host application -- and must not keep notifying a renderer whose
@@ -564,6 +648,11 @@ classdef CalibrationGui < handle
             if ~isempty(obj.Monitor) && isvalid(obj.Monitor)
                 obj.Monitor.detach();
                 delete(obj.Monitor);
+            end
+            % The Hardware Settings window is a satellite of this one and has
+            % no reason to outlive it.
+            if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
+                delete(obj.HardwareDialog_);
             end
             delete(fig);
         end
@@ -1190,17 +1279,22 @@ classdef CalibrationGui < handle
                 else
                     toneLutSource = "tone";
                 end
+                % Max Output Voltage and AC Couple are absent deliberately:
+                % the Hardware Settings window pushes them to the engine the
+                % moment they change, and its controls exist only while it is
+                % open.
                 obj.Engine.set_configuration( ...
                     ReferenceLevel=obj.RefLevelField.Value, ...
                     ReferenceFrequency=obj.RefFreqField.Value, ...
                     MicSensitivity=obj.MicSensField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
-                    MaxOutputVoltage=obj.MaxOutputField.Value, ...
-                    AcCoupleResponse=obj.AcCoupleCheck.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
                     ToneLutSource=toneLutSource);
                 ok = true;
+                % Every run starts here, so saving on success means a hard
+                % MATLAB exit costs at most the edits since the last run.
+                obj.save_settings_prefs_();
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
                 uialert(obj.Figure, ME.message, 'Parameter Error', Icon='error');
@@ -1213,10 +1307,9 @@ classdef CalibrationGui < handle
             obj.MicSensField.Value = obj.Engine.MicSensitivity;
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
-            obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
-            obj.AcCoupleCheck.Value = obj.Engine.AcCoupleResponse;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
             obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
+            obj.sync_hardware_dialog_();
         end
 
         function refresh_all_plots_(obj)
@@ -1298,6 +1391,12 @@ classdef CalibrationGui < handle
             % equivalent air path at 343 m/s is the sanity check -- a reading
             % far from the actual mic distance means converter latency
             % dominates, or the probe locked onto the wrong thing.
+            % The readout lives in the Hardware Settings window; with that
+            % closed there is nothing to update (the delay listener still
+            % fires during runs), and reopening it refreshes from the engine.
+            if isempty(obj.ConductionDelayLabel) || ~isvalid(obj.ConductionDelayLabel)
+                return
+            end
             d = obj.Engine.ConductionDelay;
             if d.valid
                 txt = sprintf('%.2f ms  (~%.2f m at 343 m/s)', ...
@@ -1317,6 +1416,10 @@ classdef CalibrationGui < handle
             % %.10g keeps non-integer converter rates exact on screen; %g
             % would show 24414.0625 as 24414.1, and a user transcribing that
             % rounded figure gets a filter assert_filter_rate refuses.
+            % Lives in the Hardware Settings window, like the delay readout.
+            if isempty(obj.SampleRateLabel) || ~isvalid(obj.SampleRateLabel)
+                return
+            end
             fs = obj.Engine.Fs;
             if fs > 0
                 txt = sprintf('%.10g Hz', fs);
@@ -1653,6 +1756,137 @@ classdef CalibrationGui < handle
         function set_pref_(~, prefName, value)
             groupName = 'StimCalibrationGui';
             setpref(groupName, prefName, char(string(value)));
+        end
+
+        function restore_settings_prefs_(obj)
+            % Reapply the settings the user last worked with, written by
+            % save_settings_prefs_. Engine-side settings are restored per
+            % field and only where the engine still holds its factory
+            % default, so values arriving on a supplied engine win -- and
+            % not at all when the engine is calibrated, since its settings
+            % document the measurement. Display settings belong to this
+            % window rather than the engine and are always restored.
+            if ~obj.Engine.IsCalibrated
+                obj.restore_engine_settings_();
+            end
+            obj.restore_display_settings_();
+        end
+
+        function restore_engine_settings_(obj)
+            % Preference keys are the Engine property names. Numeric values
+            % are validated against the field each is headed for via
+            % sync_controls_: a hand-edited preference outside its range
+            % would otherwise throw there rather than here. Max Output's
+            % limits are stated literally because its field lives in the
+            % on-demand Hardware Settings window and does not exist yet.
+            factory = stimgen.calibration.Engine();
+            numericPairs = {
+                'ReferenceLevel',     obj.RefLevelField.Limits
+                'ReferenceFrequency', obj.RefFreqField.Limits
+                'MicSensitivity',     obj.MicSensField.Limits
+                'NormativeValue',     obj.NormativeField.Limits
+                'ExcitationVoltage',  obj.ExcitationField.Limits
+                'MaxOutputVoltage',   [eps, 1000]
+                };
+
+            opts = struct();
+            for k = 1:size(numericPairs, 1)
+                prop = numericPairs{k, 1};
+                limits = numericPairs{k, 2};
+                v = str2double(obj.get_pref_(prop, ''));
+                if isfinite(v) && v >= limits(1) && v <= limits(2) && ...
+                        obj.Engine.(prop) == factory.(prop)
+                    opts.(prop) = v;
+                end
+            end
+
+            for prop = ["AcCoupleResponse" "ShowLivePlots"]
+                stored = obj.get_pref_(char(prop), '');
+                if any(strcmp(stored, {'0', '1'})) && ...
+                        obj.Engine.(prop) == factory.(prop)
+                    opts.(prop) = strcmp(stored, '1');
+                end
+            end
+
+            stored = obj.get_pref_('ToneLutSource', '');
+            if any(strcmp(stored, {'tone', 'swept_sine'})) && ...
+                    obj.Engine.ToneLutSource == factory.ToneLutSource
+                opts.ToneLutSource = string(stored);
+            end
+
+            if isempty(fieldnames(opts))
+                return
+            end
+            args = namedargs2cell(opts);
+            try
+                obj.Engine.set_configuration(args{:});
+            catch ME
+                % A stale preference must never block the window opening.
+                stimgen.util.vprintf(-1, ME);
+            end
+        end
+
+        function restore_display_settings_(obj)
+            stored = obj.get_pref_('transferLogX', '');
+            if any(strcmp(stored, {'0', '1'}))
+                obj.TransferLogXCheck.Value = strcmp(stored, '1');
+                obj.Monitor.LogX = obj.TransferLogXCheck.Value;
+            end
+
+            units = string(obj.get_pref_('spectrumUnits', ''));
+            if ismember(units, stimgen.calibration.LiveMonitor.SpectrumUnitList)
+                obj.Monitor.SpectrumUnits = units;
+                obj.sync_spectrum_units_menu_();
+            end
+
+            types = stimgen.calibration.LiveMonitor.WeightingTypes;
+            sel = split(string(obj.get_pref_('weightingOverlays', '')), ',');
+            checked = ismember(types, sel);
+            if any(checked)
+                for k = 1:numel(types)
+                    obj.WeightingMenus(k).Checked = ...
+                        matlab.lang.OnOffSwitchState(checked(k));
+                end
+                obj.Monitor.Weightings = types(checked);
+            end
+        end
+
+        function save_settings_prefs_(obj)
+            % Snapshot every remembered setting: the controls-column values
+            % and the View menu's display state. Read from the controls
+            % rather than the engine -- the controls hold what the user
+            % last set, applied to an engine or not. The two hardware
+            % settings are the exception: their window pushes every change
+            % to the engine immediately and may be closed by now, so the
+            % engine is where what the user last set lives. Never throws:
+            % this runs on the window's close path.
+            try
+                obj.set_pref_('ReferenceLevel',     sprintf('%.15g', obj.RefLevelField.Value));
+                obj.set_pref_('ReferenceFrequency', sprintf('%.15g', obj.RefFreqField.Value));
+                obj.set_pref_('MicSensitivity',     sprintf('%.15g', obj.MicSensField.Value));
+                obj.set_pref_('NormativeValue',     sprintf('%.15g', obj.NormativeField.Value));
+                obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.ExcitationField.Value));
+                obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
+                obj.set_pref_('AcCoupleResponse',   sprintf('%d', obj.Engine.AcCoupleResponse));
+                obj.set_pref_('ShowLivePlots',      sprintf('%d', obj.ShowLivePlotsCheck.Value));
+                if obj.ToneSweptSineCheck.Value
+                    obj.set_pref_('ToneLutSource', 'swept_sine');
+                else
+                    obj.set_pref_('ToneLutSource', 'tone');
+                end
+
+                obj.set_pref_('transferLogX', sprintf('%d', obj.TransferLogXCheck.Value));
+                obj.set_pref_('spectrumUnits', char(obj.Monitor.SpectrumUnits));
+                types = stimgen.calibration.LiveMonitor.WeightingTypes;
+                sel = types(arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus));
+                if isempty(sel)
+                    obj.set_pref_('weightingOverlays', '');
+                else
+                    obj.set_pref_('weightingOverlays', char(strjoin(sel, ',')));
+                end
+            catch ME
+                stimgen.util.vprintf(-1, ME);
+            end
         end
 
         function on_stop_(obj)
