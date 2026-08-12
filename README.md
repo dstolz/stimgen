@@ -10,6 +10,13 @@ requested sound levels into hardware voltages via a measured calibration.
 `stimgen` runs standalone, with no dependency on any host application — any host
 application can drive it through the two abstract interfaces described below.
 
+> ## 📖 [Documentation Wiki](https://github.com/dstolz/stimgen/wiki)
+>
+> Full documentation lives in the **[project wiki](https://github.com/dstolz/stimgen/wiki)**, organized in two branches:
+>
+> - **[User Guide](https://github.com/dstolz/stimgen/wiki/Getting-Started)** — for experimenters working through the GUIs, including a complete **[walkthrough tutorial](https://github.com/dstolz/stimgen/wiki/Tutorial-Your-First-Stimulus-Session)**
+> - **[Developer Guide](https://github.com/dstolz/stimgen/wiki/Developer-Guide)** — architecture, extension points, and integration for backend developers
+
 ## Requirements
 
 - MATLAB R2021a or newer
@@ -128,7 +135,12 @@ While a sink is installed, `stimgen` writes nothing of its own. See
 
 ## Documentation
 
-See [`documentation/`](documentation/) for per-class guides, including
+Start with the **[wiki](https://github.com/dstolz/stimgen/wiki)** — a
+[User Guide with a walkthrough tutorial](https://github.com/dstolz/stimgen/wiki/Tutorial-Your-First-Stimulus-Session)
+for GUI users and a [Developer Guide](https://github.com/dstolz/stimgen/wiki/Developer-Guide)
+for backend developers.
+
+For per-class deep dives, see [`documentation/`](documentation/), including
 `stimgen_overview.md`, `stimgen_StimType.md`, `stimgen_StimPlayer.md`,
 `stimgen_calibration.md`, and `stimgen_logging.md`.
 
