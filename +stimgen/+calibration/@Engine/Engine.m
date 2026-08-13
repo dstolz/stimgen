@@ -25,6 +25,10 @@ classdef Engine < handle
     %                      per octave band, clarity/definition, and time-gated
     %                      harmonic distortion. See
     %                      documentation/stimgen_SweptSineCalibration.md
+    %                      Each of tone/click/swept_sine may also carry a
+    %                      refinement sub-struct once refine_tones/refine_clicks
+    %                      has iteratively corrected it against measured levels;
+    %                      the next sweep of that table replaces both together.
     %   filter           - digitalFilter | [] (populated by design_filter)
     %   filterGrpDelay   - int (group delay samples; 0 until design_filter runs)
     %   filterSource     - "tone" | "swept_sine" (which LUT the filter came from)
@@ -50,6 +54,9 @@ classdef Engine < handle
     %                                   % on the mic; nothing is played
     %   eng.calibrate_tones([], 3);     % 3 passes over the burst train
     %   eng.calibrate_clicks([], 3);
+    %   eng.refine_tones();             % optional: test-and-correct at the
+    %   eng.refine_clicks();            % LUT's own points until levels land
+    %                                   % within tolerance (default 1 dB)
     %   eng.design_filter();            % optional; see design_filter for
     %                                   % length/interpolation/smoothing options
     %   eng.save('my_cal.esgc');
@@ -179,6 +186,9 @@ classdef Engine < handle
         design_filter(obj, source, options) % Design equalization filter from a frequency LUT.
         results = test_filter(obj, options) % Verify the designed filter flattens the measured response.
         results = test_tones(obj, freqs, levels, options) % Verify the tone LUT reproduces requested levels at discrete tones.
+        results = test_clicks(obj, durs, levels, options) % Verify the click LUT reproduces requested levels at discrete clicks.
+        results = refine_tones(obj, options) % Iteratively test and correct the tone LUT until levels land within tolerance.
+        results = refine_clicks(obj, options) % Iteratively test and correct the click LUT until levels land within tolerance.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         r = filter_level_reference(obj, x) % Level reference for running the equalization filter in hardware.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
@@ -432,6 +442,7 @@ classdef Engine < handle
         y = trim_response_(obj, y) % Trim trailing response buffer padding.
         y = ac_couple_response_(obj, y) % Zero-phase high-pass when AcCoupleResponse is set.
         cd = commit_cal_data_(obj) % Build calibration output struct.
+        results = refine_lut_(obj, which, options) % Measure-correct-remeasure loop behind refine_tones/refine_clicks.
         reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
         throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.
 

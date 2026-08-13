@@ -7,6 +7,10 @@ classdef CalibrationGui < handle
     % Provides user parameterization of calibration settings, live inspection of
     % the latest response waveform/spectrum, transfer-curve visualization for
     % tone and click calibration tables, and save/load support for .esgc files.
+    % The Calibration section's Iterative Level Refinement toggle follows each
+    % tone or click sweep with Engine.refine_tones/refine_clicks: the finished
+    % table is tested at its own points and corrected from the measured errors
+    % until every point lands within a target accuracy.
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
@@ -110,8 +114,10 @@ classdef CalibrationGui < handle
         ShowLivePlotsCheck
         TransferLogXCheck
         ToneSweptSineCheck
+        IterativeCheck
         StatusLabel
         LevelRefLabel
+        ConductionDelayLabel
 
         % Hardware Settings window (Hardware > Hardware Settings...). Created
         % on demand, so these handles are empty until it is first opened and
@@ -122,12 +128,10 @@ classdef CalibrationGui < handle
         MaxOutputField
         AcCoupleCheck
         SampleRateLabel
-        ConductionDelayLabel
 
         % Listener on the engine's ConductionDelay property, so the readout
-        % updates the moment the run-start click probe lands rather than
-        % waiting for the run to finish. Rebound whenever the engine is
-        % swapped (run_load_).
+        % updates the moment a click probe lands rather than waiting for the
+        % run to finish. Rebound whenever the engine is swapped (run_load_).
         DelayListener_
 
         % Buttons
@@ -401,13 +405,13 @@ classdef CalibrationGui < handle
             % from the top. Each section holds the settings a step consumes and
             % then the button that consumes them.
             %
-            % Stop and the status line are in the footer because they are the
-            % two things needed while a sweep is running, when the stack may be
-            % scrolled anywhere.
+            % Stop, the conduction delay readout and the status line are in the
+            % footer because they are what is needed while a sweep is running,
+            % when the stack may be scrolled anywhere.
             col = uigridlayout(obj.Grid, [2 1]);
             col.Layout.Row = 1;
             col.Layout.Column = 1;
-            col.RowHeight = {'1x', 66};
+            col.RowHeight = {'1x', 92};
             col.ColumnWidth = {'1x'};
             col.Padding = [0 0 0 0];
             col.RowSpacing = 6;
@@ -425,7 +429,7 @@ classdef CalibrationGui < handle
             [g, h(1)] = obj.add_section_(stack, 1, 'Microphone Reference', [24 24 24 30]);
             obj.build_reference_section_(g);
 
-            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
+            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24 24]);
             obj.build_calibration_section_(g);
 
             [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30 24]);
@@ -485,9 +489,10 @@ classdef CalibrationGui < handle
         function on_hardware_settings_(obj)
             % Open (or refocus) the Hardware Settings window: the facts the
             % adapter reports and the settings that describe the signal path
-            % it acquires through. Non-modal, so it can stay up during a run
-            % -- the conduction delay readout updates live as each
-            % acquisition's click probe lands, same as it did in the column.
+            % it acquires through. Non-modal, so it can stay up during a run.
+            % The conduction delay is not here: it is measured per acquisition
+            % rather than set once per rig, so it lives in the column footer
+            % where it stays visible while a sweep runs.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 figure(obj.HardwareDialog_);
                 return
@@ -496,11 +501,11 @@ classdef CalibrationGui < handle
             pos = obj.Figure.Position;
             obj.HardwareDialog_ = uifigure( ...
                 Name='Hardware Settings', ...
-                Position=[pos(1)+40 pos(2)+pos(4)-260 400 132], ...
+                Position=[pos(1)+40 pos(2)+pos(4)-260 400 104], ...
                 Resize='off');
 
-            g = uigridlayout(obj.HardwareDialog_, [4 2]);
-            g.RowHeight = {24 24 24 24};
+            g = uigridlayout(obj.HardwareDialog_, [3 2]);
+            g.RowHeight = {24 24 24};
             % Same split as the controls column's sections: captions carry
             % the units, the fields hold a few digits.
             g.ColumnWidth = {'1.3x', '1x'};
@@ -510,20 +515,14 @@ classdef CalibrationGui < handle
 
             obj.SampleRateLabel = readout_row_(g, 1, 'Sample Rate', 'No adapter', '');
 
-            % Measured by the click probe at the start of every tone
-            % acquisition; a hardware fact like the others -- speaker-to-mic
-            % distance plus converter latency.
-            obj.ConductionDelayLabel = readout_row_(g, 2, 'Conduction Delay', ...
-                'Not measured', stimgen.util.tooltip('CalibrationGui', 'ConductionDelay'));
-
-            obj.MaxOutputField = numeric_row_(g, 3, 'Max Output Voltage (V)', ...
+            obj.MaxOutputField = numeric_row_(g, 2, 'Max Output Voltage (V)', ...
                 [eps, 1000], '%.1f', stimgen.util.tooltip('CalibrationGui', 'MaxOutputVoltage'));
 
             % An acquisition setting, not a display one: it changes the
             % numbers that go into the table, not how they are drawn. The
             % corner frequency is fixed at Engine's 20 Hz default and is not
             % exposed here.
-            obj.AcCoupleCheck = check_row_(g, 4, 'AC Couple Acquired Signal', ...
+            obj.AcCoupleCheck = check_row_(g, 3, 'AC Couple Acquired Signal', ...
                 stimgen.util.tooltip('CalibrationGui', 'AcCoupleResponse'));
 
             % Settings push to the engine as they change: the window may be
@@ -534,7 +533,6 @@ classdef CalibrationGui < handle
 
             obj.sync_hardware_dialog_();
             obj.refresh_sample_rate_label_();
-            obj.refresh_conduction_delay_label_();
         end
 
         function on_hardware_setting_changed_(obj)
@@ -582,6 +580,14 @@ classdef CalibrationGui < handle
             obj.ToneSweptSineCheck = check_row_(g, 5, 'Tone Lookup From Swept Sine', ...
                 stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine'), ...
                 @(~,~) obj.on_tone_lut_source_());
+
+            % Follows each tone or click sweep with Engine.refine_tones/
+            % refine_clicks: the finished table is tested at its own points
+            % and corrected from the errors that come back, until every point
+            % lands within a target accuracy. The sweep dialog collects the
+            % pass limit and target while this is checked.
+            obj.IterativeCheck = check_row_(g, 6, 'Iterative Level Refinement', ...
+                stimgen.util.tooltip('CalibrationGui', 'IterativeRefinement'));
         end
 
         function build_verification_section_(obj, g)
@@ -625,11 +631,12 @@ classdef CalibrationGui < handle
 
         function build_footer_(obj, col)
             % Pinned below the scrolling stack: during a run these are the only
-            % two controls that matter, and neither may scroll out of reach.
-            foot = uigridlayout(col, [2 2]);
+            % controls and readouts that matter, and none may scroll out of
+            % reach.
+            foot = uigridlayout(col, [3 2]);
             foot.Layout.Row = 2;
             foot.Layout.Column = 1;
-            foot.RowHeight = {30, 24};
+            foot.RowHeight = {30, 22, 24};
             foot.ColumnWidth = {'1x', '1x'};
             foot.Padding = [0 4 0 4];
             foot.RowSpacing = 4;
@@ -643,8 +650,17 @@ classdef CalibrationGui < handle
             obj.BtnReset = action_button_(foot, 1, 2, 'Reset Calibration', ...
                 'BtnReset', @(~,~) obj.on_reset_calibration_());
 
+            % Measured by the click probe at the head of every tone
+            % acquisition, so it moves while a sweep runs -- and a wrong
+            % reading invalidates the levels the sweep is writing. That makes
+            % it something to watch during the run rather than a rig fact to
+            % look up afterwards, which is why it sits here with the status
+            % line and not in the Hardware Settings window.
+            obj.ConductionDelayLabel = readout_row_(foot, 2, 'Conduction Delay', ...
+                'Not measured', stimgen.util.tooltip('CalibrationGui', 'ConductionDelay'));
+
             obj.StatusLabel = uilabel(foot, Text='Ready.', HorizontalAlignment='left');
-            obj.StatusLabel.Layout.Row = 2;
+            obj.StatusLabel.Layout.Row = 3;
             obj.StatusLabel.Layout.Column = [1 2];
         end
 
@@ -982,13 +998,14 @@ classdef CalibrationGui < handle
         end
 
         function run_calibrate_tones_(obj)
-            [freqs, repeatCount, wasCancelled] = obj.prompt_vector_parameter_( ...
+            [freqs, repeatCount, refine, wasCancelled] = obj.prompt_vector_parameter_( ...
                 'toneFreqs', ...
                 'toneRepeats', ...
                 'Tone frequencies (Hz), e.g. 500:250:32000 or 500.*2.^(0:.5:5). Leave empty to use default log sweep.', ...
                 'Tone Calibration', ...
                 '', ...
-                1);
+                1, ...
+                obj.IterativeCheck.Value);
             if wasCancelled
                 obj.set_status_('Tone calibration cancelled.', false);
                 return
@@ -998,9 +1015,25 @@ classdef CalibrationGui < handle
             else
                 obj.Engine.calibrate_tones(freqs, repeatCount);
             end
+            if isempty(refine)
+                obj.refresh_all_plots_();
+                obj.update_runtime_state_();
+                obj.set_status_('Tone calibration complete.', false);
+                return
+            end
+
+            % The sweep's own averaging carries into the refinement passes:
+            % what was accurate enough to build the table is accurate enough
+            % to correct it.
+            obj.set_status_('Tone calibration complete. Refining against measured levels...', false);
+            drawnow;
+            r = obj.Engine.refine_tones( ...
+                MaxIterations=refine.MaxIterations, ...
+                ToleranceDb=refine.ToleranceDb, ...
+                RepeatCount=repeatCount);
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
-            obj.set_status_('Tone calibration complete.', false);
+            obj.report_refinement_(r, 'Tone');
         end
 
         function on_calibrate_clicks_(obj)
@@ -1011,13 +1044,14 @@ classdef CalibrationGui < handle
         end
 
         function run_calibrate_clicks_(obj)
-            [durs, repeatCount, wasCancelled] = obj.prompt_vector_parameter_( ...
+            [durs, repeatCount, refine, wasCancelled] = obj.prompt_vector_parameter_( ...
                 'clickDurationsMs', ...
                 'clickRepeats', ...
                 'Click durations (ms), e.g. 0.01 0.02 0.04 or 0.01.*2.^(0:9). Leave empty for the default 0.01..5.12 ms octave series. Durations below one sample at the current Fs are skipped.', ...
                 'Click Calibration', ...
                 '', ...
-                1);
+                1, ...
+                obj.IterativeCheck.Value);
             if wasCancelled
                 obj.set_status_('Click calibration cancelled.', false);
                 return
@@ -1028,9 +1062,25 @@ classdef CalibrationGui < handle
                 % Prompt is in ms; Engine.calibrate_clicks takes seconds.
                 obj.Engine.calibrate_clicks(durs ./ 1e3, repeatCount);
             end
+            if isempty(refine)
+                obj.refresh_all_plots_();
+                obj.update_runtime_state_();
+                obj.set_status_('Click calibration complete.', false);
+                return
+            end
+
+            % The sweep's own averaging carries into the refinement passes:
+            % what was accurate enough to build the table is accurate enough
+            % to correct it.
+            obj.set_status_('Click calibration complete. Refining against measured levels...', false);
+            drawnow;
+            r = obj.Engine.refine_clicks( ...
+                MaxIterations=refine.MaxIterations, ...
+                ToleranceDb=refine.ToleranceDb, ...
+                RepeatCount=repeatCount);
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
-            obj.set_status_('Click calibration complete.', false);
+            obj.report_refinement_(r, 'Click');
         end
 
         function on_calibrate_swept_sine_(obj)
@@ -1674,7 +1724,7 @@ classdef CalibrationGui < handle
 
         function bind_engine_listeners_(obj)
             % Follow the current engine's ConductionDelay property. The click
-            % probe fires at the start of a run, while this window sits in
+            % probes fire during a run, while this window sits in
             % with_busy_state_ showing only "Running tone calibration...", so
             % without the listener the delay would not be seen until the run
             % finished.
@@ -1684,13 +1734,12 @@ classdef CalibrationGui < handle
         end
 
         function refresh_conduction_delay_label_(obj)
-            % Speaker-to-mic delay from the run-start click probe. The
+            % Speaker-to-mic delay from the most recent click probe. The
             % equivalent air path at 343 m/s is the sanity check -- a reading
             % far from the actual mic distance means converter latency
             % dominates, or the probe locked onto the wrong thing.
-            % The readout lives in the Hardware Settings window; with that
-            % closed there is nothing to update (the delay listener still
-            % fires during runs), and reopening it refreshes from the engine.
+            % Guarded rather than ordered: update_runtime_state_ may run
+            % before the footer is built.
             if isempty(obj.ConductionDelayLabel) || ~isvalid(obj.ConductionDelayLabel)
                 return
             end
@@ -1713,7 +1762,8 @@ classdef CalibrationGui < handle
             % %.10g keeps non-integer converter rates exact on screen; %g
             % would show 24414.0625 as 24414.1, and a user transcribing that
             % rounded figure gets a filter assert_filter_rate refuses.
-            % Lives in the Hardware Settings window, like the delay readout.
+            % Lives in the Hardware Settings window, so with that closed there
+            % is nothing to update; reopening it refreshes from the engine.
             if isempty(obj.SampleRateLabel) || ~isvalid(obj.SampleRateLabel)
                 return
             end
@@ -1810,8 +1860,17 @@ classdef CalibrationGui < handle
             values = stimgen.util.parse_numeric_vector(textValue, char(label));
         end
 
-        function [values, repeatCount, wasCancelled] = prompt_vector_parameter_(obj, prefName, repeatPrefName, promptText, dlgTitle, defaultValue, repeatDefault)
+        function [values, repeatCount, refine, wasCancelled] = prompt_vector_parameter_(obj, prefName, repeatPrefName, promptText, dlgTitle, defaultValue, repeatDefault, includeRefinement)
+            % With includeRefinement set (the Iterative Level Refinement
+            % toggle), the same dialog also collects the refinement's pass
+            % limit and accuracy target, so the whole run is parameterized in
+            % one place before any hardware moves. refine is [] when the
+            % toggle is off, or a struct with MaxIterations and ToleranceDb.
+            if nargin < 8
+                includeRefinement = false;
+            end
             wasCancelled = false;
+            refine = [];
             stored = obj.get_pref_(prefName, defaultValue);
             repeatStored = obj.get_pref_(repeatPrefName, num2str(repeatDefault));
 
@@ -1820,7 +1879,19 @@ classdef CalibrationGui < handle
                 'Number of averages (positive integer):'
             };
             defaults = {stored, repeatStored};
-            answer = inputdlg(prompts, dlgTitle, [1 90; 1 90], defaults);
+            if includeRefinement
+                prompts(end+1:end+2) = {
+                    ['Refinement: maximum test passes (positive integer). The table is ' ...
+                     'corrected between passes and always left as the last pass verified it:'], ...
+                    ['Refinement: target accuracy (dB). Passes stop early once every point ' ...
+                     'lands within this of its requested level:']
+                };
+                defaults(end+1:end+2) = {
+                    obj.get_pref_('refineMaxPasses', '3'), ...
+                    obj.get_pref_('refineToleranceDb', '1')
+                };
+            end
+            answer = inputdlg(prompts, dlgTitle, repmat([1 90], numel(prompts), 1), defaults);
             if isempty(answer)
                 values = [];
                 repeatCount = repeatDefault;
@@ -1834,6 +1905,49 @@ classdef CalibrationGui < handle
             obj.set_pref_(repeatPrefName, char(repeatRaw));
             values = obj.parse_numeric_vector_(raw, lower(dlgTitle));
             repeatCount = obj.parse_positive_integer_(repeatRaw, 'number of averages');
+
+            if includeRefinement
+                passesRaw = strtrim(string(answer{3}));
+                tolRaw    = strtrim(string(answer{4}));
+                maxPasses = obj.parse_positive_integer_(passesRaw, 'maximum test passes');
+                tolDb = str2double(tolRaw);
+                if isnan(tolDb) || ~isfinite(tolDb) || tolDb <= 0
+                    error('stimgen:calibration:CalibrationGui:badTolerance', ...
+                        'Refinement target accuracy must be a positive number of decibels.');
+                end
+                obj.set_pref_('refineMaxPasses', char(passesRaw));
+                obj.set_pref_('refineToleranceDb', char(tolRaw));
+                refine = struct('MaxIterations', maxPasses, 'ToleranceDb', tolDb);
+            end
+        end
+
+        function report_refinement_(obj, r, whatLabel)
+            % Status line (and an alert on non-convergence) after an
+            % iterative refinement. The residual is the last test's verdict,
+            % so what is reported is what the committed table was measured
+            % to do -- not what the corrections were hoped to achieve.
+            if r.converged
+                obj.set_status_(sprintf( ...
+                    ['%s calibration refined: worst error %.2f dB after %d test ' ...
+                     'pass(es), within the %.2g dB target.'], ...
+                    whatLabel, r.final_max_abs_error_db, r.n_iterations, ...
+                    r.tolerance_db), false);
+                return
+            end
+
+            msg = sprintf( ...
+                ['%s calibration refined from %.2f to %.2f dB worst error, but did ' ...
+                 'not reach the %.2g dB target in %d test pass(es).'], ...
+                whatLabel, r.initial_max_abs_error_db, r.final_max_abs_error_db, ...
+                r.tolerance_db, r.n_iterations);
+            obj.set_status_(msg, true);
+            uialert(obj.Figure, sprintf(['%s\n\nThe table keeps the last verified ' ...
+                'corrections, so nothing was lost. A residual that will not shrink ' ...
+                'is usually measurement spread: raise the number of averages, or ' ...
+                'loosen the target. If %d point(s) were left uncorrected as ' ...
+                'unreliable, they are unreachable at the normative level or too ' ...
+                'quiet to measure -- see the log.'], msg, r.n_unreliable), ...
+                'Refinement Did Not Converge', Icon='warning');
         end
 
         function [duration, freqs, repeatCount, wasCancelled] = prompt_swept_sine_parameters_(obj)
@@ -2129,6 +2243,13 @@ classdef CalibrationGui < handle
                 obj.restore_engine_settings_();
             end
             obj.restore_display_settings_();
+
+            % GUI-owned workflow toggle, not an engine setting: whether each
+            % tone/click sweep is followed by the iterative refinement.
+            stored = obj.get_pref_('iterativeCalibration', '');
+            if any(strcmp(stored, {'0', '1'}))
+                obj.IterativeCheck.Value = strcmp(stored, '1');
+            end
         end
 
         function restore_engine_settings_(obj)
@@ -2241,6 +2362,7 @@ classdef CalibrationGui < handle
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
                 obj.set_pref_('AcCoupleResponse',   sprintf('%d', obj.Engine.AcCoupleResponse));
                 obj.set_pref_('ShowLivePlots',      sprintf('%d', obj.ShowLivePlotsCheck.Value));
+                obj.set_pref_('iterativeCalibration', sprintf('%d', obj.IterativeCheck.Value));
                 if obj.ToneSweptSineCheck.Value
                     obj.set_pref_('ToneLutSource', 'swept_sine');
                 else

@@ -223,13 +223,14 @@ position in one long list:
 | Section | Contents |
 |---|---|
 | Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
-| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
+| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, Tone Lookup From Swept Sine, and Iterative Level Refinement |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
-| Footer (pinned) | Stop, Reset Calibration, and the status line |
+| Footer (pinned) | Stop, Reset Calibration, the Conduction Delay readout, and the status line |
 
-Stop and the status line are in the footer because they are what is needed while
-a sweep is running, when the stack may be scrolled anywhere. The status line
+Everything in the footer is there because it is what is needed while a sweep is
+running, when the stack may be scrolled anywhere: Stop, the delay the sweep's
+analysis windows are being cut with, and the status line. The status line
 clips at one line; its tooltip always carries the whole message, which matters
 for the test verdicts and background summaries that are wider than the column.
 
@@ -240,14 +241,15 @@ them, plus the log frequency axis, are also toolbar buttons; see
 [Choosing what the plots show](#choosing-what-the-plots-show).
 
 Rig facts and acquisition settings live in their own window, opened from
-**Hardware > Hardware Settings...**: the Sample Rate and Conduction Delay
-readouts (read-only, reported by the adapter), Max Output Voltage, and AC
-Couple Acquired Signal. They are set once per rig, not once per sweep, so
-they earn a window over a place in the per-sweep column. The window is
-non-modal and may stay open during a run — the Conduction Delay readout
-updates live as each acquisition's probe lands. Its two settings push to the
-engine the moment they change, rather than when the next run starts, since
-the window may be closed by then.
+**Hardware > Hardware Settings...**: the Sample Rate readout (read-only,
+reported by the adapter), Max Output Voltage, and AC Couple Acquired Signal.
+They are set once per rig, not once per sweep, so they earn a window over a
+place in the per-sweep column. The conduction delay is not among them — it is
+re-measured for every acquisition, so it belongs with the run rather than with
+the rig, and its readout is in the footer. The window is non-modal and may
+stay open during a run. Its two settings push to the engine the moment they
+change, rather than when the next run starts, since the window may be closed
+by then.
 
 Every field and toggle in this column, the Hardware Settings window's two
 settings, and the whole display state — spectrum unit, weighting overlays,
@@ -319,8 +321,8 @@ Recommended sequence:
 
 ## Conduction Delay
 
-The Conduction Delay row (below Sample Rate, in the Hardware > Hardware
-Settings... window) reports the rig's
+The Conduction Delay row (in the pinned footer of the controls column, above
+the status line) reports the rig's
 speaker-to-microphone delay: acoustic propagation plus the converters'
 round-trip latency, as one bulk offset. During every Calibrate Tones and
 Test Tones run it is measured separately for each acquisition, from a brief
@@ -334,9 +336,9 @@ rather than over the silence before it arrives.
 The readout shows the delay in milliseconds with its equivalent air path at
 343 m/s as a sanity check: a value far from the actual microphone distance
 means converter latency dominates, which is normal for some devices but worth
-knowing. While the window is open it updates as each acquisition's probe lands
-(the GUI listens to the engine's observable `ConductionDelay` property), not
-when the run finishes; opened after a run, it shows the last measured value.
+knowing. It updates as each acquisition's probe lands (the GUI listens to the
+engine's observable `ConductionDelay` property), not when the run finishes,
+and being in the footer it stays in view however the stack is scrolled.
 **Measurement unreliable** in red means the last record's click response was
 not clearly above the noise or could not be aligned within the search bound
 (`GapDuration`); that record then falls back to whole-record
@@ -370,6 +372,44 @@ Semantics to be aware of:
 - If no swept sine data exists yet, the direct tone table still serves lookups (the option is a preference, not an error), and takes effect as soon as a sweep is run.
 - The choice takes effect immediately when toggled, and is persisted in the `.esgc` file, so a calibration saved with it checked drives Tone stimuli from the swept sine table wherever that file is loaded.
 
+## Iterative Level Refinement
+
+With this checkbox (bottom of the Calibration section) checked, each tone or click
+sweep is followed by `Engine.refine_tones`/`refine_clicks`: the finished table is
+tested at its **own** points — each played at the drive voltage the table asks
+for, through the same `test_tones`/`test_clicks` pathway that scales a real
+stimulus — and every reliably measured point is corrected from the level error
+that comes back (`e` dB high → stored voltage scaled by `10^(-e/20)`). Passes
+repeat until a test lands every point within the target accuracy or the pass
+limit is reached.
+
+This buys absolute accuracy the one-shot sweep cannot: the sweep measures at the
+excitation voltage and the table then assumes output scales as `20*log10` of
+drive voltage, so any compression between those operating points becomes a level
+error the refinement measures and removes. The sweep dialog collects the pass
+limit and target while the box is checked; the refinement runs at the Normative
+Value level with the sweep's repeat count.
+
+Guarantees, all inherited from the Engine methods:
+
+- A correction is never applied after the final test pass, so the committed
+  table is always one a test just verified.
+- Stop (or any error) restores the unrefined table; refinement is atomic like
+  every other run.
+- Points unreachable at the normative level or below the SNR floor are left
+  uncorrected and reported.
+- The refinement record is stored inside the refined table
+  (`CalibrationData.tone.refinement` / `.click.refinement` /
+  `.swept_sine.refinement`) and travels with the `.esgc`.
+
+The status line reports the converged/not-converged verdict with the worst
+residual; non-convergence also raises an alert, since the usual cause —
+measurement spread larger than the target — has its own remedies (more
+averages, or a looser target). Like every tone lookup, the refinement follows
+Tone Lookup From Swept Sine, so with that checked it corrects the swept sine
+table. The checkbox itself is a GUI preference (`iterativeCalibration`), not an
+Engine setting.
+
 ## Calibration Parameter Dialogs
 
 When Calibrate Tones, Calibrate Clicks, or Calibrate Swept Sine is invoked, the GUI prompts for measurement parameters via an input dialog. The previous values are remembered as MATLAB preferences between sessions.
@@ -377,6 +417,7 @@ When Calibrate Tones, Calibrate Clicks, or Calibrate Swept Sine is invoked, the 
 For tones and clicks, the dialog collects:
 - Frequency vector in Hz / click-duration vector in **milliseconds** (as a comma-separated or `linspace`/`logspace` expression)
 - Repeat count (default 1). For clicks this is averages per point; for tones it is passes over the pregenerated burst train, which amounts to the same thing per frequency
+- With **Iterative Level Refinement** checked, two more fields: the refinement's maximum test passes (default 3) and its target accuracy in dB (default 1). See [Iterative Level Refinement](#iterative-level-refinement)
 
 For swept sine, the dialog collects:
 - Chirp duration in **milliseconds** (default 1000)

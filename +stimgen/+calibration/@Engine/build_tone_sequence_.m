@@ -39,10 +39,10 @@ so.WindowFcn        = "cos2";
 so.ApplyCalibration = false;   % the excitation must stay raw; scaling it by an
                                % existing LUT would fold that LUT into the result
 
-% Fixed 5 ms cos^2 (raised-cosine) onset/offset ramp to suppress broadband
-% click transients at the burst edges. Clamped to half the burst duration
-% so the ramps never overlap on a very short burst.
-so.WindowDuration = min(0.005, burstDur / 2);
+% Fixed 10 ms cos^2 (raised-cosine) window -- 5 ms ramp per edge -- to
+% suppress broadband click transients at the burst edges. Clamped to half
+% the burst duration so the ramps never overlap on a very short burst.
+so.WindowDuration = min(0.010, burstDur / 2);
 
 n      = numel(freqs);
 bursts = cell(1, n);

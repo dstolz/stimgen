@@ -94,6 +94,8 @@ Click **Calibrate Tones**. A dialog will ask for:
 
 The sweep runs automatically. Progress is shown in the MATLAB command window. A transfer curve appears on the right plot when complete.
 
+With **Iterative Level Refinement** checked (bottom of the Calibration section), the dialog also asks for a pass limit and a target accuracy in dB, and the sweep is followed by an automatic refinement: the finished table is tested at its own points — each played at the drive voltage the table asks for, exactly as an experiment would — and corrected from the level errors that come back, repeating until every point lands within the target or the pass limit is reached. This removes what a one-shot sweep cannot see: gain that does not scale exactly as `20*log10(V)` between the excitation voltage the sweep played at and the drive the table actually commands (amplifier or speaker compression, typically). The table is always left in the state the last test pass verified, and Stop or an error restores the unrefined table. The same toggle applies to **Calibrate Clicks**.
+
 ### Step 6 — Test The Tone Table
 
 Click **Test Tones**. This is the step that tells you whether the calibration works: the software asks the table what voltage each test frequency needs for a requested dB SPL, plays a tone at exactly that voltage, measures it, and reports the difference. It is the same lookup a `Tone` stimulus goes through in an experiment.
@@ -350,6 +352,46 @@ since noise reads *high* and would fail the test for something the LUT did not d
 Clipped points stay in the verdict: clipping reads low, and that error is real.
 
 In `CalibrationGui` this runs from the **Test Tones** button.
+
+### Step 6b — Refine The Tables (optional)
+
+```matlab
+% Iteratively test-and-correct the tone LUT at its own points until every
+% point lands within tolerance (or MaxIterations tests have run):
+r = eng.refine_tones(ToleranceDb=0.5, MaxIterations=4, RepeatCount=2);
+fprintf('worst error %.2f -> %.2f dB in %d pass(es) (converged: %d)\n', ...
+    r.initial_max_abs_error_db, r.final_max_abs_error_db, ...
+    r.n_iterations, r.converged);
+
+r = eng.refine_clicks();                % same loop for the click table
+```
+
+Where `test_tones` only reports the table's error, `refine_tones` removes it. Each
+pass runs the test at the table's **own** points — the opposite of the test's
+midpoint default, and deliberately so: at `NormativeValue` each knot plays at a
+drive voltage different from the sweep's excitation voltage, so any departure from
+the `20*log10(V)` level model between those two operating points (amplifier or
+speaker compression is the usual cause) lands as a per-point error. A point
+measured `e` dB high has its stored voltage scaled by `10^(-e/20)`; interpolation
+between the corrected knots inherits the fix. Passes repeat until a test passes at
+`ToleranceDb` (default 1 dB, tighter than the test's 3) or `MaxIterations`
+(default 3) tests have run.
+
+A correction is never applied after the final test, so the committed table is
+always one a test just verified — `results.converged` says whether that test
+passed. Cancellation or an error restores the table to its pre-refinement state.
+Points that are unreachable at the refinement level or fall below `MinSnrDb` are
+left uncorrected and counted in `results.n_unreliable`. Single-pass corrections
+larger than `MaxCorrectionDb` (default 12 dB) are clamped and logged: an error
+that size is usually a rig fault, not a table one. `refine_tones` follows
+`ToneLutSource`, so it corrects the swept sine table when that table is serving
+tone lookups. The refinement record is stored inside the refined table
+(`CalibrationData.tone.refinement`, `.click.refinement` or
+`.swept_sine.refinement`) and the final test remains in `toneTest`/`clickTest`.
+
+In `CalibrationGui` this runs automatically after each sweep when **Iterative
+Level Refinement** is checked; the sweep dialog collects the pass limit and
+target accuracy.
 
 ### Step 7 — Optional Additional Calibrations
 
@@ -621,6 +663,8 @@ otherwise written only by the calibration runs themselves.
 | `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 | `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
+
+After `refine_tones`/`refine_clicks` has run, the refined table (`tone`, `click` or `swept_sine`) also carries a `refinement` sub-struct: `lut_source`, `level_db`, the per-pass `iterations` record (`max_abs_error_db`, `rms_error_db`, `bias_db`, `n_reliable`, `n_corrected`, `max_correction_db`), `initial_`/`final_max_abs_error_db`, `n_unreliable`, `converged`, the criteria applied, and `refinedOn`. The next sweep of that table replaces both together.
 
 The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
 
