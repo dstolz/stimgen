@@ -257,19 +257,24 @@ neither edits the bank.
   signal is normalized to unit peak for audition, so a loaded calibration
   determines spectral shape at most — **calibrated levels are NOT
   reproduced**.
-- **Calibrated HW**: the attached host's calibration hardware route
-  (`HardwareHost.calibrationAdapter`, the same path the calibration itself
-  was measured through — e.g. a TDT device under EPsych). The generated
-  waveform is played **verbatim**, so a calibrated stimulus drives the
-  output at its calibrated voltage. The microphone response
-  `play_and_record` returns is discarded.
+- **Calibrated HW**: the attached host's hardware. The generated waveform
+  is played **verbatim**, so a calibrated stimulus drives the output at its
+  calibrated voltage. Two hardware contracts can carry the preview, and a
+  circuit typically exposes only one of them; the player prefers its own
+  playback tags (`BufferData_0`, `BufferSize_0`, `x_Trigger_0` — the same
+  contract a Run uses, so a preview exercises the exact route a Run will),
+  and falls back to the host's calibration adapter
+  (`HardwareHost.calibrationAdapter`, the `BufferOut`/`BufferIn` circuits
+  the calibration itself was measured through) when the playback tags are
+  absent. The microphone response `play_and_record` returns on the adapter
+  route is discarded.
 
 Selecting `Calibrated HW` requires a host and raises
 `stimgen:StimPlayer:NoHardwareHost` without one; the dropdown callback
 reverts the selection so the GUI never displays a route that cannot play.
 Switching onto hardware adopts the host's sample rate (when it reports one)
 so the bank is regenerated at the rate the converters run at; at play time
-the rate is verified against the adapter and a mismatch raises
+the rate is verified against the hardware and a mismatch raises
 `stimgen:StimPlayer:HardwareRateMismatch` rather than playing a waveform at
 the wrong pitch and duration. Waveforms peaking beyond ±10 V are refused
 (`stimgen:StimPlayer:PreviewVoltageOutOfRange`), and hardware preview is
