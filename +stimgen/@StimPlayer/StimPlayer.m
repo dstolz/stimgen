@@ -15,6 +15,14 @@ classdef StimPlayer < handle
     % found, hardware playback is disabled and only speaker preview is
     % available via Play and Play All.
     %
+    % Play and Play All audition through the computer speakers by default
+    % (normalized to unit peak, so calibrated levels are NOT reproduced).
+    % When a host is attached, PlaybackOutput = "Hardware" routes them
+    % through the host's calibration hardware instead, playing the
+    % generated waveform verbatim so a loaded calibration is heard at its
+    % calibrated voltage. The status bar reports whether a calibration is
+    % loaded and whether the selected output actually applies it.
+    %
     % Required parameter names (resolved from the host at Run time):
     %   BufferData_0, BufferData_1   - audio data buffers
     %   BufferSize_0, BufferSize_1   - buffer length in samples
@@ -75,6 +83,19 @@ classdef StimPlayer < handle
 
         SelectionType (1,1) string {mustBeMember(SelectionType,["Serial","Shuffle"])} = "Shuffle" % Playback order
 
+        % Where Play / Play All audition the selected stimulus.
+        %   "Speakers" - computer sound card; the signal is normalized to
+        %                unit peak, so a calibration sets spectrum shape at
+        %                most and calibrated levels are NOT reproduced.
+        %   "Hardware" - the attached host's calibration hardware route
+        %                (stimgen.HardwareHost.calibrationAdapter); the
+        %                generated waveform is played verbatim, so a loaded
+        %                calibration is heard at its calibrated voltage.
+        % Selecting "Hardware" requires a host and errors without one.
+        % Hardware Run sessions always play the generated waveform and are
+        % unaffected by this setting.
+        PlaybackOutput (1,1) string {mustBeMember(PlaybackOutput,["Speakers","Hardware"])} = "Speakers"
+
         DataPath (1,1) string = string(fullfile('C:\Users', getenv('USERNAME'))) % Default save path
 
         % Visibility of the session controls an interfacing application may
@@ -87,8 +108,19 @@ classdef StimPlayer < handle
             'ISI',        true, ... % Inter-stimulus interval field
             'SampleRate', true, ... % Bank-wide sample rate field
             'PlayMode',   true, ... % Playback order dropdown (Shuffle/Serial)
+            'Output',     true, ... % Preview output dropdown (Speakers/Hardware)
             'Run',        true, ... % Run/Stop button
             'Pause',      true)     % Pause/Resume button
+    end
+
+    % --- Calibration state ---
+    properties (SetAccess = protected)
+        % stimgen.StimCalibration loaded via the Calibration menu, or [].
+        % Shared by handle with every bank item (including ones added after
+        % the load), so the status label can speak for the whole bank.
+        Calibration = []
+
+        CalibrationFile (1,1) string = "" % Source path of the loaded calibration ("" = none/embedded)
     end
 
     % --- Protected runtime state ---
@@ -115,6 +147,8 @@ classdef StimPlayer < handle
 
         PlayAllActive_ (1,1) logical = false % True while a Play All cycle is running
         PlayAllStimObj_                      % stimgen.StimType currently being previewed by Play All
+
+        PreviewAdapter_                      % Cached stimgen.calibration.HwAdapter for hardware preview | []
 
         Inspector                            % stimgen.StimInspector | [] (detail window)
     end
@@ -207,6 +241,18 @@ classdef StimPlayer < handle
 
             obj.ControlVisibility = merged;
             obj.apply_control_visibility_;
+        end
+
+        % -----------------------------------------------------------------
+        function set.PlaybackOutput(obj, value)
+            % Route Play / Play All to speakers or to the host's calibration
+            % hardware. Selecting hardware without a host is refused up
+            % front, so the property never claims a route that cannot play.
+            if value == "Hardware"
+                obj.require_hardware_host_;
+            end
+            obj.PlaybackOutput = value;
+            obj.on_playback_output_changed_;
         end
 
         % -----------------------------------------------------------------
@@ -425,6 +471,7 @@ classdef StimPlayer < handle
             % disconnect_interfaces_() - Return hardware to Idle and clear parameter cache.
 
             obj.PARAMS = struct();
+            obj.PreviewAdapter_ = [];  % its parameter handles die with the interfaces
 
             if isempty(obj.Host) || obj.Host.connectionState() == "None"
                 return
@@ -441,6 +488,200 @@ classdef StimPlayer < handle
         end
 
         % -----------------------------------------------------------------
+        function require_hardware_host_(obj)
+            % require_hardware_host_() - Error unless a hardware host is attached.
+            if isempty(obj.Host)
+                error('stimgen:StimPlayer:NoHardwareHost', ...
+                    ['No hardware host is attached, so only speaker preview ' ...
+                    'is available.']);
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function on_playback_output_changed_(obj)
+            % on_playback_output_changed_() - React to a preview-output switch.
+            % Syncs the dropdown (for programmatic assignment), adopts the
+            % hardware rate when moving onto hardware so the bank is already
+            % generated at the rate the converters run at, and refreshes the
+            % calibration status label, whose meaning depends on the route.
+
+            h = obj.handles;
+            if isfield(h, 'OutputDD') && ~isempty(h.OutputDD) && isvalid(h.OutputDD)
+                h.OutputDD.Value = obj.PlaybackOutput;
+            end
+
+            if obj.PlaybackOutput == "Hardware"
+                obj.adopt_host_fs_;
+                obj.set_status_("Preview output: calibrated hardware.");
+            else
+                obj.set_status_("Preview output: computer speakers.");
+            end
+
+            obj.update_calibration_status_;
+        end
+
+        % -----------------------------------------------------------------
+        function adapter = resolve_preview_adapter_(obj)
+            % adapter = resolve_preview_adapter_() - Hardware route for preview.
+            % Returns the cached stimgen.calibration.HwAdapter, building one
+            % from the host when needed. If the host has a protocol loaded
+            % but nothing connected yet, it is connected and put in Preview
+            % mode first — the same steps a Run performs.
+            %
+            % Errors (with the host's own diagnostic) when no interface
+            % exposes the calibration playback tags.
+
+            if ~isempty(obj.PreviewAdapter_) && isvalid(obj.PreviewAdapter_)
+                adapter = obj.PreviewAdapter_;
+                return
+            end
+
+            obj.require_hardware_host_;
+
+            try
+                adapter = obj.Host.calibrationAdapter();
+            catch firstME
+                if obj.Host.hasProtocol() && obj.Host.connectionState() == "None"
+                    obj.Host.connect();
+                    obj.Host.setMode("Preview");
+                    obj.update_protocol_status_;
+                    adapter = obj.Host.calibrationAdapter();
+                else
+                    rethrow(firstME);
+                end
+            end
+
+            obj.PreviewAdapter_ = adapter;
+        end
+
+        % -----------------------------------------------------------------
+        function play_via_hardware_(obj, stimObj)
+            % play_via_hardware_(obj, stimObj) - Play Signal through calibration hardware.
+            % The waveform is played verbatim — no normalization — so a
+            % calibrated stimulus drives the output at its calibrated
+            % voltage. Blocks until the hardware finishes; the microphone
+            % response play_and_record returns is discarded.
+
+            if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
+                error('stimgen:StimPlayer:PreviewDuringRun', ...
+                    'Stop the running session before previewing through hardware.');
+            end
+
+            adapter = obj.resolve_preview_adapter_;
+
+            hwFs = double(adapter.sample_rate());
+            if isfinite(hwFs) && hwFs > 0 && abs(hwFs - stimObj.Fs) > 0.5
+                error('stimgen:StimPlayer:HardwareRateMismatch', ...
+                    'The hardware plays at %.2f Hz but this stimulus was generated at %.2f Hz.', ...
+                    hwFs, stimObj.Fs);
+            end
+
+            signal = double(stimObj.Signal);
+            peak = max(abs(signal));
+            if peak > 10
+                error('stimgen:StimPlayer:PreviewVoltageOutOfRange', ...
+                    'The waveform peaks at %.2f V, beyond the +/-10 V output range.', peak);
+            end
+
+            adapter.play_and_record(signal(:).');
+        end
+
+        % -----------------------------------------------------------------
+        function tf = stim_has_calibration_(~, stimObj)
+            % tf = stim_has_calibration_(stimObj) - True when the stimulus
+            % carries usable calibration data that it is set to apply.
+            C  = stimObj.Calibration;
+            tf = stimObj.ApplyCalibration && ...
+                isa(C, 'stimgen.StimCalibration') && ~isempty(C.CalibrationData);
+        end
+
+        % -----------------------------------------------------------------
+        function update_calibration_status_(obj)
+            % update_calibration_status_() - Refresh the calibration status label.
+            % The label answers two questions at once: is a calibration in
+            % use, and does the selected preview output actually reproduce
+            % it. Speaker preview normalizes to unit peak, so a loaded
+            % calibration shapes hardware output only — the label goes
+            % amber, not green, while speakers are selected.
+
+            h = obj.handles;
+            if ~isfield(h, 'CalibrationStatusLabel') || isempty(h.CalibrationStatusLabel) ...
+                    || ~isvalid(h.CalibrationStatusLabel)
+                return
+            end
+
+            nItems  = numel(obj.StimPlayObjs);
+            nActive = 0;
+            for i = 1:nItems
+                if obj.stim_has_calibration_(obj.StimPlayObjs(i).StimObj)
+                    nActive = nActive + 1;
+                end
+            end
+
+            COLOR_ACTIVE   = [0.00 0.55 0.20];  % calibration reproduced by current output
+            COLOR_BYPASSED = [0.80 0.50 0.05];  % calibration present but output ignores levels
+            COLOR_NONE     = [0.75 0.15 0.15];  % no calibration at all
+
+            loaded = isa(obj.Calibration, 'stimgen.StimCalibration') && ...
+                ~isempty(obj.Calibration.CalibrationData);
+
+            if loaded || nActive > 0
+                if loaded && strlength(obj.CalibrationFile) > 0
+                    [~, fn, ext] = fileparts(char(obj.CalibrationFile));
+                    srcName = string([fn ext]);
+                else
+                    srcName = "embedded";
+                end
+                displayName = srcName;
+                if strlength(displayName) > 22
+                    displayName = extractBefore(displayName, 21) + "...";
+                end
+
+                tipText = "Calibration: " + srcName;
+                if strlength(obj.CalibrationFile) > 0
+                    tipText = tipText + newline + obj.CalibrationFile;
+                end
+                if loaded
+                    ts = obj.Calibration.CalibrationTimestamp;
+                    if ~isempty(ts)
+                        tipText = tipText + newline + "Measured: " + string(ts);
+                    end
+                    calFs = obj.Calibration.Fs;
+                    if isscalar(calFs) && isfinite(calFs) && calFs > 0 && abs(calFs - obj.Fs) > 0.5
+                        tipText = tipText + newline + sprintf( ...
+                            'WARNING: calibration was measured at %g Hz but the bank plays at %g Hz.', ...
+                            calFs, obj.Fs);
+                    end
+                end
+                tipText = tipText + newline + ...
+                    sprintf('Applied by %d of %d bank item(s).', nActive, nItems);
+
+                if obj.PlaybackOutput == "Hardware"
+                    h.CalibrationStatusLabel.Text      = char("Cal: " + displayName + " > HW");
+                    h.CalibrationStatusLabel.FontColor = COLOR_ACTIVE;
+                    tipText = tipText + newline + ...
+                        "Preview output is the calibrated hardware: calibrated levels are reproduced.";
+                else
+                    h.CalibrationStatusLabel.Text      = char("Cal: " + displayName + " (speakers)");
+                    h.CalibrationStatusLabel.FontColor = COLOR_BYPASSED;
+                    tipText = tipText + newline + ...
+                        "Preview output is the computer speakers: the signal is normalized " + ...
+                        "for audition, so calibrated levels are NOT reproduced. Set Output to " + ...
+                        "Calibrated Hardware to hear the calibrated signal.";
+                end
+                tipText = tipText + newline + ...
+                    "A hardware Run always plays the generated (calibrated) waveform.";
+            else
+                h.CalibrationStatusLabel.Text      = 'No calibration';
+                h.CalibrationStatusLabel.FontColor = COLOR_NONE;
+                tipText = "No calibration is loaded: stimulus levels are arbitrary. " + ...
+                    "Load one from the Calibration menu, or create one with the Calibration GUI.";
+            end
+
+            h.CalibrationStatusLabel.Tooltip = char(tipText);
+        end
+
+        % -----------------------------------------------------------------
         function lock_bank_controls_(obj, lockState)
             % lock_bank_controls_(obj, lockState) - Enable/disable bank-editing controls.
 
@@ -451,7 +692,7 @@ classdef StimPlayer < handle
             end
 
             fields = {'AddBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
-                'ISIField','FsField','OrderDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
+                'ISIField','FsField','OrderDD','OutputDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
                 'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
@@ -484,10 +725,11 @@ classdef StimPlayer < handle
 
             % Bank panel rows: {visibility field, widgets, row index field}
             rows = { ...
-                'Reps',       {'RepsLabel','RepsField'}, 'RepsRow'; ...
-                'ISI',        {'ISILabel','ISIField'},   'ISIRow'; ...
-                'SampleRate', {'FsLabel','FsField'},     'FsRow'; ...
-                'PlayMode',   {'OrderDD'},               'OrderRow'};
+                'Reps',       {'RepsLabel','RepsField'},     'RepsRow'; ...
+                'ISI',        {'ISILabel','ISIField'},       'ISIRow'; ...
+                'SampleRate', {'FsLabel','FsField'},         'FsRow'; ...
+                'PlayMode',   {'OrderDD'},                   'OrderRow'; ...
+                'Output',     {'OutputLabel','OutputDD'},    'OutputRow'};
 
             if isfield(h,'BankGrid') && ~isempty(h.BankGrid) && isvalid(h.BankGrid)
                 heights = h.BankGrid.RowHeight;
@@ -698,13 +940,20 @@ classdef StimPlayer < handle
                 for i = 1:numel(obj.StimPlayObjs)
                     obj.StimPlayObjs(i).StimObj.Calibration = calObj;
                 end
+                obj.Calibration     = calObj;
+                obj.CalibrationFile = string(ffn);
                 obj.remember_recent_calibration_(ffn);
                 stimgen.util.vprintf(1, 'Calibration applied to %d bank items.', numel(obj.StimPlayObjs));
-                obj.set_status_("Calibration applied to " + string(numel(obj.StimPlayObjs)) + " bank item(s).");
+                statusText = "Calibration applied to " + string(numel(obj.StimPlayObjs)) + " bank item(s).";
+                if obj.PlaybackOutput == "Speakers" && ~isempty(obj.Host)
+                    statusText = statusText + " Set Output to Calibrated Hardware to preview at calibrated levels.";
+                end
+                obj.set_status_(statusText);
             catch ME
                 obj.report_gui_error_(ME, "Calibration Error", ...
                     "StimPlayer could not load or apply the selected calibration file.");
             end
+            obj.update_calibration_status_;
         end
 
         % -----------------------------------------------------------------
@@ -1013,6 +1262,18 @@ classdef StimPlayer < handle
                         "The sample rate is unchanged. A rate change moves the highest frequency that can be represented, so bring the parameters of those stimuli inside the new range first, then set the rate again.";
                 case "StimPlayer:InvalidCalibrationFile"
                     messageText = "The selected calibration file did not contain a usable calibration object.";
+                case "stimgen:StimPlayer:NoHardwareHost"
+                    messageText = "StimPlayer was opened without a hardware host, so only speaker preview is available. " + ...
+                        "Open StimPlayer from the host application (e.g. EPsych) to play through calibrated hardware.";
+                case "stimgen:StimPlayer:HardwareRateMismatch"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "A waveform generated at one rate plays at the wrong frequencies and duration at another. " + ...
+                        "Set the bank Sample Rate to the hardware rate, then preview again.";
+                case "stimgen:StimPlayer:PreviewVoltageOutOfRange"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "Lower the stimulus Sound Level so the calibrated drive voltage fits the output range.";
+                case "stimgen:StimPlayer:PreviewDuringRun"
+                    messageText = "The hardware is presenting the bank right now. Stop the session, then preview through hardware.";
                 case "stimgen:util:filterRateMismatch"
                     messageText = string(ME.message) + newline + newline + ...
                         "An equalization filter only corrects the frequencies it was designed for at the sample rate it was designed at. Redesign the filter for this rate in the calibration GUI (Design Filter, ""Design sample rate"" field) -- the measurement itself does not have to be repeated -- or set the sample rate back to the one the calibration was designed at.";

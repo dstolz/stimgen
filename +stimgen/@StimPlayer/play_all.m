@@ -1,10 +1,13 @@
 function play_all(obj, src, ~)
 % play_all(obj)
 % play_all(obj, src)
-% Play all variant combinations for the selected bank stimulus through
-% speakers. While a cycle is running, the same button (relabeled "Stop")
-% interrupts it: it kills the currently-playing sound and stops the loop
-% before the next combination.
+% Play all variant combinations for the selected bank stimulus through the
+% selected preview output (PlaybackOutput): speakers, or the host's
+% calibration hardware playing the calibrated waveform verbatim. While a
+% cycle is running, the same button (relabeled "Stop") interrupts it: it
+% kills the currently-playing sound and stops the loop before the next
+% combination. Hardware playback cannot be cut off mid-waveform, so there
+% Stop takes effect once the current combination finishes.
 %
 % Parameters:
 %   src - Optional button handle used to flash active playback state
@@ -98,9 +101,15 @@ try
         end
 
         obj.set_status_(sprintf('Previewing combo %d of %d.', comboIdx, numCombos));
-        stimgen.util.vprintf(1, 'StimPlayer: previewing "%s" combo %d/%d via speakers...', ...
-            sp.Name, comboIdx, numCombos);
-        stimObj.play;
+        if obj.PlaybackOutput == "Hardware"
+            stimgen.util.vprintf(1, 'StimPlayer: previewing "%s" combo %d/%d via calibrated hardware...', ...
+                sp.Name, comboIdx, numCombos);
+            obj.play_via_hardware_(stimObj);
+        else
+            stimgen.util.vprintf(1, 'StimPlayer: previewing "%s" combo %d/%d via speakers...', ...
+                sp.Name, comboIdx, numCombos);
+            stimObj.play;
+        end
 
         if ~obj.PlayAllActive_
             break

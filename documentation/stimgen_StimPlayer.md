@@ -115,13 +115,18 @@ Important controls:
 - `FsField`: edits the sample rate, in Hz, used to generate every stimulus in
   the bank — see [Sample rate](#sample-rate)
 - `OrderDD`: chooses the cross-item playback order, `Serial` or `Shuffle`
+- `OutputDD`: chooses where `Play` and `Play All` audition the stimulus —
+  see [Preview output and calibration status](#preview-output-and-calibration-status)
 
-`RepsField`, `ISIField`, `FsField`, and `OrderDD` can be hidden by an interfacing
-application — see [Hiding session controls](#hiding-session-controls-host-takeover).
+`RepsField`, `ISIField`, `FsField`, `OrderDD`, and `OutputDD` can be hidden by an
+interfacing application — see
+[Hiding session controls](#hiding-session-controls-host-takeover).
 
 When you add a new item, `add_stim()` creates the stimulus object at the bank's
 current sample rate, constructs a `StimPlay`, assigns a default name such as
-`Tone_1`, and then selects it so the editor panel is rebuilt immediately.
+`Tone_1`, and then selects it so the editor panel is rebuilt immediately. A
+calibration loaded earlier from the Calibration menu is applied to the new item
+as well, so the whole bank always shares one calibration state.
 
 ### Sample rate
 
@@ -242,6 +247,60 @@ disabled during playback by `lock_bank_controls_`, the same as their
 menu/button counterparts. Inspect Stimulus and Play Selected are not, since
 neither edits the bank.
 
+## Preview output and calibration status
+
+`Play` and `Play All` audition through one of two routes, chosen by the
+`Output` dropdown in the bank panel (the `PlaybackOutput` property,
+`"Speakers"` or `"Hardware"`):
+
+- **Speakers** (default): the computer sound card, via `StimType.play`. The
+  signal is normalized to unit peak for audition, so a loaded calibration
+  determines spectral shape at most — **calibrated levels are NOT
+  reproduced**.
+- **Calibrated HW**: the attached host's calibration hardware route
+  (`HardwareHost.calibrationAdapter`, the same path the calibration itself
+  was measured through — e.g. a TDT device under EPsych). The generated
+  waveform is played **verbatim**, so a calibrated stimulus drives the
+  output at its calibrated voltage. The microphone response
+  `play_and_record` returns is discarded.
+
+Selecting `Calibrated HW` requires a host and raises
+`stimgen:StimPlayer:NoHardwareHost` without one; the dropdown callback
+reverts the selection so the GUI never displays a route that cannot play.
+Switching onto hardware adopts the host's sample rate (when it reports one)
+so the bank is regenerated at the rate the converters run at; at play time
+the rate is verified against the adapter and a mismatch raises
+`stimgen:StimPlayer:HardwareRateMismatch` rather than playing a waveform at
+the wrong pitch and duration. Waveforms peaking beyond ±10 V are refused
+(`stimgen:StimPlayer:PreviewVoltageOutOfRange`), and hardware preview is
+refused while a Run session is presenting
+(`stimgen:StimPlayer:PreviewDuringRun`). If the host has a protocol loaded
+but nothing connected yet, the first hardware preview connects it and puts
+it in Preview mode — the same steps a Run performs. The resolved adapter is
+cached and invalidated whenever the interfaces are released.
+
+Hardware preview blocks until the waveform finishes, so during a hardware
+`Play All` cycle the Stop button takes effect between combinations, not
+mid-waveform.
+
+A **calibration status label** in the status bar makes the calibration state
+unmissable. It answers two questions at once — is a calibration in use, and
+does the selected preview output actually reproduce it:
+
+- **Green** `Cal: <file> > HW`: calibration loaded and the hardware route is
+  selected — calibrated levels are played.
+- **Amber** `Cal: <file> (speakers)`: calibration loaded but speaker preview
+  normalizes the signal, so its levels are not reproduced.
+- **Red** `No calibration`: no bank item carries calibration data.
+
+Its tooltip carries the details: source path, measurement timestamp, how many
+bank items apply it, a warning when the calibration's sample rate differs
+from the bank rate, and a reminder that a hardware Run always plays the
+generated (calibrated) waveform regardless of the preview output. The label
+is maintained by `update_calibration_status_`, called after every event that
+can change the answer: loading a calibration, adding or removing bank items,
+loading a bank, and switching the preview output.
+
 ## Hiding session controls (host takeover)
 
 An interfacing application that owns the session itself can hide the controls
@@ -257,7 +316,8 @@ sp.set_control_visibility(All=false, Run=true)                    % all but Run
 ```
 
 Hideable controls: `Reps`, `ISI`, `SampleRate`, `PlayMode` (the
-`Shuffle`/`Serial` dropdown), `Run`, and `Pause`. A host whose hardware dictates
+`Shuffle`/`Serial` dropdown), `Output` (the preview output dropdown), `Run`,
+and `Pause`. A host whose hardware dictates
 the converter rate typically hides `SampleRate` and lets `Run` adopt it from
 `HardwareHost.sampleRate()`. `All` sets every one at once and is applied
 before the individual pairs, so the two can be combined as above. Each accepts
@@ -357,10 +417,11 @@ repetition count, which ends the session cleanly.
 
 ### Compatibility note
 
-The current loader restores stimulus parameters, names, repetitions, and ISI,
-but it does not reapply any serialized calibration object to the rebuilt bank
-items. After loading a bank, reattach calibration from the `File >
-Calibration` menu or by assigning it in code.
+The loader restores stimulus parameters, names, repetitions, ISI, and any
+calibration serialized with each item. A calibration previously loaded at the
+player level belongs to the previous bank, so loading a bank clears it — the
+status label then reports the loaded items' own embedded calibrations, or
+`No calibration` when they carry none.
 
 For multi-object stimuli, bank persistence should also be tested carefully.
 `StimPlay.toStruct()` serializes expanded child stimuli rather than the

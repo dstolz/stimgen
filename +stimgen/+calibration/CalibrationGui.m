@@ -112,6 +112,7 @@ classdef CalibrationGui < handle
         BtnTestClicks
         BtnFilter
         BtnTestFilter
+        BtnCopyFilter
         BtnStop
         BtnReset
 
@@ -346,7 +347,7 @@ classdef CalibrationGui < handle
             [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
             obj.build_calibration_section_(g);
 
-            [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30]);
+            [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30]);
             obj.build_verification_section_(g);
 
             [g, h(4)] = obj.add_section_(stack, 4, 'Display', [24 24]);
@@ -507,7 +508,9 @@ classdef CalibrationGui < handle
             % sweep it verifies in the section above. Both are ahead of the
             % equalizer: a filter designed on a table whose levels are wrong
             % inherits that error. Design and its own verification then share
-            % the row below, since neither is much use without the other.
+            % the row below, since neither is much use without the other. The
+            % export of the taps gets the full width under both, being the one
+            % thing here that leaves the window.
             obj.BtnTestTones = action_button_(g, 1, 1, 'Test Tones', ...
                 'BtnTestTones', @(~,~) obj.on_test_tones_());
             obj.BtnTestClicks = action_button_(g, 1, 2, 'Test Clicks', ...
@@ -516,6 +519,8 @@ classdef CalibrationGui < handle
                 'BtnFilter', @(~,~) obj.on_design_filter_());
             obj.BtnTestFilter = action_button_(g, 2, 2, 'Test Filter', ...
                 'BtnTestFilter', @(~,~) obj.on_test_filter_());
+            obj.BtnCopyFilter = action_button_(g, 3, [1 2], 'Copy Filter Coefficients', ...
+                'BtnCopyFilter', @(~,~) obj.on_copy_filter_coefficients_());
         end
 
         function build_display_section_(obj, g)
@@ -1086,6 +1091,57 @@ classdef CalibrationGui < handle
             end
         end
 
+        function on_copy_filter_coefficients_(obj)
+            % Put the equalizer's taps on the system clipboard, one per line
+            % and nothing else, so the text pastes as-is into an RPvds
+            % coefficient file, a spreadsheet column, or another language's
+            % array literal. The design metadata a reader needs alongside them
+            % -- tap count and design rate -- goes to the status line instead
+            % of into the text, which stays purely numeric.
+            C = obj.Engine.CalibrationData;
+            if ~isstruct(C) || ~isfield(C, 'filter') || isempty(C.filter)
+                obj.set_status_('No equalization filter to copy. Design or load one first.', true);
+                return
+            end
+
+            filt = C.filter;
+            if ~isfir(filt)
+                obj.set_status_(['This filter is not FIR, so it has no single tap list. ' ...
+                    'Redesign it, or read the coefficients from the .esgc file.'], true);
+                return
+            end
+            b = tf(filt);
+
+            % %.17g round-trips a double exactly. The taps are the calibration
+            % once they leave here -- whatever reads them back has no way to
+            % recover a digit this print drops.
+            if ispc
+                eol = sprintf('\r\n');   % Notepad and RPvds want CRLF
+            else
+                eol = newline;
+            end
+            txt = strjoin(compose('%.17g', b(:)), eol);
+
+            try
+                clipboard('copy', char(txt));
+            catch ME
+                stimgen.util.vprintf(0, 1, ME);
+                obj.set_status_(sprintf('Could not write to the clipboard: %s', ME.message), true);
+                return
+            end
+
+            fs = obj.filter_design_rate_();
+            if fs > 0
+                % %.10g: 24414.0625 is a real converter rate, and a filter is
+                % only its designed response at the rate it was cut for.
+                msg = sprintf('%d filter coefficients copied to the clipboard (designed for Fs = %.10g Hz).', ...
+                    numel(b), fs);
+            else
+                msg = sprintf('%d filter coefficients copied to the clipboard.', numel(b));
+            end
+            obj.set_status_(msg, false);
+        end
+
         function on_save_(obj)
             obj.with_busy_state_(@() obj.run_save_(''), 'Saving calibration file...');
         end
@@ -1437,6 +1493,15 @@ classdef CalibrationGui < handle
                 obj.BtnTestFilter.Enable = 'on';
             else
                 obj.BtnTestFilter.Enable = 'off';
+            end
+
+            % Copying reads the taps that already exist, so unlike testing it
+            % asks nothing of the hardware -- a filter loaded from a .esgc on a
+            % machine with no rig attached is still exportable.
+            if hasFilter
+                obj.BtnCopyFilter.Enable = 'on';
+            else
+                obj.BtnCopyFilter.Enable = 'off';
             end
         end
 
@@ -2041,6 +2106,7 @@ classdef CalibrationGui < handle
                 obj.BtnTestClicks.Enable = 'off';
                 obj.BtnFilter.Enable = 'off';
                 obj.BtnTestFilter.Enable = 'off';
+                obj.BtnCopyFilter.Enable = 'off';
                 obj.BtnReset.Enable = 'off';
                 if cancellable
                     obj.BtnStop.Enable = 'on';

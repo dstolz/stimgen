@@ -102,6 +102,12 @@ try
     obj.update_counter_;
     obj.refresh_combo_controls_;
 
+    % Any bank-level calibration belonged to the previous bank; the loaded
+    % items carry their own embedded calibrations (or none).
+    obj.Calibration     = [];
+    obj.CalibrationFile = "";
+    obj.update_calibration_status_;
+
     obj.DataPath = string(fileparts(ffn));
     obj.remember_recent_bank_(ffn);
 

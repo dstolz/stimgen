@@ -11,6 +11,12 @@ try
 	% Create the StimType object at the bank's sample rate
 	stimObj = stimgen.(typeName)('Fs', obj.Fs);
 
+	% A calibration loaded before this item was added applies to it too,
+	% so the whole bank always shares one calibration state.
+	if isa(obj.Calibration, 'stimgen.StimCalibration')
+		stimObj.Calibration = obj.Calibration;
+	end
+
 	% Wrap in StimPlay
 	sp              = stimgen.StimPlay(stimObj);
 	sp.Fs           = obj.Fs;
@@ -22,6 +28,7 @@ try
 
 	obj.refresh_listbox_;
 	obj.refresh_combo_controls_;
+	obj.update_calibration_status_;
 
 	% Select the newly added item
 	h.BankList.Value = numel(obj.StimPlayObjs);

@@ -194,7 +194,7 @@ position in one long list:
 |---|---|
 | Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
 | Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
-| Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter |
+| Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, with Copy Filter Coefficients across the row below |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Footer (pinned) | Stop, Reset Calibration, and the status line |
 
@@ -269,7 +269,8 @@ Recommended sequence:
    experiment; it is the only step that measures whether the lookup works
 6. Optional: Calibrate Clicks and/or Calibrate Swept Sine. A click table earns
    the same closed loop as the tone table — Test Clicks
-7. Optional: Design Filter, then Test Filter to verify it empirically
+7. Optional: Design Filter, then Test Filter to verify it empirically. Copy
+   Filter Coefficients exports the taps for use outside stimgen
 8. Save .esgc
 
 ## Conduction Delay
@@ -497,6 +498,12 @@ Test Filter verifies the equalizer empirically, and which verification runs foll
 
 Either run is cancellable with Stop, and with live plots on the transfer panel fills in as the measurement proceeds — for the sweep branch, the raw response first and then the flattened one. The sweep flatness test remains available programmatically as `eng.test_filter()` regardless of the filter's source.
 
+## Copy Filter Coefficients
+
+Copy Filter Coefficients puts the current equalizer's FIR taps (`tf(CalibrationData.filter)`) on the system clipboard as plain text: one coefficient per line, printed `%.17g` so a double round-trips exactly, CRLF-terminated on Windows. Nothing else is in the text — no header, no brackets, no separators — so it pastes as-is into an RPvds coefficient file, a spreadsheet column, MATLAB's `[ ]`, or another language's array literal.
+
+The tap count and the rate the filter was designed for go to the status line rather than into the clipboard, since a filter only realizes its designed response at the rate it was cut for and the text has to stay purely numeric. The button needs no adapter — it reads taps that already exist, so a `.esgc` loaded on a machine with no rig attached is still exportable. A non-FIR filter (nothing `design_filter` produces) is reported on the status line instead of copied, having no single tap list.
+
 ## Reset Calibration
 
 Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
@@ -510,8 +517,9 @@ Everything else is left untouched: the attached adapter, the loaded protocol/hos
 3. Test Clicks: enabled when click calibration data exists **and** an adapter is attached. Only `calibrate_clicks` ever writes that table, so unlike Test Tones there is no alternative source to account for.
 4. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.
 5. Test Filter: enabled when a filter has been designed or loaded **and** an adapter is attached — verification is a live measurement.
-6. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
-7. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
+6. Copy Filter Coefficients: enabled when a filter has been designed or loaded — no adapter needed, since it only reads taps that already exist.
+7. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
+8. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
 
 ## Runtime Ownership And Independence
 

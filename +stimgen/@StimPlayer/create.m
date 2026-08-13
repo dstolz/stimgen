@@ -7,7 +7,7 @@ function create(obj)
 % built separately, in on_bank_selection_changed.
 tip = @(key) stimgen.util.tooltip('StimPlayer', key);
 
-f = uifigure('Name', 'StimPlayer', 'Position', [100 100 900 760]);
+f = uifigure('Name', 'StimPlayer', 'Position', [100 100 1000 760]);
 f.DeleteFcn = @(~,~) delete(obj);
 f.WindowKeyPressFcn = @(~,evt) on_keypress_(obj, evt);
 obj.hFig = f;
@@ -46,7 +46,7 @@ bankPnl.Layout.Column = 1;
 
 bg = uigridlayout(bankPnl);
 bg.ColumnWidth = {'1x', '1x'};
-bg.RowHeight   = {26, 26, '1x', 26, 26, 26, 26, 26, 26, 30};
+bg.RowHeight   = {26, 26, '1x', 26, 26, 26, 26, 26, 26, 26, 30};
 bg.Padding     = [6 6 6 6];
 bg.RowSpacing  = 4;
 
@@ -205,6 +205,30 @@ obj.handles.ComboStatusLbl = h;
 
 R = R + 1;
 
+% Preview output routing: speakers audition a normalized copy, hardware
+% plays the generated (calibrated) waveform through the host's calibration
+% route. Selecting hardware without a host raises, and the callback reverts.
+OUTPUT_TIP = tip('OutputDD');
+
+lbl = uilabel(bg, 'Text', 'Output:', 'HorizontalAlignment', 'right');
+lbl.Layout.Row    = R;
+lbl.Layout.Column = 1;
+lbl.Tooltip       = OUTPUT_TIP;
+obj.handles.OutputLabel = lbl;
+obj.handles.OutputRow   = R;
+
+h = uidropdown(bg, 'Tag', 'OutputDD');
+h.Layout.Row      = R;
+h.Layout.Column   = 2;
+h.Items           = {'Speakers', 'Calibrated HW'};
+h.ItemsData       = {"Speakers", "Hardware"};
+h.Value           = obj.PlaybackOutput;
+h.ValueChangedFcn = @(s,e) on_output_changed_(obj,s,e);
+h.Tooltip         = OUTPUT_TIP;
+obj.handles.OutputDD = h;
+
+R = R + 1;
+
 % Preview buttons
 h = uibutton(bg, 'Text', 'Play');
 h.Layout.Row          = R;
@@ -236,7 +260,7 @@ uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
 ctrlG = uigridlayout(g);
 ctrlG.Layout.Row    = 3;
 ctrlG.Layout.Column = 1;
-ctrlG.ColumnWidth   = {100, 100, 280, 20, 220, 160};
+ctrlG.ColumnWidth   = {100, 100, 250, 170, 20, '1x', 120};
 ctrlG.RowHeight     = {'1x'};
 ctrlG.Padding       = [0 0 0 0];
 ctrlG.ColumnSpacing = 6;
@@ -274,8 +298,17 @@ h.Layout.Row    = 1;
 h.Tooltip       = tip('ProtocolStatusLabel');
 obj.handles.ProtocolStatusLabel = h;
 
-h = uilamp(ctrlG);
+% Calibration status: text and color are owned by update_calibration_status_,
+% which also replaces this static tooltip with the live details.
+h = uilabel(ctrlG, 'Text', 'No calibration', 'FontWeight', 'bold', ...
+    'HorizontalAlignment', 'left', 'FontColor', [0.75 0.15 0.15]);
 h.Layout.Column = 4;
+h.Layout.Row    = 1;
+h.Tooltip       = tip('CalibrationStatusLabel');
+obj.handles.CalibrationStatusLabel = h;
+
+h = uilamp(ctrlG);
+h.Layout.Column = 5;
 h.Layout.Row    = 1;
 h.Color         = [0.75 0.75 0.75];
 h.Tooltip       = tip('ComputingLamp');
@@ -283,14 +316,14 @@ obj.handles.ComputingLamp = h;
 
 h = uilabel(ctrlG, 'Text', 'Ready.', 'HorizontalAlignment', 'left', ...
     'FontColor', [0.35 0.35 0.35]);
-h.Layout.Column = 5;
+h.Layout.Column = 6;
 h.Layout.Row    = 1;
 h.Tooltip       = tip('StatusLabel');
 obj.handles.StatusLabel = h;
 
 h = uilabel(ctrlG, 'Text', '0 / 0', 'FontSize', 16, 'FontWeight', 'bold', ...
     'HorizontalAlignment', 'right');
-h.Layout.Column = 6;
+h.Layout.Column = 7;
 h.Layout.Row    = 1;
 h.Tooltip       = tip('Counter');
 obj.handles.Counter = h;
@@ -373,6 +406,7 @@ movegui(f, 'onscreen');
 
 obj.refresh_combo_controls_;
 obj.update_protocol_status_;
+obj.update_calibration_status_;
 obj.handles.LoadProtocolMenu  = mLoadProtocol;
 obj.handles.LoadBankMenu      = mLoadBank;
 obj.handles.SaveBankMenu      = mSaveBank;
@@ -453,6 +487,19 @@ try
 catch ME
     obj.report_gui_error_(ME, "Invalid Order", ...
         "Unable to apply the selected playback order.");
+end
+end
+
+function on_output_changed_(obj, src, event)
+% Route preview playback to speakers or calibrated hardware. Selecting
+% hardware without an attached host raises; revert the dropdown so it
+% never displays a route that cannot play.
+try
+    obj.PlaybackOutput = src.Value;
+catch ME
+    src.Value = event.PreviousValue;
+    obj.report_gui_error_(ME, "Preview Output Error", ...
+        "StimPlayer could not switch the preview output.");
 end
 end
 

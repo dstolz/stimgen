@@ -14,6 +14,7 @@ function set_control_visibility(obj, options)
 %   ISI        - Inter-stimulus interval field
 %   SampleRate - Bank-wide sample rate field
 %   PlayMode   - Playback order dropdown (Shuffle / Serial)
+%   Output     - Preview output dropdown (Speakers / Calibrated HW)
 %   Run        - Run/Stop button
 %   Pause      - Pause/Resume button
 %
@@ -34,6 +35,7 @@ arguments
     options.ISI        (1,1) matlab.lang.OnOffSwitchState
     options.SampleRate (1,1) matlab.lang.OnOffSwitchState
     options.PlayMode   (1,1) matlab.lang.OnOffSwitchState
+    options.Output     (1,1) matlab.lang.OnOffSwitchState
     options.Run        (1,1) matlab.lang.OnOffSwitchState
     options.Pause      (1,1) matlab.lang.OnOffSwitchState
 end

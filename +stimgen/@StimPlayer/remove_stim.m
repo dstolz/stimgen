@@ -19,6 +19,7 @@ obj.StimPlayObjs(idx) = [];
 
 obj.refresh_listbox_;
 obj.refresh_combo_controls_;
+obj.update_calibration_status_;
 
 % Clear tab group back to placeholder
 obj.clear_tabs_;
