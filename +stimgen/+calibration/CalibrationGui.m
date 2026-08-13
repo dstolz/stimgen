@@ -11,15 +11,23 @@ classdef CalibrationGui < handle
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
     % Settings are remembered across MATLAB sessions as StimCalibrationGui
-    % preferences: the controls-column fields and toggles, the View menu's
-    % spectrum unit and weighting overlays, and the per-dialog measurement
-    % parameters. Values carried by a supplied engine, or by a loaded or
-    % in-progress calibration, always take precedence over remembered ones.
+    % preferences: the controls-column fields and toggles, the display state
+    % (spectrum unit, weighting overlays, ghost, drive-voltage axis, log
+    % frequency axis), and the per-dialog measurement parameters. Values
+    % carried by a supplied engine, or by a loaded or in-progress calibration,
+    % always take precedence over remembered ones.
     %
     % All drawing is done by a stimgen.calibration.LiveMonitor attached to this
     % window's axes: during a run it renders the engine's LiveUpdate stream
     % (gated by the Show Engine Live Plots checkbox), and between runs the same
     % renderer draws the committed calibration and the last response.
+    %
+    % What those panels show is chosen from the toolbar's second group -- which
+    % of the two views the transfer panel serves, and one button per overlay --
+    % mirrored by the View menu and the Display section, since a display choice
+    % is made while reading a plot rather than while setting a sweep up. The
+    % state itself lives on the monitor and on TransferView_; every control is
+    % a mirror of it, written only by sync_display_controls_.
     %
     % Arguments are identified by type, so an Engine and a HardwareHost may be
     % passed in either order, either one alone, or as Engine=/Host= pairs.
@@ -54,6 +62,11 @@ classdef CalibrationGui < handle
     %           documentation/stimgen_CalibrationGui.md,
     %           documentation/stimgen_calibration.md
 
+    properties (Constant)
+        % Help > Calibration Quick Start opens this page.
+        QuickStartURL = 'https://github.com/dstolz/stimgen/wiki/Calibrating-Your-Rig'
+    end
+
     properties (SetAccess = private)
         Engine stimgen.calibration.Engine
         Monitor stimgen.calibration.LiveMonitor  % renders all three axes
@@ -69,10 +82,24 @@ classdef CalibrationGui < handle
         RecentCalibrationsMenu
 
         % View menu
+        CalibrationViewMenu
         BackgroundViewMenu
         WeightingMenus          % one checkable item per LiveMonitor.WeightingTypes
         SpectrumUnitMenus       % one checkable item per LiveMonitor.SpectrumUnitList
+        GhostMenu
+        VoltageMenu
         TransferView_ (1,1) string = "calibration"  % which view the transfer panel last drew
+
+        % Display toolbar. Each of these mirrors a View menu item or the
+        % Display section's checkbox rather than owning state of its own:
+        % what a plot shows is changed while reading the plot, which is when
+        % crossing the window to a menu is most in the way. sync_display_-
+        % controls_ is the one writer that keeps every mirror in step.
+        ToolCalibrationView
+        ToolBackgroundView
+        ToolGhost
+        ToolVoltage
+        ToolLogX
 
         % Controls
         RefLevelField
@@ -84,6 +111,7 @@ classdef CalibrationGui < handle
         TransferLogXCheck
         ToneSweptSineCheck
         StatusLabel
+        LevelRefLabel
 
         % Hardware Settings window (Hardware > Hardware Settings...). Created
         % on demand, so these handles are empty until it is first opened and
@@ -207,6 +235,10 @@ classdef CalibrationGui < handle
             obj.build_toolbar_();
             obj.build_controls_panel_();
             obj.build_plots_panel_();
+
+            % Last, because it writes to all three of them and the monitor
+            % holding the state it writes is created by the last call above.
+            obj.sync_display_controls_();
         end
 
         function build_toolbar_(obj)
@@ -238,6 +270,39 @@ classdef CalibrationGui < handle
             uipushtool(tb, Tooltip=tip('QuickStartTool'), Separator='on', ...
                 Icon=stimgen.util.toolbar_icon('help'), ...
                 ClickedCallback=@(~,~) obj.on_show_quick_start_());
+
+            obj.build_display_tools_(tb, tip);
+        end
+
+        function build_display_tools_(obj, tb, tip)
+            % Second toolbar group: what the panels show. The first pair
+            % chooses which view the transfer panel serves and is exclusive;
+            % the second group toggles one overlay each. All five are toggle
+            % tools rather than push tools so the toolbar states what is on
+            % screen as well as changing it -- which is what makes it usable
+            % as the display readout it now is.
+            obj.ToolCalibrationView = uitoggletool(tb, Separator='on', ...
+                Tooltip=tip('TransferViewTool'), ...
+                Icon=stimgen.util.toolbar_icon('transfer'), ...
+                ClickedCallback=@(~,~) obj.set_transfer_view_("calibration"));
+
+            obj.ToolBackgroundView = uitoggletool(tb, Enable='off', ...
+                Tooltip=tip('BackgroundViewTool'), ...
+                Icon=stimgen.util.toolbar_icon('background'), ...
+                ClickedCallback=@(~,~) obj.set_transfer_view_("background"));
+
+            obj.ToolGhost = uitoggletool(tb, Separator='on', ...
+                Tooltip=tip('SpectrumGhost'), ...
+                Icon=stimgen.util.toolbar_icon('ghost'), ...
+                ClickedCallback=@(src,~) obj.set_show_ghost_(logical(src.State)));
+
+            obj.ToolVoltage = uitoggletool(tb, Tooltip=tip('TransferVoltage'), ...
+                Icon=stimgen.util.toolbar_icon('voltage'), ...
+                ClickedCallback=@(src,~) obj.set_show_voltage_(logical(src.State)));
+
+            obj.ToolLogX = uitoggletool(tb, Tooltip=tip('TransferLogX'), ...
+                Icon=stimgen.util.toolbar_icon('logx'), ...
+                ClickedCallback=@(src,~) obj.set_transfer_log_x_(logical(src.State)));
         end
 
         function build_menu_(obj)
@@ -260,13 +325,16 @@ classdef CalibrationGui < handle
             obj.refresh_recent_calibrations_menu_();
 
             % The transfer panel serves one view at a time; this is how a user
-            % gets back to the other one without re-running anything.
+            % gets back to the other one without re-running anything. Checkable
+            % rather than plain items, so the menu names the view that is up
+            % instead of only offering to change it.
             viewMenu = uimenu(obj.Figure, Text='View');
-            uimenu(viewMenu, Text='Calibration Transfer Curves', ...
-                MenuSelectedFcn=@(~,~) obj.on_show_transfer_());
+            obj.CalibrationViewMenu = uimenu(viewMenu, ...
+                Text='Calibration Transfer Curves', ...
+                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("calibration"));
             obj.BackgroundViewMenu = uimenu(viewMenu, Text='Background Noise Analysis', ...
                 Enable='off', ...
-                MenuSelectedFcn=@(~,~) obj.on_show_background_());
+                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("background"));
 
             % Weightings annotate whichever view is up rather than being a
             % view of their own, and more than one at a time is a reasonable
@@ -299,6 +367,19 @@ classdef CalibrationGui < handle
                     MenuSelectedFcn=@(src,~) obj.on_spectrum_units_(src));
             end
 
+            % Two overlays worth turning off once a panel is crowded, and the
+            % non-toolbar home for the pair of toolbar buttons that share them.
+            % Both default on: the ghost is what makes run-to-run drift visible
+            % rather than inferred, and the drive axis is what says whether a
+            % point is reachable at all.
+            obj.GhostMenu = uimenu(viewMenu, Text='Previous-Measurement Ghost', ...
+                Separator='on', ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'SpectrumGhost'), ...
+                MenuSelectedFcn=@(~,~) obj.set_show_ghost_(~obj.Monitor.ShowGhost));
+            obj.VoltageMenu = uimenu(viewMenu, Text='Transfer Drive-Voltage Axis', ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'TransferVoltage'), ...
+                MenuSelectedFcn=@(~,~) obj.set_show_voltage_(~obj.Monitor.ShowVoltage));
+
             % Rig facts and acquisition settings live in their own window
             % rather than the controls column: they are set once per rig, not
             % once per sweep, and the column reads better carrying only the
@@ -308,7 +389,7 @@ classdef CalibrationGui < handle
                 MenuSelectedFcn=@(~,~) obj.on_hardware_settings_());
 
             helpMenu = uimenu(obj.Figure, Text='Help');
-            uimenu(helpMenu, Text='Calibration Quick Start', ...
+            uimenu(helpMenu, Text='Calibration Quick Start (Wiki)', ...
                 MenuSelectedFcn=@(~,~) obj.on_show_quick_start_());
         end
 
@@ -347,7 +428,7 @@ classdef CalibrationGui < handle
             [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
             obj.build_calibration_section_(g);
 
-            [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30]);
+            [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30 24]);
             obj.build_verification_section_(g);
 
             [g, h(4)] = obj.add_section_(stack, 4, 'Display', [24 24]);
@@ -521,6 +602,14 @@ classdef CalibrationGui < handle
                 'BtnTestFilter', @(~,~) obj.on_test_filter_());
             obj.BtnCopyFilter = action_button_(g, 3, [1 2], 'Copy Filter Coefficients', ...
                 'BtnCopyFilter', @(~,~) obj.on_copy_filter_coefficients_());
+
+            % What the equalizer does to a level once it runs in hardware,
+            % where nothing renormalizes after the FIR. Shown for the 1 V RMS
+            % white-noise convention; Engine.filter_level_reference takes the
+            % actual source waveform when that assumption does not hold.
+            obj.LevelRefLabel = readout_row_(g, 4, 'Unity-Gain Noise Level', ...
+                'Not designed', ...
+                stimgen.util.tooltip('CalibrationGui', 'FilterLevelReference'));
         end
 
         function build_display_section_(obj, g)
@@ -529,7 +618,8 @@ classdef CalibrationGui < handle
             obj.ShowLivePlotsCheck = check_row_(g, 1, 'Show Engine Live Plots', ...
                 stimgen.util.tooltip('CalibrationGui', 'ShowLivePlots'));
             obj.TransferLogXCheck = check_row_(g, 2, 'Transfer Plot Log X-Axis', ...
-                '', @(~,~) obj.on_transfer_log_x_());
+                stimgen.util.tooltip('CalibrationGui', 'TransferLogX'), ...
+                @(src,~) obj.set_transfer_log_x_(src.Value));
             obj.TransferLogXCheck.Value = true;
         end
 
@@ -611,10 +701,91 @@ classdef CalibrationGui < handle
             end
         end
 
-        function on_transfer_log_x_(obj)
-            % Toggle log/linear frequency on the transfer panel and redraw.
-            obj.Monitor.LogX = obj.TransferLogXCheck.Value;
-            obj.refresh_all_plots_();
+        function set_transfer_log_x_(obj, tf)
+            % Log or linear frequency on the transfer panel.
+            obj.Monitor.LogX = tf;
+            obj.sync_display_controls_();
+            obj.redraw_transfer_view_();
+        end
+
+        function set_show_ghost_(obj, tf)
+            % Overlay of the previous spectrum. Only the response panels are
+            % redrawn: a transfer redraw resets the monitor's whole graphics
+            % cache, and the ghost being toggled -- along with the measurement
+            % behind it that has not been drawn yet -- lives in that cache.
+            obj.Monitor.ShowGhost = tf;
+            obj.sync_display_controls_();
+            obj.Monitor.show_engine_state(obj.Engine);
+        end
+
+        function set_show_voltage_(obj, tf)
+            % Right-hand drive-voltage axis on the transfer panel.
+            obj.Monitor.ShowVoltage = tf;
+            obj.sync_display_controls_();
+            obj.redraw_transfer_view_();
+        end
+
+        function set_transfer_view_(obj, view)
+            % Point the transfer panel at one of its two views. Everything
+            % that switches it comes through here -- both menu items, both
+            % toolbar buttons, and the fallback when a reset takes the
+            % background data away -- so the state, the controls mirroring it,
+            % and what is on screen cannot disagree.
+            arguments
+                obj
+                view (1,1) string {mustBeMember(view, ["calibration", "background"])}
+            end
+            obj.TransferView_ = view;
+            obj.sync_display_controls_();
+            obj.redraw_transfer_view_();
+            if view == "background"
+                obj.set_status_('Showing background noise analysis.', false);
+            else
+                obj.set_status_('Showing calibration transfer curves.', false);
+            end
+        end
+
+        function redraw_transfer_view_(obj)
+            % Redraw whichever view the transfer panel is serving, without
+            % changing which one that is. show_background resets the monitor's
+            % whole graphics cache, not just the transfer panel's share of it,
+            % so the response panels have to be redrawn after it -- the same
+            % ordering refresh_all_plots_ depends on.
+            if obj.TransferView_ == "background"
+                obj.Monitor.show_background(obj.Engine);
+                obj.Monitor.show_engine_state(obj.Engine);
+            else
+                obj.refresh_all_plots_();
+            end
+        end
+
+        function sync_display_controls_(obj)
+            % Push the display state to every control that mirrors it: the
+            % View menu, the display toolbar, and the Display section's
+            % checkbox. One writer for all three, so a change made through any
+            % of them shows on the others without each callback having to know
+            % what the others are. Setting a toggle tool's State
+            % programmatically does not fire its ClickedCallback, so this
+            % cannot re-enter the handler that called it.
+            if isempty(obj.Monitor) || ~isvalid(obj.Monitor)
+                return
+            end
+
+            isBackground = obj.TransferView_ == "background";
+            set_checked_(obj.CalibrationViewMenu, ~isBackground);
+            set_checked_(obj.BackgroundViewMenu,  isBackground);
+            set_checked_(obj.GhostMenu,   obj.Monitor.ShowGhost);
+            set_checked_(obj.VoltageMenu, obj.Monitor.ShowVoltage);
+
+            set_tool_state_(obj.ToolCalibrationView, ~isBackground);
+            set_tool_state_(obj.ToolBackgroundView,  isBackground);
+            set_tool_state_(obj.ToolGhost,   obj.Monitor.ShowGhost);
+            set_tool_state_(obj.ToolVoltage, obj.Monitor.ShowVoltage);
+            set_tool_state_(obj.ToolLogX,    obj.Monitor.LogX);
+
+            if ~isempty(obj.TransferLogXCheck) && all(isgraphics(obj.TransferLogXCheck))
+                obj.TransferLogXCheck.Value = obj.Monitor.LogX;
+            end
         end
 
         function on_weighting_(obj, src)
@@ -639,11 +810,7 @@ classdef CalibrationGui < handle
             checked = arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus);
             obj.Monitor.Weightings = ...
                 stimgen.calibration.LiveMonitor.WeightingTypes(checked);
-            if obj.TransferView_ == "background"
-                obj.on_show_background_();
-            else
-                obj.refresh_all_plots_();
-            end
+            obj.redraw_transfer_view_();
         end
 
         function on_close_(obj, fig)
@@ -721,9 +888,10 @@ classdef CalibrationGui < handle
 
             % The panels are left showing the background rather than refreshed
             % back to the lookup tables: the band curve is the result, and
-            % View > Calibration Transfer Curves brings the tables back.
-            obj.Monitor.show_background(obj.Engine);
-            obj.Monitor.show_engine_state(obj.Engine);
+            % View > Calibration Transfer Curves brings the tables back. Routed
+            % through set_transfer_view_ rather than drawn directly, so the
+            % view the panel is left on is the view the menu and toolbar report.
+            obj.set_transfer_view_("background");
 
             hasFindings = ~isempty(r.flags);
             obj.set_status_(background_summary_(r), hasFindings);
@@ -787,36 +955,23 @@ classdef CalibrationGui < handle
             wasCancelled = false;
         end
 
-        function on_show_transfer_(obj)
-            obj.TransferView_ = "calibration";
-            obj.refresh_all_plots_();
-            obj.set_status_('Showing calibration transfer curves.', false);
-        end
-
-        function on_show_background_(obj)
-            obj.TransferView_ = "background";
-            % show_background resets the monitor's whole graphics cache, not
-            % just the transfer panel's share of it, so the response panels have
-            % to be redrawn after it -- the same ordering refresh_all_plots_
-            % depends on.
-            obj.Monitor.show_background(obj.Engine);
-            obj.Monitor.show_engine_state(obj.Engine);
-            obj.set_status_('Showing background noise analysis.', false);
-        end
-
-        function update_background_menu_(obj)
+        function update_background_view_state_(obj)
             % The background view is only reachable once something has been
-            % captured; there is nothing to draw before that.
-            if isempty(obj.BackgroundViewMenu) || ~isvalid(obj.BackgroundViewMenu)
-                return
-            end
+            % captured; there is nothing to draw before that. A Reset takes the
+            % data away without touching the panel, so a view still pointing at
+            % it falls back to the lookup tables rather than leaving the menu
+            % and toolbar claiming a view that can no longer be drawn. Nothing
+            % is redrawn here: every caller draws for its own reasons.
             C = obj.Engine.CalibrationData;
             hasBackground = isstruct(C) && isfield(C, 'background') && ~isempty(C.background);
-            if hasBackground
-                obj.BackgroundViewMenu.Enable = 'on';
-            else
-                obj.BackgroundViewMenu.Enable = 'off';
+
+            set_enabled_(obj.BackgroundViewMenu,  hasBackground);
+            set_enabled_(obj.ToolBackgroundView,  hasBackground);
+
+            if ~hasBackground && obj.TransferView_ == "background"
+                obj.TransferView_ = "calibration";
             end
+            obj.sync_display_controls_();
         end
 
         function on_calibrate_tones_(obj)
@@ -1038,6 +1193,17 @@ classdef CalibrationGui < handle
             msg = sprintf( ...
                 'Equalization filter designed: %d taps, %.1f dB correction span, Fs = %.10g Hz.', ...
                 D.numCoefficients, D.correctionDb, D.sampleRate);
+
+            % The number a hardware chain scales its gain against, stated at
+            % design time so it travels with the taps it belongs to. Guarded:
+            % the reference needs the LUT lookup, which can still refuse.
+            try
+                rRef = obj.Engine.filter_level_reference(1);
+                msg = sprintf(['%s 1 V RMS white noise at unity gain: %.1f dB SPL ' ...
+                    '(scale by %.3g for %g dB SPL).'], ...
+                    msg, rRef.unityGainSpl, rRef.scale, rRef.normativeValue);
+            catch
+            end
 
             % A filter cut for a rate other than the one attached is a
             % legitimate thing to want, and a silent trap if it was not
@@ -1367,19 +1533,16 @@ classdef CalibrationGui < handle
         end
 
         function on_show_quick_start_(obj)
-            % Show a concise calibration workflow for first-time users.
-            msg = sprintf([ ...
-                'Calibration Quick Start\n\n', ...
-                '1) File > Initialize Runtime From Protocol..., then File > Attach Adapter (if needed).\n\n', ...
-                '2) Verify parameters (reference level/frequency, mic sensitivity, excitation).\n\n', ...
-                '3) Put an acoustic calibrator (e.g. PCB CAL150) on the microphone, switch it on, and click "Measure Reference" to update microphone sensitivity. This step records only -- nothing is played. Remove the calibrator afterwards.\n\n', ...
-                '3b) Optional but recommended: with the calibrator removed and the rig running as it normally does, click "Measure Background" to record the noise floor every later measurement sits on. Nothing is played. The result is plotted as band levels and saved with the calibration; View > Background Noise Analysis brings it back.\n\n', ...
-                '4) Click "Calibrate Tones" (required for tone lookup), or run "Calibrate Swept Sine" and check "Tone Lookup From Swept Sine" to serve tone lookups from the sweep instead (overrides any direct tone calibration while checked).\n\n', ...
-                '5) Click "Test Tones" to check the table: tones are played at the levels the table says to use, and the levels that come back are compared to the ones requested. Do this before trusting the calibration in an experiment.\n\n', ...
-                '6) Optional: run "Calibrate Clicks" and/or "Calibrate Swept Sine". A click table gets the same treatment as the tone table -- "Test Clicks" plays clicks at the levels it says to use and reports what came back.\n\n', ...
-                '7) Optional: click "Design Filter" (enabled after tone or swept sine calibration).\n\n', ...
-                '8) Save calibration with File > Save .esgc.']);
-            uialert(obj.Figure, msg, 'Calibration Quick Start', Icon='info');
+            % Open the calibration walkthrough in a browser. The workflow is
+            % maintained once, on the wiki, rather than in a dialog that drifts
+            % out of step with the GUI it describes.
+            status = web(stimgen.calibration.CalibrationGui.QuickStartURL, '-browser');
+            if status ~= 0
+                uialert(obj.Figure, sprintf(['No browser could be opened.\n\n' ...
+                    'The calibration walkthrough is at:\n%s'], ...
+                    stimgen.calibration.CalibrationGui.QuickStartURL), ...
+                    'Calibration Quick Start', Icon='info');
+            end
         end
 
         function ok = apply_controls_to_engine_(obj)
@@ -1406,6 +1569,9 @@ classdef CalibrationGui < handle
                 % Every run starts here, so saving on success means a hard
                 % MATLAB exit costs at most the edits since the last run.
                 obj.save_settings_prefs_();
+                % The unity-gain readout is anchored to NormativeValue and
+                % the LUT choice, both of which may have just changed.
+                obj.refresh_level_reference_label_();
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
                 uialert(obj.Figure, ME.message, 'Parameter Error', Icon='error');
@@ -1435,8 +1601,9 @@ classdef CalibrationGui < handle
         function update_runtime_state_(obj)
             obj.refresh_sample_rate_label_();
             obj.refresh_conduction_delay_label_();
+            obj.refresh_level_reference_label_();
 
-            obj.update_background_menu_();
+            obj.update_background_view_state_();
 
             hasAdapter = ~isempty(obj.Engine.Adapter);
             if hasAdapter
@@ -1571,6 +1738,28 @@ classdef CalibrationGui < handle
                 obj.SampleRateLabel.FontColor = [0 0 0];
             end
             obj.SampleRateLabel.Text = txt;
+        end
+
+        function refresh_level_reference_label_(obj)
+            % SPL the equalized source produces at unity hardware gain, and
+            % the factor that brings it to the normative level. This is what a
+            % hardware chain (source -> FIR -> gain) needs, because
+            % apply_calibration's renormalize-then-scale runs in software
+            % only: without it the filter's insertion loss lands on the output
+            % level. Shown for a 1 V RMS white-noise source -- the closed-form
+            % case; a shaped source needs Engine.filter_level_reference with
+            % its actual waveform.
+            try
+                r = obj.Engine.filter_level_reference(1);
+                % char(215) is the multiplication sign; the scale reads as
+                % "multiply the filtered source (or the taps) by this".
+                obj.LevelRefLabel.Text = sprintf('%.1f dB SPL  (%c%.3g)', ...
+                    r.unityGainSpl, char(215), r.scale);
+            catch
+                % No filter, or no LUT to anchor it -- either way there is no
+                % reference to report yet.
+                obj.LevelRefLabel.Text = 'Not designed';
+            end
         end
 
         function src = filter_source_(obj)
@@ -1999,8 +2188,17 @@ classdef CalibrationGui < handle
         function restore_display_settings_(obj)
             stored = obj.get_pref_('transferLogX', '');
             if any(strcmp(stored, {'0', '1'}))
-                obj.TransferLogXCheck.Value = strcmp(stored, '1');
-                obj.Monitor.LogX = obj.TransferLogXCheck.Value;
+                obj.Monitor.LogX = strcmp(stored, '1');
+            end
+
+            stored = obj.get_pref_('spectrumGhost', '');
+            if any(strcmp(stored, {'0', '1'}))
+                obj.Monitor.ShowGhost = strcmp(stored, '1');
+            end
+
+            stored = obj.get_pref_('transferVoltage', '');
+            if any(strcmp(stored, {'0', '1'}))
+                obj.Monitor.ShowVoltage = strcmp(stored, '1');
             end
 
             units = string(obj.get_pref_('spectrumUnits', ''));
@@ -2019,6 +2217,10 @@ classdef CalibrationGui < handle
                 end
                 obj.Monitor.Weightings = types(checked);
             end
+
+            % Everything above writes the monitor; this is what makes the
+            % controls that mirror it agree with what was restored.
+            obj.sync_display_controls_();
         end
 
         function save_settings_prefs_(obj)
@@ -2045,7 +2247,9 @@ classdef CalibrationGui < handle
                     obj.set_pref_('ToneLutSource', 'tone');
                 end
 
-                obj.set_pref_('transferLogX', sprintf('%d', obj.TransferLogXCheck.Value));
+                obj.set_pref_('transferLogX',    sprintf('%d', obj.Monitor.LogX));
+                obj.set_pref_('spectrumGhost',   sprintf('%d', obj.Monitor.ShowGhost));
+                obj.set_pref_('transferVoltage', sprintf('%d', obj.Monitor.ShowVoltage));
                 obj.set_pref_('spectrumUnits', char(obj.Monitor.SpectrumUnits));
                 types = stimgen.calibration.LiveMonitor.WeightingTypes;
                 sel = types(arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus));
@@ -2191,6 +2395,31 @@ fld.ValueDisplayFormat = format;
 if ~isempty(tip)
     lbl.Tooltip = tip;
     fld.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function set_checked_(h, tf)
+% Check state of a menu item that may not have been built yet. Guarded rather
+% than ordered, so sync_display_controls_ can run at any point in the build.
+if ~isempty(h) && all(isgraphics(h))
+    h.Checked = matlab.lang.OnOffSwitchState(tf);
+end
+end
+
+% -------------------------------------------------------------------------
+function set_tool_state_(h, tf)
+% Pressed state of a toolbar toggle tool. Same guard, same reason.
+if ~isempty(h) && all(isgraphics(h))
+    h.State = matlab.lang.OnOffSwitchState(tf);
+end
+end
+
+% -------------------------------------------------------------------------
+function set_enabled_(h, tf)
+% Enable state of a menu item or toolbar tool. Same guard, same reason.
+if ~isempty(h) && all(isgraphics(h))
+    h.Enable = matlab.lang.OnOffSwitchState(tf);
 end
 end
 

@@ -398,6 +398,12 @@ eng.design_filter("swept_sine", SampleRate=100e3, FrequencyRange=[500 32000]);
 r = eng.test_filter();            % result also stored in CalibrationData.filterTest
 fprintf('ripple %.1f -> %.1f dB (passed: %d)\n', ...
     r.unfiltered.ripple_db, r.filtered.ripple_db, r.passed);
+
+% Level reference for running the taps in hardware (e.g. an RPvds FIR), where
+% nothing renormalizes after the filter:
+r = eng.filter_level_reference(1);   % source: 1 V RMS white noise
+fprintf('unity gain = %.1f dB SPL; scale taps by %.3g for %g dB SPL\n', ...
+    r.unityGainSpl, r.scale, r.normativeValue);
 ```
 
 See [Reference: Filter Design Options](#reference-filter-design-options) for the full option list.
@@ -410,6 +416,45 @@ or below which the test is reported passed. In `CalibrationGui` this runs from t
 **Test Filter** button when the filter was designed from the swept sine; for a
 filter designed from the tone table that button runs the discrete-tone LUT test
 (`test_tones`) instead, and `test_filter` stays available programmatically.
+
+### Running the filter in hardware — `filter_level_reference`
+
+The taps carry only the *shape* of the correction: `design_filter` references the
+target magnitude to 0 dB at its peak, and `StimType.apply_calibration` renormalizes
+the filtered waveform before scaling it to the LUT voltage for the requested level.
+A hardware chain that convolves the taps itself — an RPvds FIR component fed from a
+noise source, say — has no renormalization step, so the filter's spectrum-dependent
+insertion loss (up to the full correction span) would land directly on the output
+level. `filter_level_reference` computes the accounting once, for a known source:
+
+```matlab
+r = eng.filter_level_reference(1);      % source: 1 V RMS spectrally white noise
+r = eng.filter_level_reference(0.5);    % same, 0.5 V RMS
+r = eng.filter_level_reference(x);      % source: the actual waveform, in volts
+```
+
+The returned struct anchors the hardware to the same tone-LUT-at-`ReferenceFrequency`
+convention `apply_calibration` uses for `"filter"`-type (RMS-normalized) stimuli, so
+no new acoustic assumption is introduced:
+
+| Field | Meaning |
+|-------|---------|
+| `scale` | multiply the filtered signal — or the taps themselves, before loading them — by this, and unity hardware gain produces `NormativeValue` dB SPL |
+| `unityGainSpl` | dB SPL the *unscaled* filtered source produces at unity hardware gain |
+| `filteredRms` | RMS of the filtered source, in volts |
+| `lutVoltage` | LUT voltage at `ReferenceFrequency` for `NormativeValue` dB SPL — the anchor used |
+| `normativeValue`, `referenceFrequency` | the engine parameters the numbers are stated against |
+
+With the scale applied, a hardware gain of `10^((level − NormativeValue)/20)` plays
+the source at `level` dB SPL. A scalar source is treated as spectrally white, for
+which the filtered RMS has the closed form `rms · ‖taps‖₂`; pass the actual waveform
+whenever the source is shaped or band-limited before the FIR. Recompute after every
+`design_filter` — the taps' norm changes with each design — and spot-check the result
+with a microphone once per rig, as with any calibration constant. In `CalibrationGui`
+the 1 V RMS white-noise figures appear as the **Unity-Gain Noise Level** readout and
+on the status line after each design. Raises
+`stimgen:calibration:Engine:noFilter` when no filter has been designed, and the usual
+LUT errors when no tone or swept sine calibration exists to anchor to.
 
 ### Step 8 — Save
 

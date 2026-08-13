@@ -23,6 +23,8 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     %   load_calibration         - Load .esgc file into Engine.
     %   save_calibration         - Save Engine data to .esgc file.
     %   design_filter            - Proxy to Engine; design equalization filter.
+    %   filter_level_reference   - Proxy to Engine; level reference for
+    %                              running the filter in hardware.
     %   test_filter              - Proxy to Engine; verify the filter flattens
     %                              the measured response.
     %   test_tones               - Proxy to Engine; verify the tone LUT
@@ -164,6 +166,20 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             % responses. Delegates to Engine, arguments and all; results are
             % stored in CalibrationData.filterTest.
             results = obj.Engine.test_filter(varargin{:});
+        end
+
+        % ---------------------------------------------------------- %
+        function r = filter_level_reference(obj, varargin)
+            % r = filter_level_reference(obj)
+            % r = filter_level_reference(obj, x)
+            % Level reference for running the equalization filter in
+            % hardware, where nothing renormalizes after the FIR: the factor
+            % that brings the filtered source to the NormativeValue level,
+            % and the dB SPL the unscaled source produces at unity hardware
+            % gain. x is a white-noise RMS in volts (default 1) or the
+            % actual source waveform. Delegates to Engine, arguments and
+            % all; see Engine.filter_level_reference.
+            r = obj.Engine.filter_level_reference(varargin{:});
         end
 
         % ---------------------------------------------------------- %

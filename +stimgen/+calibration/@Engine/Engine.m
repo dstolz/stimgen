@@ -180,6 +180,7 @@ classdef Engine < handle
         results = test_filter(obj, options) % Verify the designed filter flattens the measured response.
         results = test_tones(obj, freqs, levels, options) % Verify the tone LUT reproduces requested levels at discrete tones.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
+        r = filter_level_reference(obj, x) % Level reference for running the equalization filter in hardware.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
         restore(obj, s) % Restore engine state from a serialized struct.
         cancel(obj) % Request cancellation of an in-progress calibration run.

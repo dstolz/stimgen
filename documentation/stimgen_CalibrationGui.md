@@ -34,17 +34,47 @@ against the `MaxOutputVoltage` ceiling, and a progress/ETA title. Between runs
 the same monitor draws the committed lookup tables and the last response, so
 the live and static views are one rendering, not two.
 
-**Transfer Plot Log X-Axis** sets the monitor's `LogX`; **Max Output Voltage**
-feeds both the clipping test and the unreachable-voltage line. Loading a .esgc
-re-attaches the monitor to the loaded engine, and closing the window detaches
-and deletes the monitor so the engine does not keep notifying a renderer whose
-axes are gone.
+**Max Output Voltage** feeds both the clipping test and the unreachable-voltage
+line. Loading a .esgc re-attaches the monitor to the loaded engine, and closing
+the window detaches and deletes the monitor so the engine does not keep
+notifying a renderer whose axes are gone.
 
 The transfer panel serves two views, one at a time — the lookup tables, and the
-background noise analysis. Whichever ran last owns it; the **View** menu
-switches between `LiveMonitor.show_calibration` and `LiveMonitor.show_background`
-without re-measuring anything. **Background Noise Analysis** is disabled until a
-background capture exists, in the engine or in a loaded `.esgc`.
+background noise analysis. The **View** menu and the toolbar switch between
+`LiveMonitor.show_calibration` and `LiveMonitor.show_background` without
+re-measuring anything. **Background Noise Analysis** is disabled until a
+background capture exists, in the engine or in a loaded `.esgc`; a Reset that
+takes the data away drops the panel back to the lookup tables rather than
+leaving it on a view that can no longer be drawn.
+
+### Choosing what the plots show
+
+The toolbar's second group is the quick way to change what is on screen, since
+a display choice is made while reading a plot rather than while setting a sweep
+up. The first two buttons are the exclusive transfer-panel view; the rest toggle
+one overlay each:
+
+| Toolbar button | Also at | Sets |
+|---|---|---|
+| Calibration transfer curves | View ▸ Calibration Transfer Curves | the transfer panel's view |
+| Background noise analysis | View ▸ Background Noise Analysis | the transfer panel's view |
+| Previous-measurement ghost | View ▸ Previous-Measurement Ghost | `LiveMonitor.ShowGhost` |
+| Drive-voltage axis | View ▸ Transfer Drive-Voltage Axis | `LiveMonitor.ShowVoltage` |
+| Log frequency axis | Display ▸ Transfer Plot Log X-Axis | `LiveMonitor.LogX` |
+
+Every one of these is a *mirror*: the state lives on the monitor (and, for the
+view, on the GUI's own `TransferView_`), and `sync_display_controls_` is the one
+writer that pushes it to the toolbar, the menu and the checkbox together. A
+change made through any of them therefore shows on the others, and the toolbar
+reads as a display readout as well as a control. Setting a toggle tool's `State`
+programmatically does not fire its `ClickedCallback`, which is what keeps the
+sync from re-entering the handler that triggered it.
+
+Switching the ghost off redraws only the response panels — a transfer redraw
+resets the monitor's whole graphics cache, which is where the measurement behind
+the one on screen is held. Switching the drive-voltage axis off also hides the
+right-hand axis itself, the same way `show_background` does, rather than leaving
+an empty scale and a label behind.
 
 ### Spectrum y-axis
 
@@ -194,7 +224,7 @@ position in one long list:
 |---|---|
 | Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
 | Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, and Tone Lookup From Swept Sine |
-| Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, with Copy Filter Coefficients across the row below |
+| Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Footer (pinned) | Stop, Reset Calibration, and the status line |
 
@@ -203,8 +233,11 @@ a sweep is running, when the stack may be scrolled anywhere. The status line
 clips at one line; its tooltip always carries the whole message, which matters
 for the test verdicts and background summaries that are wider than the column.
 
-The remaining display options — spectrum y-axis unit and weighting overlays —
-are checkable items on the **View** menu rather than controls in this column.
+The remaining display options — spectrum y-axis unit, weighting overlays, the
+previous-measurement ghost, and the drive-voltage axis — are checkable items on
+the **View** menu rather than controls in this column. The four most-used of
+them, plus the log frequency axis, are also toolbar buttons; see
+[Choosing what the plots show](#choosing-what-the-plots-show).
 
 Rig facts and acquisition settings live in their own window, opened from
 **Hardware > Hardware Settings...**: the Sample Rate and Conduction Delay
@@ -217,8 +250,8 @@ engine the moment they change, rather than when the next run starts, since
 the window may be closed by then.
 
 Every field and toggle in this column, the Hardware Settings window's two
-settings, and the View menu's spectrum unit and
-weighting overlays, are remembered across MATLAB sessions as
+settings, and the whole display state — spectrum unit, weighting overlays,
+ghost, drive-voltage axis, log frequency axis — are remembered across MATLAB sessions as
 `StimCalibrationGui` preferences. They are written when the window closes and
 after each successful measurement start, and reapplied the next time the
 window opens — per field, and only where the engine still holds its factory
@@ -237,9 +270,20 @@ File menu actions:
 6. Save .esgc
 7. Recent Calibrations (submenu)
 
-A toolbar above the plots mirrors the five non-submenu actions as icon buttons
-(built by `build_toolbar_`) for one-click access; it does not add any behavior
-beyond the File menu.
+The toolbar's first group mirrors the five non-submenu File actions, plus the
+Quick Start, as push buttons for one-click access; its second group is the
+display controls (see [Choosing what the plots
+show](#choosing-what-the-plots-show)). Both are built by `build_toolbar_` and
+neither adds behavior the menus do not have.
+
+View menu items, all checkable:
+
+1. Calibration Transfer Curves / Background Noise Analysis — exclusive; which
+   view the transfer panel serves
+2. Weighting Overlay ▸ A / B / C / D, and None
+3. Spectrum Y-Axis ▸ one item per `LiveMonitor.SpectrumUnitList` entry, exclusive
+4. Previous-Measurement Ghost
+5. Transfer Drive-Voltage Axis
 
 The **Hardware** menu holds one item, **Hardware Settings...**, which opens
 the [hardware window](#controls-layout) described above (reopening it when it
@@ -503,6 +547,14 @@ Either run is cancellable with Stop, and with live plots on the transfer panel f
 Copy Filter Coefficients puts the current equalizer's FIR taps (`tf(CalibrationData.filter)`) on the system clipboard as plain text: one coefficient per line, printed `%.17g` so a double round-trips exactly, CRLF-terminated on Windows. Nothing else is in the text — no header, no brackets, no separators — so it pastes as-is into an RPvds coefficient file, a spreadsheet column, MATLAB's `[ ]`, or another language's array literal.
 
 The tap count and the rate the filter was designed for go to the status line rather than into the clipboard, since a filter only realizes its designed response at the rate it was cut for and the text has to stay purely numeric. The button needs no adapter — it reads taps that already exist, so a `.esgc` loaded on a machine with no rig attached is still exportable. A non-FIR filter (nothing `design_filter` produces) is reported on the status line instead of copied, having no single tap list.
+
+## Unity-Gain Noise Level
+
+Under Copy Filter Coefficients, the **Unity-Gain Noise Level** readout reports what the exported taps do to a level once they run in hardware: the dB SPL a 1 V RMS spectrally white source produces at unity hardware gain after passing through the equalization filter, followed by the factor (×) that scales it down to the Normative Value level. Both come from `Engine.filter_level_reference(1)`.
+
+The number exists because `design_filter` produces a shape-only filter and `apply_calibration` renormalizes after filtering — in software the filter's insertion loss never reaches the output level. A hardware chain that runs the taps itself (an RPvds FIR component, for instance) has no renormalization step, so its gain stage must be anchored to this readout rather than to the lookup table alone. Multiply the filtered signal — or the taps themselves, before loading them — by the scale, and a hardware gain of `10^((level − NormativeValue)/20)` then plays the source at `level` dB SPL, on exactly the convention `apply_calibration` uses for an RMS-normalized noise stimulus.
+
+The readout assumes a 1 V RMS white source, for which the filtered RMS has a closed form; a source that is shaped, band-limited before the FIR, or generated in software should be passed to `Engine.filter_level_reference` as its actual waveform instead. The value refreshes with every filter design, calibration load, and Normative Value edit, and the same figures are appended to the status line when a design completes. `Not designed` means there is no filter, or no tone/swept-sine table to anchor it to.
 
 ## Reset Calibration
 

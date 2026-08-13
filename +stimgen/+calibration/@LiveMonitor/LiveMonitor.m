@@ -156,6 +156,38 @@ classdef LiveMonitor < handle
             obj.drop_('bg_legend');
         end
 
+        function set.ShowGhost(obj, value)
+            obj.ShowGhost = value;
+
+            % The ghost is drawn only while it is on, and updated in place
+            % rather than recreated, so switching it off would otherwise leave
+            % the last one on the panel until something reset the cache.
+            if ~value
+                obj.drop_('spec_ghost');
+            end
+        end
+
+        function set.ShowVoltage(obj, value)
+            obj.ShowVoltage = value;
+
+            % Same reason as the ghost, for both the live and the static
+            % transfer view, plus the right-hand axis they share: neither view
+            % clears the voltage traces on its way out. The legends naming
+            % those traces go too -- they are built with AutoUpdate off, so a
+            % legend that outlived its lines would keep naming them.
+            keys = {'xfer_volt', 'xfer_vmax', 'xfer_vover', 'static_tone_v', ...
+                'static_swept_sine_v', 'static_click_v', 'static_vmax'};
+            for k = 1:numel(keys)
+                obj.drop_(keys{k});
+            end
+            obj.drop_('xfer_legend');
+            obj.drop_('static_legend');
+
+            if ~value
+                obj.hide_voltage_axis_();
+            end
+        end
+
         function set.SpectrumUnits(obj, v)
             % Rejected here rather than at draw time: an unknown unit would
             % otherwise surface as a latched render failure partway through a
@@ -212,6 +244,22 @@ classdef LiveMonitor < handle
             if isfield(obj.H_, key)
                 obj.H_ = rmfield(obj.H_, key);
             end
+        end
+
+        function hide_voltage_axis_(obj)
+            % Retire the transfer panel's right-hand drive-voltage axis. The
+            % axis itself outlives the lines drawn on it -- deleting those
+            % leaves an empty scale and a label behind -- so it is hidden the
+            % same way show_background hides it; whichever view draws voltage
+            % next turns it back on.
+            ax = obj.AxTransfer;
+            if isempty(ax) || ~all(isgraphics(ax)) || numel(ax.YAxis) < 2
+                return
+            end
+            yyaxis(ax, 'right');
+            ylabel(ax, '');
+            ax.YAxis(2).Visible = 'off';
+            yyaxis(ax, 'left');
         end
     end
 

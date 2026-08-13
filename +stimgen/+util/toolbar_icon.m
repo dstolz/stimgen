@@ -9,7 +9,7 @@ function icon = toolbar_icon(name)
 % Parameters:
 %   name - one of "open", "save", "protocol", "calibration", "connect",
 %          "disconnect", "help", "add", "remove", "play", "inspect",
-%          "refresh"
+%          "refresh", "transfer", "background", "ghost", "voltage", "logx"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
@@ -17,7 +17,7 @@ function icon = toolbar_icon(name)
 arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
         "calibration","connect","disconnect","help","add","remove","play", ...
-        "inspect","refresh"])}
+        "inspect","refresh","transfer","background","ghost","voltage","logx"])}
 end
 
 N = 24;
@@ -121,6 +121,40 @@ switch name
         head = row>=3 & row<=10 & col>=13 & col<=21 & ... % arrowhead in the gap
                ((row-3) + (21-col) <= 7);
         mask = (ring & ~gap) | head;
+
+    case "transfer" % axes carrying a rising, saturating response curve
+        c = 6:21;
+        mask = trace_(plot_frame_(), c, round(18 - 12*(1 - exp(-(c-6)/7))), 2);
+
+    case "background" % axes carrying a low, ragged noise floor
+        % Two incommensurate sinusoids, so the trace reads as noise without a
+        % random draw that would make the icon differ between calls.
+        c = 6:21;
+        mask = trace_(plot_frame_(), c, ...
+            round(15 - 1.5*sin(c*1.9) - 1.1*cos(c*0.8)), 1);
+
+    case "ghost" % a spectral peak with the previous measurement behind it
+        c = 4:21;
+        mask = trace_(mask, c, round(17 - 11*exp(-((c-11)/3.8).^2)), 2);
+        mask = trace_(mask, c, round(19 - 8*exp(-((c-14.5)/3.8).^2)), 1);
+
+    case "voltage" % lightning bolt -- the required drive voltage
+        % Both tips are blunted rather than brought to a point: a sub-pixel
+        % tip rasterizes into a detached speck at this size.
+        boltCol = [12 7 11  9 12 17 12 16];
+        boltRow = [ 4 13 13 20 20 11 11  4];
+        mask = inpolygon(col, row, boltCol, boltRow);
+
+    case "logx" % baseline under log-spaced frequency ticks
+        mask = row>=16 & row<=17 & col>=3 & col<=22;
+        for k = [1 2 3 5 10]
+            c = round(3 + 19*log10(k));
+            if k == 1 || k == 10   % decade ends, drawn taller
+                mask(11:15, c:c+1) = true;
+            else
+                mask(12:15, c) = true;
+            end
+        end
 end
 
 accent = [0.16 0.38 0.58];
@@ -131,4 +165,22 @@ for k = 1:3
     icon(:,:,k) = layer;
 end
 
+% ------------------------------------------------------------------------ %
+    function m = plot_frame_()
+        % L-shaped axis the plot-view icons hang a trace on, so those icons
+        % differ only in the trace and read as a set.
+        m = false(N);
+        m(4:20, 4:5)  = true;
+        m(19:20, 4:21) = true;
+    end
+
+    function m = trace_(m, cs, rs, thickness)
+        % Polyline through (cs, rs), filled between consecutive rows so a
+        % steep segment stays connected instead of breaking into a scatter.
+        rs = min(max(rs, 1), N - thickness);
+        for i = 1:numel(cs)
+            j = min(i + 1, numel(cs));
+            m(min(rs(i), rs(j)) : max(rs(i), rs(j)) + thickness - 1, cs(i)) = true;
+        end
+    end
 end
