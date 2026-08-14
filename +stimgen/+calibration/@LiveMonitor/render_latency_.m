@@ -181,8 +181,11 @@ function s = title_(lat)
 % judged on. An invalid measurement says so first -- the curve below it is
 % then read as a diagnosis rather than as a result.
 if lat.valid
-    head = sprintf('Conduction delay  %.3f ms  ·  ~%.2f m of air at %.1f m/s (%.1f °C)', ...
-        lat.delay_ms, lat.path_m, lat.speed_of_sound_ms, lat.temperature_c);
+    % Temperature in °F to match the setting it came from, which the
+    % CalibrationGui takes in Fahrenheit; the payload carries Celsius,
+    % the unit the Engine works in.
+    head = sprintf('Conduction delay  %.3f ms  ·  ~%.2f m of air at %.1f m/s (%.1f °F)', ...
+        lat.delay_ms, lat.path_m, lat.speed_of_sound_ms, lat.temperature_c * 9/5 + 32);
 elseif lat.at_bound
     head = sprintf('Conduction delay  UNRELIABLE  ·  correlation peaked on the %.1f ms bound', ...
         lat.bound_ms);

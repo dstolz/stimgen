@@ -35,8 +35,7 @@ ax.YLimMode = 'auto';
 render_ribbon_(obj, ax, xd, T, valid);
 
 hMeas = obj.gobj_('xfer_meas', @() line(ax, NaN, NaN, LineStyle='-', ...
-    Marker='o', MarkerSize=4, Color=[0.10 0.25 0.60], ...
-    MarkerFaceColor=[0.10 0.25 0.60], LineWidth=1, DisplayName='measured'));
+    Color=[0.10 0.25 0.60], LineWidth=1, DisplayName='measured'));
 set(hMeas, XData=xd(valid), YData=T.spl_db(valid));
 
 render_pending_rug_(obj, ax, xd, valid, T);
@@ -151,7 +150,7 @@ ax.YAxis(2).Visible = 'on';   % show_background hides it; a run owns it again
 vAll = T.voltage;
 show = valid & isfinite(vAll) & vAll > 0;
 h = obj.gobj_('xfer_volt', @() line(ax, NaN, NaN, LineStyle='-', ...
-    Marker='.', MarkerSize=8, Color=[0.20 0.55 0.25], LineWidth=0.75, ...
+    Color=[0.20 0.55 0.25], LineWidth=0.75, ...
     DisplayName='drive V for normative'));
 set(h, XData=xd(show), YData=vAll(show));
 
@@ -176,6 +175,7 @@ if any(show)
     hi = max([vAll(show), maxV]) * 2;
     set(ax, YScale='log');
     ylim(ax, [max(lo, eps) max(hi, max(lo, eps) * 10)]);
+    ax.YAxis(2).Exponent = 0;
 end
 ylabel(ax, 'drive (V)');
 ax.YAxis(2).Color = [0.20 0.55 0.25];

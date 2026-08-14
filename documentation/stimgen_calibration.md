@@ -531,9 +531,8 @@ measurement is the filter+speaker chain — the transfer function a calibrated s
 actually passes through. Options: `Duration`, `RepeatCount`, `TailDuration`, `NumPoints`,
 and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized response at
 or below which the test is reported passed. In `CalibrationGui` this runs from the
-**Test Filter** button when the filter was designed from the swept sine; for a
-filter designed from the tone table that button runs the discrete-tone LUT test
-(`test_tones`) instead, and `test_filter` stays available programmatically.
+**Test Filter** button regardless of whether the filter was designed from the tone
+table or the swept sine.
 
 ### Running the filter in hardware — `filter_level_reference`
 
@@ -709,7 +708,7 @@ prefer a `LiveMonitor`.
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
-| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file |
+| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere the package computes; `CalibrationGui` is the one place it is entered and shown in Fahrenheit |
 | `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |

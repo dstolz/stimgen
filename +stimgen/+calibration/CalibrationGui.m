@@ -16,21 +16,26 @@ classdef CalibrationGui < handle
     %
     % The Microphone section holds everything about the microphone end of the
     % rig: what the acoustic calibrator produces, the sensitivity measured from
-    % it, the room's Ambient Temperature, and the conduction delay probe that
-    % temperature is read through. A probe draws its correlation curve on the
-    % transfer panel -- the evidence one lag was chosen over another, which the
-    % waveform cannot show -- and the View menu keeps it reachable afterwards.
+    % it, and the conduction delay probe. A probe draws its correlation curve on
+    % the transfer panel -- the evidence one lag was chosen over another, which
+    % the waveform cannot show -- and the View menu keeps it reachable
+    % afterwards.
     %
-    % Hardware and Analysis Settings (Hardware menu) holds what is set once
-    % per rig rather than once per sweep: the output ceiling, AC coupling of
-    % the acquired record, and the analysis window and FFT length every
-    % spectral measurement is made with. The last two also govern the spectrum
-    % panel, so the peak on screen is computed the same way as the number
-    % written into the lookup table.
+    % The Options menu holds the two settings windows. Hardware and Analysis
+    % Settings is what is set once per rig rather than once per sweep: the
+    % output ceiling, AC coupling of the acquired record, and the analysis
+    % window and FFT length every spectral measurement is made with. The last
+    % two also govern the spectrum panel, so the peak on screen is computed the
+    % same way as the number written into the lookup table. Conduction Delay
+    % Settings holds what the delay probe searches with and the room's Ambient
+    % Temperature its result is read as a distance through -- the probe runs
+    % straight from its button, asking nothing. Temperature is entered and
+    % displayed in degrees Fahrenheit throughout this window; the Engine holds
+    % it -- and an .esgc file records it -- in Celsius.
     %
     % Settings are remembered across MATLAB sessions as StimCalibrationGui
-    % preferences: the controls-column fields and toggles, the settings
-    % window's fields, the display state (spectrum unit, weighting overlays,
+    % preferences: the controls-column fields and toggles, both settings
+    % windows' fields, the display state (spectrum unit, weighting overlays,
     % ghost, drive-voltage axis, log frequency axis), and the per-dialog
     % measurement parameters. Values carried by a supplied engine, or by a
     % loaded or in-progress calibration, always take precedence over
@@ -86,6 +91,14 @@ classdef CalibrationGui < handle
         QuickStartURL = 'https://github.com/dstolz/stimgen/wiki/Calibrating-Your-Rig'
     end
 
+    properties (Constant, Access = private)
+        % Accepted range of Engine.AmbientTemperature, in Celsius -- the unit
+        % the Engine holds it in. Stated here rather than on the field because
+        % a stored preference is validated against it before the field that
+        % would enforce it exists (restore_engine_settings_).
+        AmbientTempLimitsC = [-50, 60]
+    end
+
     properties (SetAccess = private)
         Engine stimgen.calibration.Engine
         Monitor stimgen.calibration.LiveMonitor  % renders all three axes
@@ -130,7 +143,6 @@ classdef CalibrationGui < handle
         RefLevelField
         RefFreqField
         MicSensField
-        AmbientTempField
         NormativeField
         ExcitationField
         ShowLivePlotsCheck
@@ -141,7 +153,7 @@ classdef CalibrationGui < handle
         LevelRefLabel
         ConductionDelayLabel
 
-        % Hardware & Analysis Settings window (Hardware menu). Created on
+        % Hardware & Analysis Settings window (Options menu). Created on
         % demand, so these handles are empty until it is first opened and
         % dead once it is closed -- everything that writes them guards on
         % validity. The settings themselves live on the Engine; the window is
@@ -152,6 +164,20 @@ classdef CalibrationGui < handle
         SpectralWindowDrop
         SpectralFftDrop
         SampleRateLabel
+
+        % Conduction Delay Settings window (Options menu), on demand and
+        % guarded the same way. Unlike the settings above, the probe's two
+        % parameters are not Engine properties -- nothing but this window
+        % sets them -- so the values live here and the fields are a view of
+        % them. Ambient Temperature is the exception on this window: it does
+        % belong to the Engine, and is what the probe's delay is read as a
+        % distance through.
+        DelayDialog_
+        DelayMaxField
+        DelayClicksField
+        AmbientTempField        % degrees F on screen, Celsius on the Engine
+        DelayMaxMs_ (1,1) double = 50
+        DelayNumClicks_ (1,1) double = 1
 
         % Listener on the engine's ConductionDelay property, so the readout
         % updates the moment a click probe lands rather than waiting for the
@@ -229,10 +255,13 @@ classdef CalibrationGui < handle
             % Same reason: the engine must not keep calling back into a
             % label that died with the figure.
             delete(obj.DelayListener_);
-            % The settings window is owned by this object, not by
-            % the main figure, so it does not die with either on its own.
+            % The settings windows are owned by this object, not by
+            % the main figure, so they do not die with either on their own.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 delete(obj.HardwareDialog_);
+            end
+            if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
+                delete(obj.DelayDialog_);
             end
         end
 
@@ -421,9 +450,15 @@ classdef CalibrationGui < handle
             % window rather than the controls column: they are set once per
             % rig, not once per sweep, and the column reads better carrying
             % only the per-sweep workflow.
-            hwMenu = uimenu(obj.Figure, Text='Hardware');
-            uimenu(hwMenu, Text='Hardware and Analysis Settings...', ...
+            optMenu = uimenu(obj.Figure, Text='Options');
+            uimenu(optMenu, Text='Hardware and Analysis Settings...', ...
                 MenuSelectedFcn=@(~,~) obj.on_hardware_settings_());
+            % The delay probe's own settings, on a second window rather than
+            % on the one above: they are asked of a measurement rather than of
+            % the rig, and the button that runs it now runs it immediately
+            % instead of stopping to ask.
+            uimenu(optMenu, Text='Conduction Delay Settings...', ...
+                MenuSelectedFcn=@(~,~) obj.on_delay_settings_());
 
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start (Wiki)', ...
@@ -461,7 +496,7 @@ classdef CalibrationGui < handle
 
             h = zeros(1, 4);
 
-            [g, h(1)] = obj.add_section_(stack, 1, 'Microphone', [24 24 24 30 24 30]);
+            [g, h(1)] = obj.add_section_(stack, 1, 'Microphone', [24 24 24 30 30]);
             obj.build_reference_section_(g);
 
             [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
@@ -504,7 +539,10 @@ classdef CalibrationGui < handle
         function build_reference_section_(obj, g)
             % Everything about the microphone: what the acoustic calibrator
             % produces, the sensitivity measuring it yields, and where the
-            % microphone is -- which is what the delay probe answers.
+            % microphone is -- which is what the delay probe answers. The
+            % Ambient Temperature that probe's distance is derived at, and the
+            % probe's own two parameters, are settings rather than steps and
+            % live in their own window (on_delay_settings_).
             obj.RefLevelField = numeric_row_(g, 1, 'Reference Level (dB SPL)', ...
                 [1, 160], '%.1f');
             obj.RefFreqField = numeric_row_(g, 2, 'Reference Frequency (Hz)', ...
@@ -521,15 +559,7 @@ classdef CalibrationGui < handle
             obj.BtnBackground = action_button_(g, 4, 2, 'Measure Background', ...
                 'BtnBackground', @(~,~) obj.on_measure_background_());
 
-            % Directly above the probe it governs: a delay is only a distance
-            % once the air it crossed has a temperature. Nothing else on this
-            % window depends on it, so it sits with the one reading it changes
-            % rather than in the rig settings window.
-            obj.AmbientTempField = numeric_row_(g, 5, 'Ambient Temperature (°C)', ...
-                [-50, 60], '%.1f', ...
-                stimgen.util.tooltip('CalibrationGui', 'AmbientTemperature'));
-
-            obj.BtnDelay = action_button_(g, 6, [1 2], 'Measure Conduction Delay', ...
+            obj.BtnDelay = action_button_(g, 5, [1 2], 'Measure Conduction Delay', ...
                 'BtnDelay', @(~,~) obj.on_measure_delay_());
         end
 
@@ -657,6 +687,111 @@ classdef CalibrationGui < handle
             % than silently snapping the engine to a neighbouring value.
             set_dropdown_value_(obj.SpectralFftDrop, obj.Engine.SpectralFftLength, ...
                 @stimgen.calibration.SpectralOptions.fftLengthLabel);
+        end
+
+        function on_delay_settings_(obj)
+            % Open (or refocus) the Conduction Delay Settings window: what the
+            % probe searches with, and the air temperature its delay is turned
+            % into a distance through. These were an inputdlg the Measure
+            % Conduction Delay button raised every time; they are asked once
+            % here instead, so the button measures when it is pressed. The
+            % probe is also the one measurement worth repeating back to back --
+            % move the microphone, measure again -- which a prompt in front of
+            % it made three actions instead of one.
+            if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
+                figure(obj.DelayDialog_);
+                return
+            end
+
+            pos = obj.Figure.Position;
+            obj.DelayDialog_ = uifigure( ...
+                Name='Conduction Delay Settings', ...
+                Position=[pos(1)+70 pos(2)+pos(4)-330 420 212], ...
+                Resize='off');
+
+            g = uigridlayout(obj.DelayDialog_, [5 2]);
+            % The last row is the wrapped hint; it gets a line's slack over
+            % what the text needs at the default font, since a rig running a
+            % larger system font wraps it further.
+            g.RowHeight = {24 24 8 24 76};
+            g.ColumnWidth = {'1.3x', '1x'};
+            g.Padding = [8 8 8 8];
+            g.RowSpacing = 4;
+            g.ColumnSpacing = 8;
+
+            obj.DelayMaxField = numeric_row_(g, 1, 'Largest Delay to Search (ms)', ...
+                [0.01, 10000], '%.1f', ...
+                stimgen.util.tooltip('CalibrationGui', 'DelayMaxDelay'));
+
+            obj.DelayClicksField = numeric_row_(g, 2, 'Clicks in Probe Train', ...
+                [1, 1000], '%d', ...
+                stimgen.util.tooltip('CalibrationGui', 'DelayNumClicks'));
+            obj.DelayClicksField.RoundFractionalValues = 'on';
+
+            % A rig fact rather than a probe parameter, and here rather than
+            % with the other rig facts because this is the window it is read
+            % on: a delay is only a distance once the air it crossed has a
+            % temperature. Entered in Fahrenheit and converted on the way to
+            % the Engine, which works in Celsius because the speed-of-sound
+            % formula and the .esgc file do.
+            obj.AmbientTempField = numeric_row_(g, 4, 'Ambient Temperature (°F)', ...
+                fahrenheit_(obj.AmbientTempLimitsC), '%.1f', ...
+                stimgen.util.tooltip('CalibrationGui', 'AmbientTemperature'));
+
+            % What the prompt used to say on its way past. It is instruction
+            % rather than setting, and it is only true while this window is
+            % the one being read, so it stays on it.
+            hint = uilabel(g, WordWrap='on', ...
+                Text=['A brief click is played and the delay of its response ' ...
+                'measured. Leave the speaker and microphone where an experiment ' ...
+                'has them, and take the acoustic calibrator off the microphone, ' ...
+                'before pressing Measure Conduction Delay.']);
+            hint.Layout.Row = 5;
+            hint.Layout.Column = [1 2];
+
+            obj.DelayMaxField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
+            obj.DelayClicksField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
+            obj.AmbientTempField.ValueChangedFcn = @(~,~) obj.on_ambient_temp_changed_();
+
+            obj.sync_delay_dialog_();
+        end
+
+        function on_delay_setting_changed_(obj)
+            % The probe's parameters are this window's own -- no engine holds
+            % them -- so the object keeps them and the window is a view.
+            obj.DelayMaxMs_ = obj.DelayMaxField.Value;
+            obj.DelayNumClicks_ = obj.DelayClicksField.Value;
+        end
+
+        function on_ambient_temp_changed_(obj)
+            % Its own handler rather than on_hardware_setting_changed_: that
+            % one reads controls on the other settings window, which may not
+            % be open.
+            try
+                obj.Engine.set_configuration( ...
+                    AmbientTemperature=celsius_(obj.AmbientTempField.Value));
+                obj.set_status_('Ambient temperature applied.', false);
+            catch ME
+                obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
+                obj.sync_delay_dialog_();
+            end
+        end
+
+        function sync_delay_dialog_(obj)
+            % Same contract as sync_hardware_dialog_: whoever owns a value
+            % writes the field, never the other way round.
+            if isempty(obj.DelayDialog_) || ~isvalid(obj.DelayDialog_)
+                return
+            end
+            obj.DelayMaxField.Value = obj.DelayMaxMs_;
+            obj.DelayClicksField.Value = obj.DelayNumClicks_;
+            % Clamped, not just converted: an engine may carry a temperature
+            % from outside the range this field offers -- a loaded .esgc, or a
+            % headless script -- and a uieditfield throws on a Value outside
+            % its own Limits.
+            obj.AmbientTempField.Value = min(max( ...
+                fahrenheit_(obj.Engine.AmbientTemperature), ...
+                obj.AmbientTempField.Limits(1)), obj.AmbientTempField.Limits(2));
         end
 
         function build_calibration_section_(obj, g)
@@ -977,10 +1112,13 @@ classdef CalibrationGui < handle
                 obj.Monitor.detach();
                 delete(obj.Monitor);
             end
-            % The settings window is a satellite of this one and has
+            % The settings windows are satellites of this one and have
             % no reason to outlive it.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 delete(obj.HardwareDialog_);
+            end
+            if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
+                delete(obj.DelayDialog_);
             end
             delete(fig);
         end
@@ -1123,14 +1261,13 @@ classdef CalibrationGui < handle
             % this button is for is reading the delay and the distance it
             % implies, and both are worth stating with the evidence behind
             % them.
-            [maxDelayMs, nClicks, wasCancelled] = obj.prompt_delay_parameters_();
-            if wasCancelled
-                obj.set_status_('Conduction delay measurement cancelled.', false);
-                return
-            end
-
+            %
+            % The parameters are taken from Options > Conduction Delay
+            % Settings... rather than asked for here: pressing Measure runs the
+            % measurement.
+            maxDelayMs = obj.DelayMaxMs_;
             [d, diag] = obj.Engine.measure_conduction_delay( ...
-                MaxDelay=maxDelayMs / 1e3, NumClicks=nClicks);
+                MaxDelay=maxDelayMs / 1e3, NumClicks=obj.DelayNumClicks_);
 
             % The probe record and the correlation read off it are the
             % evidence for the reading, and with live plots off nothing has
@@ -1156,50 +1293,6 @@ classdef CalibrationGui < handle
             end
             uialert(obj.Figure, conduction_delay_report_(d, maxDelayMs), ...
                 'Conduction Delay', Icon=icon);
-        end
-
-        function [maxDelayMs, nClicks, wasCancelled] = prompt_delay_parameters_(obj)
-            % Collect the probe's two parameters. The search bound is here
-            % rather than fixed because it is the one thing a failed
-            % measurement asks to be changed: a rig whose delay exceeds it
-            % cannot report a delay at all, and there is nowhere else to raise
-            % it from.
-            maxPref    = obj.get_pref_('delayMaxDelayMs', '50');
-            clicksPref = obj.get_pref_('delayNumClicks', '1');
-
-            prompts = {
-                ['A brief click is played and the delay of its response is ' ...
-                 'measured, so leave the speaker and microphone where an ' ...
-                 'experiment has them, and take the acoustic calibrator off ' ...
-                 'the microphone. Largest delay to search (ms, >0):'], ...
-                ['Clicks in the probe train (positive integer). More clicks buy ' ...
-                 'signal in a noisy room, but a delay near the click spacing ' ...
-                 'aliases -- leave at 1 unless one click''s response is too ' ...
-                 'weak to find:']
-            };
-            answer = inputdlg(prompts, 'Measure Conduction Delay', ...
-                [4 90; 3 90], {maxPref, clicksPref});
-
-            if isempty(answer)
-                maxDelayMs = 50;
-                nClicks = 1;
-                wasCancelled = true;
-                return
-            end
-
-            maxText = strtrim(string(answer{1}));
-            maxDelayMs = str2double(maxText);
-            if isnan(maxDelayMs) || ~isfinite(maxDelayMs) || maxDelayMs <= 0
-                error('stimgen:calibration:CalibrationGui:badMaxDelay', ...
-                    'The largest delay to search must be a positive number of milliseconds.');
-            end
-
-            clicksText = strtrim(string(answer{2}));
-            nClicks = obj.parse_positive_integer_(clicksText, 'number of clicks');
-
-            obj.set_pref_('delayMaxDelayMs', char(maxText));
-            obj.set_pref_('delayNumClicks', char(clicksText));
-            wasCancelled = false;
         end
 
         function update_background_view_state_(obj)
@@ -1501,17 +1594,7 @@ classdef CalibrationGui < handle
         end
 
         function on_test_filter_(obj)
-            % Verify the calibration the way it will actually be used. A
-            % filter designed from the tone table is checked with real
-            % discrete tones -- played at the drive voltages the lookup
-            % table asks for -- because that table, not the sweep, is what
-            % scales a stimulus. A swept sine design is checked with the
-            % sweep flatness test.
-            if obj.filter_source_() == "tone"
-                obj.on_test_tones_();
-            else
-                obj.with_busy_state_(@() obj.run_test_filter_(), 'Testing filter...', true);
-            end
+            obj.with_busy_state_(@() obj.run_test_filter_(), 'Testing filter...', true);
         end
 
         function run_test_filter_(obj)
@@ -1834,15 +1917,14 @@ classdef CalibrationGui < handle
                 else
                     toneLutSource = "tone";
                 end
-                % Max Output Voltage and AC Couple are absent deliberately:
-                % the settings window pushes them to the engine the
-                % moment they change, and its controls exist only while it is
-                % open.
+                % Max Output Voltage, AC Couple and Ambient Temperature are
+                % absent deliberately: the settings window pushes them to the
+                % engine the moment they change, and its controls exist only
+                % while it is open.
                 obj.Engine.set_configuration( ...
                     ReferenceLevel=obj.RefLevelField.Value, ...
                     ReferenceFrequency=obj.RefFreqField.Value, ...
                     MicSensitivity=obj.MicSensField.Value, ...
-                    AmbientTemperature=obj.AmbientTempField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
@@ -1864,12 +1946,12 @@ classdef CalibrationGui < handle
             obj.RefLevelField.Value = obj.Engine.ReferenceLevel;
             obj.RefFreqField.Value = obj.Engine.ReferenceFrequency;
             obj.MicSensField.Value = obj.Engine.MicSensitivity;
-            obj.AmbientTempField.Value = obj.Engine.AmbientTemperature;
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
             obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
             obj.sync_hardware_dialog_();
+            obj.sync_delay_dialog_();
         end
 
         function refresh_all_plots_(obj)
@@ -2057,20 +2139,6 @@ classdef CalibrationGui < handle
                 % No filter, or no LUT to anchor it -- either way there is no
                 % reference to report yet.
                 obj.LevelRefLabel.Text = 'Not designed';
-            end
-        end
-
-        function src = filter_source_(obj)
-            % src = filter_source_(obj)
-            % LUT the current equalization filter was designed from ("tone"
-            % or "swept_sine"), or "" when there is no filter or it predates
-            % the filterSource metadata. Decides which verification Test
-            % Calibration runs.
-            src = "";
-            C = obj.Engine.CalibrationData;
-            if ~isstruct(C) || ~isfield(C, 'filter') || isempty(C.filter), return; end
-            if isfield(C, 'filterSource')
-                src = string(C.filterSource);
             end
         end
 
@@ -2498,21 +2566,37 @@ classdef CalibrationGui < handle
             if any(strcmp(stored, {'0', '1'}))
                 obj.IterativeCheck.Value = strcmp(stored, '1');
             end
+
+            % Also GUI-owned, and restored unconditionally: no engine holds
+            % the probe's parameters, so there is nothing they could lose to.
+            % The keys are the ones the old prompt wrote, so a rig that had
+            % raised its search bound keeps it.
+            v = str2double(obj.get_pref_('delayMaxDelayMs', ''));
+            if isfinite(v) && v > 0
+                obj.DelayMaxMs_ = v;
+            end
+            v = str2double(obj.get_pref_('delayNumClicks', ''));
+            if isfinite(v) && v >= 1
+                obj.DelayNumClicks_ = round(v);
+            end
         end
 
         function restore_engine_settings_(obj)
             % Preference keys are the Engine property names. Numeric values
             % are validated against the field each is headed for via
             % sync_controls_: a hand-edited preference outside its range
-            % would otherwise throw there rather than here. Max Output and the
-            % FFT length state their limits literally because their controls
-            % live in the on-demand settings window and do not exist yet.
+            % would otherwise throw there rather than here. Max Output, the
+            % ambient temperature and the FFT length state their limits
+            % literally because their controls live in the on-demand settings
+            % window and do not exist yet. Every value here is in the unit the
+            % Engine property holds -- the temperature preference is Celsius,
+            % not the Fahrenheit its field shows.
             factory = stimgen.calibration.Engine();
             numericPairs = {
                 'ReferenceLevel',     obj.RefLevelField.Limits
                 'ReferenceFrequency', obj.RefFreqField.Limits
                 'MicSensitivity',     obj.MicSensField.Limits
-                'AmbientTemperature', obj.AmbientTempField.Limits
+                'AmbientTemperature', obj.AmbientTempLimitsC
                 'NormativeValue',     obj.NormativeField.Limits
                 'ExcitationVoltage',  obj.ExcitationField.Limits
                 'MaxOutputVoltage',   [eps, 1000]
@@ -2604,16 +2688,17 @@ classdef CalibrationGui < handle
             % Snapshot every remembered setting: the controls-column values
             % and the View menu's display state. Read from the controls
             % rather than the engine -- the controls hold what the user
-            % last set, applied to an engine or not. The two hardware
-            % settings are the exception: their window pushes every change
-            % to the engine immediately and may be closed by now, so the
-            % engine is where what the user last set lives. Never throws:
+            % last set, applied to an engine or not. The settings window's
+            % fields are the exception: it pushes every change to the engine
+            % immediately and may be closed by now, so the engine is where
+            % what the user last set lives -- and is why the temperature is
+            % written in Celsius, the unit it is read back in. Never throws:
             % this runs on the window's close path.
             try
                 obj.set_pref_('ReferenceLevel',     sprintf('%.15g', obj.RefLevelField.Value));
                 obj.set_pref_('ReferenceFrequency', sprintf('%.15g', obj.RefFreqField.Value));
                 obj.set_pref_('MicSensitivity',     sprintf('%.15g', obj.MicSensField.Value));
-                obj.set_pref_('AmbientTemperature', sprintf('%.15g', obj.AmbientTempField.Value));
+                obj.set_pref_('AmbientTemperature', sprintf('%.15g', obj.Engine.AmbientTemperature));
                 obj.set_pref_('NormativeValue',     sprintf('%.15g', obj.NormativeField.Value));
                 obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.ExcitationField.Value));
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
@@ -2622,6 +2707,8 @@ classdef CalibrationGui < handle
                 obj.set_pref_('SpectralFftLength',  sprintf('%d', obj.Engine.SpectralFftLength));
                 obj.set_pref_('ShowLivePlots',      sprintf('%d', obj.ShowLivePlotsCheck.Value));
                 obj.set_pref_('iterativeCalibration', sprintf('%d', obj.IterativeCheck.Value));
+                obj.set_pref_('delayMaxDelayMs', sprintf('%.15g', obj.DelayMaxMs_));
+                obj.set_pref_('delayNumClicks',  sprintf('%d', obj.DelayNumClicks_));
                 if obj.ToneSweptSineCheck.Value
                     obj.set_pref_('ToneLutSource', 'swept_sine');
                 else
@@ -2778,6 +2865,20 @@ if ~isempty(tip)
     lbl.Tooltip = tip;
     fld.Tooltip = tip;
 end
+end
+
+% -------------------------------------------------------------------------
+function f = fahrenheit_(c)
+% Celsius to Fahrenheit. The Engine works in Celsius -- the speed-of-sound
+% formula and the .esgc file are both in it -- and this window is the only
+% place the operator's unit applies, so both conversions live here.
+f = c * 9/5 + 32;
+end
+
+% -------------------------------------------------------------------------
+function c = celsius_(f)
+% Fahrenheit to Celsius; inverse of fahrenheit_.
+c = (f - 32) * 5/9;
 end
 
 % -------------------------------------------------------------------------
@@ -3089,8 +3190,8 @@ function s = conduction_delay_summary_(d)
 % s = conduction_delay_summary_(d)
 % One-line status-bar summary of a standalone conduction delay probe.
 if d.valid
-    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °C).', ...
-        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, d.temperature_c);
+    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °F).', ...
+        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, fahrenheit_(d.temperature_c));
 else
     s = 'Conduction delay could not be measured -- see the report.';
 end
@@ -3110,8 +3211,8 @@ lines = {};
 if d.valid
     lines{end+1} = sprintf('Delay            %.3f ms   (%d samples at %.10g Hz)', ...
         d.delay_s * 1e3, d.delay_samples, d.fs);
-    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °C)', ...
-        d.path_m, d.speed_of_sound_ms, d.temperature_c);
+    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °F)', ...
+        d.path_m, d.speed_of_sound_ms, fahrenheit_(d.temperature_c));
     lines{end+1} = '';
     lines{end+1} = ['The path is an upper bound on the speaker-to-microphone distance, ' ...
         'not a measurement of it: the converters'' round-trip latency is inside the ' ...
@@ -3120,8 +3221,8 @@ if d.valid
         'devices but worth knowing.'];
     lines{end+1} = '';
     lines{end+1} = ['The distance is only as good as the temperature it was ' ...
-        'converted at: the speed of sound moves about 0.6 m/s per degree, so a ' ...
-        'room 5 degrees off the Ambient Temperature setting puts a 1% error on ' ...
+        'converted at: the speed of sound moves about 0.34 m/s per °F, so a ' ...
+        'room 10 °F off the Ambient Temperature setting puts a 1% error on ' ...
         'the path. The delay itself does not depend on it.'];
 elseif d.peak_v <= 10 * max(d.noise_v, eps)
     lines{end+1} = 'No click response.';

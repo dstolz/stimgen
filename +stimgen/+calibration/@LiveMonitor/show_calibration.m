@@ -42,9 +42,9 @@ end
 % against one x whose ticks are written in kHz, and a click duration read on
 % that scale is milliseconds.
 specs = { ...
-    'tone',       'frequency', 1,    'o-', [0.10 0.25 0.60], 'tone (kHz)'; ...
-    'swept_sine', 'frequency', 1,    '^-', [0.20 0.55 0.25], 'swept sine (kHz)'; ...
-    'click',      'duration',  1e6,  's-', [0.75 0.30 0.10], 'click (ms)'};
+    'tone',       'frequency', 1,    '-', [0.10 0.25 0.60], 'tone (kHz)'; ...
+    'swept_sine', 'frequency', 1,    '-', [0.20 0.55 0.25], 'swept sine (kHz)'; ...
+    'click',      'duration',  1e6,  '-', [0.75 0.30 0.10], 'click (ms)'};
 
 yyaxis(ax, 'left');
 % show_background leaves this axis on a manual ylim sized to the noise
@@ -67,9 +67,8 @@ for k = 1:size(specs, 1)
     S = C.(key);
     x = S.(specs{k, 2})(:).' .* specs{k, 3};
     y = S.spl_db(:).';
-    h = obj.gobj_(lineKey, @() line(ax, NaN, NaN, LineStyle='-', Marker=specs{k,4}(1), ...
-        MarkerSize=4, Color=specs{k,5}, MarkerFaceColor=specs{k,5}, ...
-        LineWidth=1, DisplayName=specs{k,6}));
+    h = obj.gobj_(lineKey, @() line(ax, NaN, NaN, LineStyle='-', ...
+        Color=specs{k,5}, LineWidth=1, DisplayName=specs{k,6}));
     set(h, XData=x, YData=y);
     allX = [allX, x];
     allV = [allV, S.voltage(:).'];
@@ -126,8 +125,7 @@ for k = 1:size(specs, 1)
     v = S.voltage(:).';
     ok = isfinite(v) & v > 0;
     h = obj.gobj_(['static_' key '_v'], @() line(ax, NaN, NaN, LineStyle=':', ...
-        Marker='.', MarkerSize=6, Color=specs{k,5} * 0.6 + 0.4, ...
-        LineWidth=0.75, HandleVisibility='off'));
+        Color=specs{k,5} * 0.6 + 0.4, LineWidth=0.75, HandleVisibility='off'));
     set(h, XData=x(ok), YData=v(ok));
     vals = [vals, v(ok)];
 end
@@ -141,6 +139,7 @@ if ~isempty(vals)
     set(ax, YScale='log');
     lo = max(min([vals, maxV]) * 0.5, eps);
     ylim(ax, [lo, max(max([vals, maxV]) * 2, lo * 10)]);
+    ax.YAxis(2).Exponent = 0;
 end
 ylabel(ax, 'drive (V)');
 ax.YAxis(2).Color = [0.45 0.45 0.45];

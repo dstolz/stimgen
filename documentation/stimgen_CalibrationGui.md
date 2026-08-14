@@ -238,17 +238,17 @@ position in one long list:
 
 | Section | Contents |
 |---|---|
-| Microphone | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference beside Measure Background — the two measurements that play nothing — then Ambient Temperature and Measure Conduction Delay |
+| Microphone | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference beside Measure Background — the two measurements that play nothing — then Measure Conduction Delay |
 | Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Footer (pinned) | Stop beside Reset Calibration, then the Conduction Delay readout and the status line |
 
 The whole microphone end of the rig is in one section: what the calibrator
-produces, the sensitivity measured from it, the room the microphone sits in,
-and the probe that measures how far away it is. **Ambient Temperature** is
-directly above **Measure Conduction Delay** because it is the setting that
-probe's distance is read through — see
+produces, the sensitivity measured from it, and the probe that measures how far
+away the microphone is. **Ambient Temperature**, the setting that probe's
+distance is read through, is a setting rather than a step and lives with the
+probe's own parameters under **Options > Conduction Delay Settings...** — see
 [Ambient temperature](#ambient-temperature).
 
 **Iterative Level Refinement** sits beside **Calibrate Tones** rather than on a
@@ -268,7 +268,7 @@ them, plus the log frequency axis, are also toolbar buttons; see
 [Choosing what the plots show](#choosing-what-the-plots-show).
 
 Rig facts, acquisition and analysis settings live in their own window, opened
-from **Hardware > Hardware and Analysis Settings...**:
+from **Options > Hardware and Analysis Settings...**:
 
 | Group | Contents |
 |---|---|
@@ -276,14 +276,28 @@ from **Hardware > Hardware and Analysis Settings...**:
 | Spectral Analysis | Analysis Window, FFT Length (samples) — see [Spectral Analysis](#spectral-analysis) |
 
 They are set once per rig, not once per sweep, so they earn a window over a
-place in the per-sweep column. The conduction delay is not among them — it is
-re-measured for every acquisition, so it belongs with the run rather than with
-the rig, and its readout is in the footer. The window is non-modal and may
-stay open during a run. Its settings push to the engine the moment they
+place in the per-sweep column. The measured conduction delay is not among them
+— it is re-measured for every acquisition, so it belongs with the run rather
+than with the rig, and its readout is in the footer. The window is non-modal
+and may stay open during a run. Its settings push to the engine the moment they
 change, rather than when the next run starts, since the window may be closed
 by then.
 
-Every field and toggle in this column, the settings window's fields,
+**Options > Conduction Delay Settings...** is the second window, on the same
+terms, and holds what the [delay probe](#measuring-it-on-its-own) is run with:
+
+| Setting | Owner |
+|---|---|
+| Largest Delay to Search (ms) | the GUI — no engine property holds it |
+| Clicks in Probe Train | the GUI |
+| Ambient Temperature (°F) | `Engine.AmbientTemperature`, in Celsius — see [Ambient temperature](#ambient-temperature) |
+
+These were an `inputdlg` the Measure Conduction Delay button raised on every
+press. They are asked once here instead, so the button measures when it is
+pressed — the probe is the measurement most often repeated back to back, and a
+prompt in front of it made one action into three.
+
+Every field and toggle in this column, both settings windows' fields,
 and the whole display state — spectrum unit, weighting overlays,
 ghost, drive-voltage axis, log frequency axis — are remembered across MATLAB sessions as
 `StimCalibrationGui` preferences. They are written when the window closes and
@@ -319,9 +333,10 @@ View menu items, all checkable:
 4. Previous-Measurement Ghost
 5. Transfer Drive-Voltage Axis
 
-The **Hardware** menu holds one item, **Hardware and Analysis Settings...**,
-which opens the [settings window](#controls-layout) described above (reopening
-it when it already exists brings it forward rather than making another).
+The **Options** menu holds the two settings windows described above,
+**Hardware and Analysis Settings...** and **Conduction Delay Settings...** (see
+[Controls Layout](#controls-layout)). Either one, asked for while it already
+exists, is brought forward rather than made a second time.
 
 Recent Protocols and Recent Calibrations each list up to nine most-recently-used
 paths (newest first), persisted across MATLAB sessions as `StimCalibrationGui`
@@ -390,12 +405,21 @@ calibration — no reference, no lookup table, only an attached adapter — so i
 is also the quickest check that a rig is wired up and audible before anything
 is calibrated.
 
-The button prompts for two things, both remembered between sessions:
+The button measures as soon as it is pressed. Its two parameters are set from
+**Options > Conduction Delay Settings...** instead, and remembered between
+sessions:
 
-| Prompt | What it does |
+| Setting | What it does |
 |---|---|
-| Largest delay to search (ms) | Upper bound of the correlation search, 50 ms by default. A rig whose delay exceeds it cannot be measured at all, which is the one thing a failed probe asks to have raised |
-| Clicks in the probe train | 1 by default. More clicks buy signal in a noisy room, but a delay near the click spacing aliases — raise it only when one click's response is too weak to find |
+| Largest Delay to Search (ms) | Upper bound of the correlation search, 50 ms by default. A rig whose delay exceeds it cannot be measured at all, which is the one thing a failed probe asks to have raised |
+| Clicks in Probe Train | 1 by default. More clicks buy signal in a noisy room, but a delay near the click spacing aliases — raise it only when one click's response is too weak to find |
+| [Ambient Temperature (°F)](#ambient-temperature) | The air temperature the delay is turned into a distance through |
+
+The probe is the one measurement worth repeating back to back — move the
+microphone, measure again — which is why nothing stands between the button and
+the measurement. Take the acoustic calibrator off the microphone and leave the
+speaker and microphone where an experiment has them before pressing it; the
+settings window carries that reminder.
 
 The dialog reports the delay in milliseconds and samples, the sample rate it
 was measured at, and the air path it corresponds to at the speed of sound for
@@ -440,15 +464,23 @@ the rig, and the readout it writes is replaced by the next run's.
 
 ## Ambient Temperature
 
-The Ambient Temperature field (Microphone section, directly above Measure
-Conduction Delay) sets `Engine.AmbientTemperature` in degrees Celsius, and
+The Ambient Temperature field (Options > Conduction Delay Settings...) is
+entered in **degrees Fahrenheit** and sets `Engine.AmbientTemperature`, and
 through it `Engine.SpeedOfSound`:
 
 $$c = 331.3\sqrt{1 + \frac{T}{273.15}}\ \text{m/s}$$
 
-which is 343.2 m/s at the 20 °C default — the value that was hardcoded before
-this was settable, so a rig that never touches it keeps the numbers it always
-reported.
+which is 343.2 m/s at the 68 °F (20 °C) default — the value that was hardcoded
+before this was settable, so a rig that never touches it keeps the numbers it
+always reported.
+
+The GUI is the only place Fahrenheit appears: it converts on the way in and out,
+and `Engine.AmbientTemperature`, the `.esgc` file, and the `temperature_c` field
+of a conduction-delay reading are all Celsius. So is the
+`StimCalibrationGui.AmbientTemperature` preference, which is the engine value
+verbatim — a preference written before this change is read back unchanged. Every
+temperature the window *displays* — the field, the delay probe's dialog and
+status line, and the probe panel's title — is Fahrenheit.
 
 Every distance this package derives from a time of flight is computed at that
 speed, and nothing else is:
@@ -459,8 +491,8 @@ speed, and nothing else is:
   response ([swept sine](stimgen_SweptSineCalibration.md))
 
 No measured level depends on it, and neither does any delay or arrival time —
-only the distance those times are read as. Sound gains about 0.6 m/s per
-degree, so a setting 5 °C away from the room puts about 1% of error on a
+only the distance those times are read as. Sound gains about 0.34 m/s per
+degree F, so a setting 10 °F away from the room puts about 1% of error on a
 distance; that is worth setting for a rig where the mic distance is being
 checked against a tape measure, and not worth agonizing over otherwise.
 Humidity is not modelled: at room temperature it contributes a few tenths of a
@@ -469,12 +501,12 @@ percent, less than the thermometer's own error.
 The temperature is saved in the `.esgc` file, because the reflection distances
 in a saved analysis were computed with it — loading the file without it would
 restate them at whatever the loading rig happens to be set to. A file written
-before this setting existed loads at 20 °C, which is what its distances were
-computed at.
+before this setting existed loads at 20 °C (68 °F), which is what its distances
+were computed at.
 
 ## AC Couple Acquired Signal
 
-The AC Couple Acquired Signal checkbox (in the Hardware > Hardware and Analysis Settings... window) sets `Engine.AcCoupleResponse` the moment it changes. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
+The AC Couple Acquired Signal checkbox (in the Options > Hardware and Analysis Settings... window) sets `Engine.AcCoupleResponse` the moment it changes. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
 
 Check it when the input stage carries a DC offset or a wandering baseline. Either adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts low-frequency energy in the spectrum that leaks into the lowest analysis bins. Drift is the case a plain mean subtraction cannot reach: wander over a record averages to nearly nothing, so subtracting the mean leaves it entirely in place.
 
@@ -753,18 +785,15 @@ Design Filter prompts for the equalizer design options before running, and remem
 
 **Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
 
-Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter (its sweep branch) refuses such a filter rather than reporting the rate error as a design failure.
+Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter refuses such a filter rather than reporting the rate error as a design failure.
 
 The status line reports the resulting tap count, correction span and design rate, and the design opens in `fvtool`. Each design replaces the fvtool window left by the previous one, so tuning by repeated redesign does not accumulate windows.
 
 ## Test Filter
 
-Test Filter verifies the equalizer empirically, and which verification runs follows what the filter was designed from (`CalibrationData.filterSource`):
+Test Filter verifies the equalizer empirically with `Engine.test_filter`, regardless of whether the filter was designed from the tone table or the swept sine: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified.
 
-- **Filter designed from the tone table** — the button runs the same discrete-tone verification as Test Tones (`Engine.test_tones`): actual tones are played at the drive voltages the lookup table asks for, and the levels that come back are compared to the levels requested. The tone table, not the sweep, is what scales a `Tone` stimulus, so it is the thing to verify. The usual tone-test dialog collects the frequency/level grid, and the result is stored in `CalibrationData.toneTest`.
-- **Filter designed from the swept sine** — the button runs `Engine.test_filter`: the sweep is played raw and again through the filter, both responses are measured against the raw chirp, and the flatness of the equalized response is compared to the speaker's own. The status line reports the ripple before and after against the pass tolerance (default 6 dB peak-to-peak), a failure raises an alert with redesign advice, and the full result is stored in `CalibrationData.filterTest` so the saved `.esgc` records that its filter was verified.
-
-Either run is cancellable with Stop, and with live plots on the transfer panel fills in as the measurement proceeds — for the sweep branch, the raw response first and then the flattened one. The sweep flatness test remains available programmatically as `eng.test_filter()` regardless of the filter's source.
+The run is cancellable with Stop, and with live plots on the transfer panel fills in as the measurement proceeds — the raw response first, then the flattened one.
 
 ## Copy Filter Coefficients
 

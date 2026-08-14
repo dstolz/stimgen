@@ -107,9 +107,8 @@ if isempty(B.bands.frequency)
 end
 
 label = sprintf('1/%d octave', B.bands.fraction);
-h = obj.gobj_('bg_bands', @() line(ax, NaN, NaN, LineStyle='-', Marker='o', ...
-    MarkerSize=4, Color=[0.10 0.25 0.60], MarkerFaceColor=[0.10 0.25 0.60], ...
-    LineWidth=1, DisplayName=label));
+h = obj.gobj_('bg_bands', @() line(ax, NaN, NaN, LineStyle='-', ...
+    Color=[0.10 0.25 0.60], LineWidth=1, DisplayName=label));
 set(h, XData=B.bands.frequency, YData=B.bands.level_db, DisplayName=label);
 lvls = [lvls, B.bands.level_db];
 
@@ -150,9 +149,8 @@ if ~isfield(B, 'peaks') || isempty(B.peaks.frequency)
     return
 end
 
-h = obj.gobj_('bg_peaks', @() line(ax, NaN, NaN, LineStyle='none', ...
-    Marker='x', MarkerSize=8, Color=[0.80 0.10 0.10], LineWidth=1.25, ...
-    DisplayName='tonal'));
+h = obj.gobj_('bg_peaks', @() line(ax, NaN, NaN, ...
+    Color=[0.80 0.10 0.10], LineWidth=1.25, DisplayName='tonal'));
 set(h, XData=B.peaks.frequency, YData=B.peaks.level_db);
 lvls = B.peaks.level_db;
 
