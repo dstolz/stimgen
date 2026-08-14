@@ -1,4 +1,4 @@
-function [thdDb, h2Db, h3Db] = estimate_harmonics_(~, y, fs, fundamentalFreq)
+function [thdDb, h2Db, h3Db] = estimate_harmonics_(obj, y, fs, fundamentalFreq)
 thdDb = nan;
 h2Db = nan;
 h3Db = nan;
@@ -7,8 +7,9 @@ if isempty(y) || fs <= 0 || ~isfinite(fundamentalFreq) || fundamentalFreq <= 0 |
 end
 
 n = numel(y);
-w = flattopwin(n);
-[pxx, f] = periodogram(y, w, 2^nextpow2(n), fs, 'power');
+spec = obj.spectral_options();
+[pxx, f] = periodogram(y, spec.taper(n, "flattop"), ...
+    spec.transform_length(2^nextpow2(n)), fs, 'power');
 pxx = max(pxx, eps);
 
 p1 = local_band_power_(pxx, f, fundamentalFreq);

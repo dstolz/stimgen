@@ -14,12 +14,20 @@ classdef CalibrationGui < handle
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
+    % Hardware and Analysis Settings (Hardware menu) holds what is set once
+    % per rig rather than once per sweep: the output ceiling, AC coupling of
+    % the acquired record, and the analysis window and FFT length every
+    % spectral measurement is made with. The last two also govern the spectrum
+    % panel, so the peak on screen is computed the same way as the number
+    % written into the lookup table.
+    %
     % Settings are remembered across MATLAB sessions as StimCalibrationGui
-    % preferences: the controls-column fields and toggles, the display state
-    % (spectrum unit, weighting overlays, ghost, drive-voltage axis, log
-    % frequency axis), and the per-dialog measurement parameters. Values
-    % carried by a supplied engine, or by a loaded or in-progress calibration,
-    % always take precedence over remembered ones.
+    % preferences: the controls-column fields and toggles, the settings
+    % window's fields, the display state (spectrum unit, weighting overlays,
+    % ghost, drive-voltage axis, log frequency axis), and the per-dialog
+    % measurement parameters. Values carried by a supplied engine, or by a
+    % loaded or in-progress calibration, always take precedence over
+    % remembered ones.
     %
     % All drawing is done by a stimgen.calibration.LiveMonitor attached to this
     % window's axes: during a run it renders the engine's LiveUpdate stream
@@ -119,14 +127,16 @@ classdef CalibrationGui < handle
         LevelRefLabel
         ConductionDelayLabel
 
-        % Hardware Settings window (Hardware > Hardware Settings...). Created
-        % on demand, so these handles are empty until it is first opened and
+        % Hardware & Analysis Settings window (Hardware menu). Created on
+        % demand, so these handles are empty until it is first opened and
         % dead once it is closed -- everything that writes them guards on
         % validity. The settings themselves live on the Engine; the window is
         % only a view of them.
         HardwareDialog_
         MaxOutputField
         AcCoupleCheck
+        SpectralWindowDrop
+        SpectralFftDrop
         SampleRateLabel
 
         % Listener on the engine's ConductionDelay property, so the readout
@@ -204,7 +214,7 @@ classdef CalibrationGui < handle
             % Same reason: the engine must not keep calling back into a
             % label that died with the figure.
             delete(obj.DelayListener_);
-            % The Hardware Settings window is owned by this object, not by
+            % The settings window is owned by this object, not by
             % the main figure, so it does not die with either on its own.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 delete(obj.HardwareDialog_);
@@ -384,12 +394,12 @@ classdef CalibrationGui < handle
                 Tooltip=stimgen.util.tooltip('CalibrationGui', 'TransferVoltage'), ...
                 MenuSelectedFcn=@(~,~) obj.set_show_voltage_(~obj.Monitor.ShowVoltage));
 
-            % Rig facts and acquisition settings live in their own window
-            % rather than the controls column: they are set once per rig, not
-            % once per sweep, and the column reads better carrying only the
-            % per-sweep workflow.
+            % Rig facts, acquisition and analysis settings live in their own
+            % window rather than the controls column: they are set once per
+            % rig, not once per sweep, and the column reads better carrying
+            % only the per-sweep workflow.
             hwMenu = uimenu(obj.Figure, Text='Hardware');
-            uimenu(hwMenu, Text='Hardware Settings...', ...
+            uimenu(hwMenu, Text='Hardware and Analysis Settings...', ...
                 MenuSelectedFcn=@(~,~) obj.on_hardware_settings_());
 
             helpMenu = uimenu(obj.Figure, Text='Help');
@@ -487,12 +497,13 @@ classdef CalibrationGui < handle
         end
 
         function on_hardware_settings_(obj)
-            % Open (or refocus) the Hardware Settings window: the facts the
-            % adapter reports and the settings that describe the signal path
-            % it acquires through. Non-modal, so it can stay up during a run.
-            % The conduction delay is not here: it is measured per acquisition
-            % rather than set once per rig, so it lives in the column footer
-            % where it stays visible while a sweep runs.
+            % Open (or refocus) the Hardware and Analysis Settings window: the
+            % facts the adapter reports, the settings that describe the signal
+            % path it acquires through, and how the acquired record is
+            % transformed to a spectrum. Non-modal, so it can stay up during a
+            % run. The conduction delay is not here: it is measured per
+            % acquisition rather than set once per rig, so it lives in the
+            % column footer where it stays visible while a sweep runs.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 figure(obj.HardwareDialog_);
                 return
@@ -500,12 +511,12 @@ classdef CalibrationGui < handle
 
             pos = obj.Figure.Position;
             obj.HardwareDialog_ = uifigure( ...
-                Name='Hardware Settings', ...
-                Position=[pos(1)+40 pos(2)+pos(4)-260 400 104], ...
+                Name='Hardware and Analysis Settings', ...
+                Position=[pos(1)+40 pos(2)+pos(4)-300 400 208], ...
                 Resize='off');
 
-            g = uigridlayout(obj.HardwareDialog_, [3 2]);
-            g.RowHeight = {24 24 24};
+            g = uigridlayout(obj.HardwareDialog_, [7 2]);
+            g.RowHeight = {24 24 24 12 20 24 24};
             % Same split as the controls column's sections: captions carry
             % the units, the fields hold a few digits.
             g.ColumnWidth = {'1.3x', '1x'};
@@ -525,11 +536,33 @@ classdef CalibrationGui < handle
             obj.AcCoupleCheck = check_row_(g, 3, 'AC Couple Acquired Signal', ...
                 stimgen.util.tooltip('CalibrationGui', 'AcCoupleResponse'));
 
+            % The two below are analysis rather than acquisition: they change
+            % how an already-acquired record is turned into a spectrum, and so
+            % what every level read off one becomes. They share this window
+            % with AC coupling because they share its consequence -- the
+            % numbers in the table move -- and are separated by a heading
+            % because the reason they move is a different one.
+            heading_row_(g, 5, 'Spectral Analysis');
+
+            obj.SpectralWindowDrop = dropdown_row_(g, 6, 'Analysis Window', ...
+                arrayfun(@stimgen.calibration.SpectralOptions.windowLabel, ...
+                    stimgen.calibration.SpectralOptions.WindowList), ...
+                stimgen.calibration.SpectralOptions.WindowList, ...
+                stimgen.util.tooltip('CalibrationGui', 'SpectralWindow'));
+
+            obj.SpectralFftDrop = dropdown_row_(g, 7, 'FFT Length (samples)', ...
+                arrayfun(@stimgen.calibration.SpectralOptions.fftLengthLabel, ...
+                    stimgen.calibration.SpectralOptions.FftLengthList), ...
+                stimgen.calibration.SpectralOptions.FftLengthList, ...
+                stimgen.util.tooltip('CalibrationGui', 'SpectralFftLength'));
+
             % Settings push to the engine as they change: the window may be
             % closed by run time, so apply-at-next-run would silently depend
             % on whether it happened to be open then.
             obj.MaxOutputField.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
             obj.AcCoupleCheck.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
+            obj.SpectralWindowDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
+            obj.SpectralFftDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
 
             obj.sync_hardware_dialog_();
             obj.refresh_sample_rate_label_();
@@ -548,6 +581,30 @@ classdef CalibrationGui < handle
             end
         end
 
+        function on_spectral_setting_changed_(obj)
+            % Separate from on_hardware_setting_changed_ only because of what
+            % follows it: the last acquired record is re-analysed and redrawn,
+            % so the choice is answered on screen rather than at the next
+            % sweep. Nothing already in a lookup table is recomputed -- those
+            % numbers are what their own measurement found.
+            try
+                obj.Engine.set_configuration( ...
+                    SpectralWindow=obj.SpectralWindowDrop.Value, ...
+                    SpectralFftLength=obj.SpectralFftDrop.Value);
+            catch ME
+                obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
+                obj.sync_hardware_dialog_();
+                return
+            end
+
+            obj.Monitor.show_engine_state(obj.Engine);
+            obj.set_status_(sprintf( ...
+                'Spectral analysis: %s window, %s. Applies to the next measurement.', ...
+                stimgen.calibration.SpectralOptions.windowLabel(obj.Engine.SpectralWindow), ...
+                stimgen.calibration.SpectralOptions.fftLengthLabel(obj.Engine.SpectralFftLength)), ...
+                false);
+        end
+
         function sync_hardware_dialog_(obj)
             % The engine owns these settings; the window, when open, is only
             % a view of them. Called wherever the engine may have changed
@@ -557,6 +614,12 @@ classdef CalibrationGui < handle
             end
             obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
             obj.AcCoupleCheck.Value = obj.Engine.AcCoupleResponse;
+            obj.SpectralWindowDrop.Value = obj.Engine.SpectralWindow;
+            % A loaded calibration may name a length this list does not offer,
+            % having been saved from a hand-configured engine. Show it rather
+            % than silently snapping the engine to a neighbouring value.
+            set_dropdown_value_(obj.SpectralFftDrop, obj.Engine.SpectralFftLength, ...
+                @stimgen.calibration.SpectralOptions.fftLengthLabel);
         end
 
         function build_calibration_section_(obj, g)
@@ -655,7 +718,7 @@ classdef CalibrationGui < handle
             % reading invalidates the levels the sweep is writing. That makes
             % it something to watch during the run rather than a rig fact to
             % look up afterwards, which is why it sits here with the status
-            % line and not in the Hardware Settings window.
+            % line and not in the settings window.
             obj.ConductionDelayLabel = readout_row_(foot, 2, 'Conduction Delay', ...
                 'Not measured', stimgen.util.tooltip('CalibrationGui', 'ConductionDelay'));
 
@@ -841,7 +904,7 @@ classdef CalibrationGui < handle
                 obj.Monitor.detach();
                 delete(obj.Monitor);
             end
-            % The Hardware Settings window is a satellite of this one and has
+            % The settings window is a satellite of this one and has
             % no reason to outlive it.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 delete(obj.HardwareDialog_);
@@ -1604,7 +1667,7 @@ classdef CalibrationGui < handle
                     toneLutSource = "tone";
                 end
                 % Max Output Voltage and AC Couple are absent deliberately:
-                % the Hardware Settings window pushes them to the engine the
+                % the settings window pushes them to the engine the
                 % moment they change, and its controls exist only while it is
                 % open.
                 obj.Engine.set_configuration( ...
@@ -1762,7 +1825,7 @@ classdef CalibrationGui < handle
             % %.10g keeps non-integer converter rates exact on screen; %g
             % would show 24414.0625 as 24414.1, and a user transcribing that
             % rounded figure gets a filter assert_filter_rate refuses.
-            % Lives in the Hardware Settings window, so with that closed there
+            % Lives in the settings window, so with that closed there
             % is nothing to update; reopening it refreshes from the engine.
             if isempty(obj.SampleRateLabel) || ~isvalid(obj.SampleRateLabel)
                 return
@@ -2256,9 +2319,9 @@ classdef CalibrationGui < handle
             % Preference keys are the Engine property names. Numeric values
             % are validated against the field each is headed for via
             % sync_controls_: a hand-edited preference outside its range
-            % would otherwise throw there rather than here. Max Output's
-            % limits are stated literally because its field lives in the
-            % on-demand Hardware Settings window and does not exist yet.
+            % would otherwise throw there rather than here. Max Output and the
+            % FFT length state their limits literally because their controls
+            % live in the on-demand settings window and do not exist yet.
             factory = stimgen.calibration.Engine();
             numericPairs = {
                 'ReferenceLevel',     obj.RefLevelField.Limits
@@ -2267,6 +2330,7 @@ classdef CalibrationGui < handle
                 'NormativeValue',     obj.NormativeField.Limits
                 'ExcitationVoltage',  obj.ExcitationField.Limits
                 'MaxOutputVoltage',   [eps, 1000]
+                'SpectralFftLength',  [0, 2^24]
                 };
 
             opts = struct();
@@ -2292,6 +2356,12 @@ classdef CalibrationGui < handle
             if any(strcmp(stored, {'tone', 'swept_sine'})) && ...
                     obj.Engine.ToneLutSource == factory.ToneLutSource
                 opts.ToneLutSource = string(stored);
+            end
+
+            stored = string(obj.get_pref_('SpectralWindow', ''));
+            if ismember(stored, stimgen.calibration.SpectralOptions.WindowList) && ...
+                    obj.Engine.SpectralWindow == factory.SpectralWindow
+                opts.SpectralWindow = stored;
             end
 
             if isempty(fieldnames(opts))
@@ -2361,6 +2431,8 @@ classdef CalibrationGui < handle
                 obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.ExcitationField.Value));
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
                 obj.set_pref_('AcCoupleResponse',   sprintf('%d', obj.Engine.AcCoupleResponse));
+                obj.set_pref_('SpectralWindow',     char(obj.Engine.SpectralWindow));
+                obj.set_pref_('SpectralFftLength',  sprintf('%d', obj.Engine.SpectralFftLength));
                 obj.set_pref_('ShowLivePlots',      sprintf('%d', obj.ShowLivePlotsCheck.Value));
                 obj.set_pref_('iterativeCalibration', sprintf('%d', obj.IterativeCheck.Value));
                 if obj.ToneSweptSineCheck.Value
@@ -2574,6 +2646,62 @@ if ~isempty(tip)
     lbl.Tooltip = tip;
     chk.Tooltip = tip;
 end
+end
+
+% -------------------------------------------------------------------------
+function dd = dropdown_row_(g, row, labelText, itemLabels, itemValues, tip)
+% dd = dropdown_row_(g, row, labelText, itemLabels, itemValues)
+% dd = dropdown_row_(g, row, labelText, itemLabels, itemValues, tip)
+% Right-aligned caption and a dropdown whose ItemsData carries the value a
+% caller acts on, so the list can read in prose while Value stays the name or
+% number the engine takes.
+arguments
+    g
+    row (1,1) double
+    labelText (1,:) char
+    itemLabels (1,:) string
+    itemValues
+    tip (1,:) char = ''
+end
+lbl = uilabel(g, Text=labelText, HorizontalAlignment='right');
+lbl.Layout.Row = row;
+lbl.Layout.Column = 1;
+
+dd = uidropdown(g, Items=cellstr(itemLabels), ItemsData=itemValues);
+dd.Layout.Row = row;
+dd.Layout.Column = 2;
+
+if ~isempty(tip)
+    lbl.Tooltip = tip;
+    dd.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function set_dropdown_value_(dd, value, labelFcn)
+% set_dropdown_value_(dd, value, labelFcn)
+% Select value in a dropdown, appending it to the list first when it is not
+% already offered. A saved file or a scripted engine may hold a setting the
+% GUI's list never included; snapping to the nearest offered value would edit
+% the engine behind the user's back just for opening a window.
+if ~isempty(dd.ItemsData) && any(dd.ItemsData == value)
+    dd.Value = value;
+    return
+end
+dd.Items = [dd.Items, {char(labelFcn(value))}];
+dd.ItemsData = [dd.ItemsData, value];
+dd.Value = value;
+end
+
+% -------------------------------------------------------------------------
+function lbl = heading_row_(g, row, titleText)
+% lbl = heading_row_(g, row, titleText)
+% Bold full-width heading that groups the rows beneath it. Used where a
+% settings window carries two kinds of setting that happen to share a
+% consequence but not a reason.
+lbl = uilabel(g, Text=titleText, FontWeight='bold');
+lbl.Layout.Row = row;
+lbl.Layout.Column = [1 2];
 end
 
 % -------------------------------------------------------------------------

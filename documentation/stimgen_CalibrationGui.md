@@ -240,19 +240,24 @@ the **View** menu rather than controls in this column. The four most-used of
 them, plus the log frequency axis, are also toolbar buttons; see
 [Choosing what the plots show](#choosing-what-the-plots-show).
 
-Rig facts and acquisition settings live in their own window, opened from
-**Hardware > Hardware Settings...**: the Sample Rate readout (read-only,
-reported by the adapter), Max Output Voltage, and AC Couple Acquired Signal.
+Rig facts, acquisition and analysis settings live in their own window, opened
+from **Hardware > Hardware and Analysis Settings...**:
+
+| Group | Contents |
+|---|---|
+| (top) | Sample Rate readout (read-only, reported by the adapter), Max Output Voltage, AC Couple Acquired Signal |
+| Spectral Analysis | Analysis Window, FFT Length (samples) — see [Spectral Analysis](#spectral-analysis) |
+
 They are set once per rig, not once per sweep, so they earn a window over a
 place in the per-sweep column. The conduction delay is not among them — it is
 re-measured for every acquisition, so it belongs with the run rather than with
 the rig, and its readout is in the footer. The window is non-modal and may
-stay open during a run. Its two settings push to the engine the moment they
+stay open during a run. Its settings push to the engine the moment they
 change, rather than when the next run starts, since the window may be closed
 by then.
 
-Every field and toggle in this column, the Hardware Settings window's two
-settings, and the whole display state — spectrum unit, weighting overlays,
+Every field and toggle in this column, the settings window's fields,
+and the whole display state — spectrum unit, weighting overlays,
 ghost, drive-voltage axis, log frequency axis — are remembered across MATLAB sessions as
 `StimCalibrationGui` preferences. They are written when the window closes and
 after each successful measurement start, and reapplied the next time the
@@ -287,9 +292,9 @@ View menu items, all checkable:
 4. Previous-Measurement Ghost
 5. Transfer Drive-Voltage Axis
 
-The **Hardware** menu holds one item, **Hardware Settings...**, which opens
-the [hardware window](#controls-layout) described above (reopening it when it
-already exists brings it forward rather than making another).
+The **Hardware** menu holds one item, **Hardware and Analysis Settings...**,
+which opens the [settings window](#controls-layout) described above (reopening
+it when it already exists brings it forward rather than making another).
 
 Recent Protocols and Recent Calibrations each list up to nine most-recently-used
 paths (newest first), persisted across MATLAB sessions as `StimCalibrationGui`
@@ -348,7 +353,7 @@ sine runs do not probe, because neither cuts per-burst windows.
 
 ## AC Couple Acquired Signal
 
-The AC Couple Acquired Signal checkbox (in the Hardware > Hardware Settings... window) sets `Engine.AcCoupleResponse` the moment it changes. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
+The AC Couple Acquired Signal checkbox (in the Hardware > Hardware and Analysis Settings... window) sets `Engine.AcCoupleResponse` the moment it changes. With the box checked, every record the engine acquires is high-passed at `Engine.AcCoupleFrequency` (fixed at its 20 Hz default; not exposed in the GUI) before anything is computed from it — the reference, the background, the tone and click sweeps, the swept sine, and both verification runs.
 
 Check it when the input stage carries a DC offset or a wandering baseline. Either adds to the measured RMS (so levels read high, most visibly on quiet points), biases the cross-correlation that segments a tone-burst train, and puts low-frequency energy in the spectrum that leaks into the lowest analysis bins. Drift is the case a plain mean subtraction cannot reach: wander over a record averages to nearly nothing, so subtracting the mean leaves it entirely in place.
 
@@ -361,6 +366,63 @@ Semantics to be aware of:
 - The record's mean is removed before it is filtered, and both happen *after* the trailing buffer padding is trimmed. Trimming still sees the zeros that mark the padding, and the filter never has to settle across a large DC step at the record's edges — which it would ring on for far longer than its padding covers, right where the delay-probe click sits. A record too short to filter at all keeps the mean removal alone and says so in the title.
 - Measure Background is the one step it does not change the analysis of. That analysis already removes each record's mean and reports it as `dc_offset_v` acquisition health, and its band levels are meant to describe the floor the room actually has — so it is handed the record as acquired whatever this setting says. Only the displayed record follows the option.
 - Like the other parameters both reach the engine when a run is started, and both are persisted in the `.esgc` file, so a loaded calibration records how its records were conditioned. A file saved before this replaced the older Demean Acquired Signal option loads with AC coupling on at the default corner if demeaning had been on.
+
+## Spectral Analysis
+
+The Spectral Analysis group of the Hardware and Analysis Settings window sets
+`Engine.SpectralWindow` and `Engine.SpectralFftLength`, which together decide
+how an acquired record is turned into a spectrum. Every level this package
+reads out of a transform goes through them: the tone measurement written into
+the LUT (`Engine.spectral_rms`), the SNR and noise floor, the THD and harmonic
+levels, the background Welch analysis, and the spectrum panel.
+
+**Analysis Window** is the taper applied to the record.
+
+| Choice | What it is for |
+|---|---|
+| Auto (per measurement) | *Default.* Each measurement keeps the window suited to it — flat top where a level is being read, Hann where a noise floor is being averaged. This is what every calibration was measured with before the setting existed. |
+| Flat top | Amplitude accuracy: a tone lands within about 0.01 dB of its true level wherever it falls between bins. Pays with a wide main lobe that cannot separate close components. |
+| Hann / Hamming / Blackman / Blackman-Harris | Progressively more leakage suppression at progressively worse amplitude accuracy. Reach for these when what matters is telling a component from the floor around it rather than reading its level exactly. |
+| Rectangular (none) | No taper: the narrowest main lobe and the worst leakage. Correct only for a signal that is exactly periodic in the record. |
+
+**FFT Length (samples)** is how many points the transform runs over.
+
+- `Auto (next power of 2)` — *default* — uses the next power of two at or above
+  the record length, which is the resolution the record itself supports.
+- A chosen length is a **floor**, not a replacement. It can only zero-pad
+  further; it never truncates, because a transform shorter than the record
+  would make MATLAB wrap the record modulo the transform length and fold one
+  part of the signal onto another. Choosing 1024 for a 48000-sample record
+  therefore does nothing.
+- Padding buys finer bin spacing, which places a peak more precisely and
+  smooths the spectrum's shape. It does not resolve anything the record did not
+  already contain.
+- A length that is not one of the offered powers of two — set by script, or
+  restored from a `.esgc` saved that way — is added to the list and shown as
+  itself rather than snapped to a neighbour.
+
+Semantics to be aware of:
+
+- **Both apply to what is measured next, not to what is already stored.**
+  Changing either does not recompute any lookup table; those numbers are what
+  their own measurement found. A table measured under one window and one
+  measured under another should not be mixed.
+- **The spectrum panel follows the same settings**, so the peak on screen is
+  computed the way the tabulated number was. The panel *is* redrawn when the
+  setting changes, since it is re-analysing a record it still holds. A record is
+  drawn with the settings its own measurement carried, not with whatever is
+  currently selected, so changing a setting after a run does not silently
+  restate what that run found.
+- **Changing the window changes measured levels**, which is the point but is
+  worth stating: reading a 4 kHz tone with Hann instead of flat top moves it by
+  roughly 0.2 dB, and rectangular moves it much further. The default exists so
+  that a rig's existing numbers do not shift underneath it.
+- **Both are persisted in the `.esgc` file**, so a saved calibration records how
+  its tables were analysed. A file written before these settings existed loads
+  with the automatic behavior, which is what it was measured under.
+- Both are also `StimCalibrationGui` preferences, restored the next time the
+  window opens — subject to the same rule as every other engine setting: only
+  where the engine still holds its factory default.
 
 ## Tone Lookup From Swept Sine
 

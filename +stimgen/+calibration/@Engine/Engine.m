@@ -96,6 +96,20 @@ classdef Engine < handle
         % measures, but above the drift and mains-adjacent rumble it is there
         % to block.
         AcCoupleFrequency   (1,1) double {mustBePositive,mustBeFinite}      = 20    % Hz
+        % Analysis window every spectral estimator here applies to a record,
+        % and the transform length it runs over. "auto" and 0 leave each
+        % estimator with the choice it makes for itself -- flat top over the
+        % next power of two for the single-record periodograms that measure a
+        % level, Hann for the Welch averages that measure a noise floor -- so
+        % the defaults are the behavior these settings were added underneath.
+        % Naming a window applies it to all of them, and a nonzero length
+        % raises their transform length without ever lowering it. Both change
+        % what the next measurement reports; nothing already measured moves.
+        % See stimgen.calibration.SpectralOptions for what each window trades.
+        SpectralWindow      (1,1) string {mustBeMember(SpectralWindow, ...
+            ["auto", "flattop", "hann", "hamming", "blackman", ...
+             "blackmanharris", "rectangular"])}                            = "auto"
+        SpectralFftLength   (1,1) double {mustBeNonnegative,mustBeInteger,mustBeFinite} = 0
         ShowLivePlots       (1,1) logical                                   = false
         % Which LUT serves "tone" lookups (and the "filter" lookups anchored to
         % them). "swept_sine" overrides any direct tone calibration whenever
@@ -221,6 +235,22 @@ classdef Engine < handle
                 mons{k}.reset();
             end
             drawnow;
+        end
+
+        function s = spectral_options(obj)
+            % s = spectral_options(obj)
+            % The window and transform length every spectral estimator here
+            % resolves through, as one value object.
+            %
+            % Public because it is also what a caller needs to reproduce a
+            % measurement outside the engine -- spectral_rms takes it, and
+            % the live-update context carries it so a renderer analyses a
+            % record the same way the engine did.
+            %
+            % Returns:
+            %   s - stimgen.calibration.SpectralOptions
+            s = stimgen.calibration.SpectralOptions( ...
+                obj.SpectralWindow, obj.SpectralFftLength);
         end
 
         plot_signal(obj, reset) % Deprecated; delegates to LiveMonitor.
@@ -356,12 +386,18 @@ classdef Engine < handle
 
         function c = live_context_(obj)
             % Engine parameters a renderer needs to interpret a payload.
+            % The spectral settings ride along so a renderer transforms the
+            % record the same way the engine measured it: the peak drawn on
+            % the spectrum panel is then the number that went into the LUT,
+            % which is the whole point of drawing it.
             c = struct( ...
                 'ReferenceLevel',    obj.ReferenceLevel, ...
                 'MicSensitivity',    obj.MicSensitivity, ...
                 'NormativeValue',    obj.NormativeValue, ...
                 'ExcitationVoltage', obj.ExcitationVoltage, ...
-                'MaxOutputV',        obj.MaxOutputVoltage);
+                'MaxOutputV',        obj.MaxOutputVoltage, ...
+                'SpectralWindow',    obj.SpectralWindow, ...
+                'SpectralFftLength', obj.SpectralFftLength);
         end
 
         function m = live_metrics_(obj)
@@ -504,7 +540,7 @@ classdef Engine < handle
 
     methods (Static)
         [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
-        r = spectral_rms(x, freq, fs) % Estimate RMS amplitude at a frequency.
+        r = spectral_rms(x, freq, fs, options) % Estimate RMS amplitude at a frequency.
     end
 
     methods (Static, Access = private)

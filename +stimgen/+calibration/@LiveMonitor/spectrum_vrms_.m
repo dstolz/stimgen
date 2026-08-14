@@ -1,5 +1,6 @@
-function [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins)
+function [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins, spec)
 % [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins)
+% [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins, spec)
 % Magnitude spectrum of a response record as rms volts per bin, thinned onto a
 % log frequency grid for display, plus the equivalent noise bandwidth of the
 % analysis window.
@@ -24,26 +25,41 @@ function [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins)
 % record, so the density units stay comparable across the two branches only
 % insofar as this number is carried with the curve.
 %
+% spec carries the engine's window and transform length, so a user who
+% changes either sees the panel change with the measurement rather than
+% watching the drawn peak drift away from the tabulated one. Omitted, it
+% defaults to each branch's own choice, which is what this drew before the
+% settings existed.
+%
 % Parameters:
 %   y     - (1,:) double response record (V)
 %   fs    - (1,1) double sample rate (Hz)
 %   nBins - (1,1) double log-grid bins to return
+%   spec  - (1,1) stimgen.calibration.SpectralOptions
 %
 % Returns:
 %   f       - (1,:) double frequency (Hz)
 %   vrms    - (1,:) double magnitude (V rms per bin)
 %   noiseBw - (1,1) double equivalent noise bandwidth of the window (Hz)
 
+arguments
+    y
+    fs
+    nBins
+    spec (1,1) stimgen.calibration.SpectralOptions = ...
+        stimgen.calibration.SpectralOptions()
+end
+
 n = numel(y);
 WELCH_THRESHOLD = 2^15;
 
 if n > WELCH_THRESHOLD
     nseg = 2^13;
-    win = hann(nseg);
-    [pxx, fv] = pwelch(y, win, nseg/2, 2^14, fs, 'power');
+    win = spec.taper(nseg, "hann");
+    [pxx, fv] = pwelch(y, win, nseg/2, spec.transform_length(2^14), fs, 'power');
 else
-    win = flattopwin(n);
-    [pxx, fv] = periodogram(y, win, 2^nextpow2(n), fs, 'power');
+    win = spec.taper(n, "flattop");
+    [pxx, fv] = periodogram(y, win, spec.transform_length(2^nextpow2(n)), fs, 'power');
 end
 noiseBw = enbw(win, fs);
 

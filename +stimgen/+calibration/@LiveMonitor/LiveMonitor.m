@@ -265,7 +265,7 @@ classdef LiveMonitor < handle
 
     methods (Static, Access = private)
         [t, y] = envelope_decimate_(y, fs, maxPoints)   % Min/max envelope for display.
-        [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins)  % V rms spectrum on a log grid.
+        [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins, spec)  % V rms spectrum on a log grid.
         [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)  % V rms to a display unit.
 
         function s = clock_(seconds)

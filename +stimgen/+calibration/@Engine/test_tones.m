@@ -321,7 +321,8 @@ try
                     [exBurst, rsBurst, rsSteady, steadySpan] = ...
                         obj.extract_burst_(x, response, schedule(k), lag);
 
-                    m = stimgen.calibration.Engine.spectral_rms(rsSteady, freqs(i), fs);
+                    m = stimgen.calibration.Engine.spectral_rms(rsSteady, freqs(i), fs, ...
+                        Spectral=obj.spectral_options());
                     measSplAll(rep, i, li) = obj.compute_spl_voltage_(m, "specfreq");
                     [~, snrAll(rep, i, li)] = obj.estimate_noise_snr_(rsSteady, fs, freqs(i));
                     thdAll(rep, i, li) = obj.estimate_harmonics_(rsSteady, fs, freqs(i));

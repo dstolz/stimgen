@@ -34,7 +34,11 @@ classdef LiveUpdate < event.EventData
     %                  offset AC coupling took off it and ac_coupled_hz the corner
     %                  it high-passed at, both NaN when the record was not coupled
     %   Context      - engine parameters needed to interpret the data
-    %                  (see default_context)
+    %                  (see default_context). SpectralWindow and
+    %                  SpectralFftLength are the analysis settings the
+    %                  measurement was made under, so a renderer that
+    %                  re-transforms Response reproduces it rather than
+    %                  computing a second, differing number
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.LiveMonitor
 
@@ -146,14 +150,17 @@ classdef LiveUpdate < event.EventData
         end
 
         function c = default_context()
-            % Engine parameters a renderer needs to convert volts to dB SPL
-            % and to judge whether a required drive voltage is reachable.
+            % Engine parameters a renderer needs to convert volts to dB SPL,
+            % to judge whether a required drive voltage is reachable, and to
+            % transform the record the same way the engine measured it.
             c = struct( ...
                 'ReferenceLevel',    94, ...
                 'MicSensitivity',    1, ...
                 'NormativeValue',    80, ...
                 'ExcitationVoltage', 1, ...
-                'MaxOutputV',        10);
+                'MaxOutputV',        10, ...
+                'SpectralWindow',    "auto", ...
+                'SpectralFftLength', 0);
         end
     end
 

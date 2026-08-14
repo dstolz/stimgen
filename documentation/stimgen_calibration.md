@@ -173,6 +173,8 @@ eng.set_configuration( ...
     MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
     AcCoupleResponse=true, ...  % high-pass the acquired record before analysis (default false)
     AcCoupleFrequency=20, ...   % Hz corner of that high-pass (default 20)
+    SpectralWindow="auto", ...  % taper every spectral estimator applies (default "auto")
+    SpectralFftLength=0, ...    % transform-length floor; 0 = automatic (default 0)
     ShowLivePlots=true);        % broadcast progress during sweeps (default false)
 ```
 
@@ -205,6 +207,54 @@ record kept for display follows the setting. And whatever the setting, the
 filtered at), the last two NaN when the record was not coupled, which
 `LiveMonitor` states in the waveform title so the option's effect is legible
 rather than inferred.
+
+#### Spectral Analysis Settings
+
+`SpectralWindow` and `SpectralFftLength` decide how an acquired record is turned
+into a spectrum, and so what every level read out of a transform becomes: the
+tone measurement written into the LUT (`Engine.spectral_rms`), the SNR and noise
+floor (`estimate_noise_snr_`), the THD and harmonic levels
+(`estimate_harmonics_`), the background Welch analysis, and the spectrum panel
+`LiveMonitor` draws. They are resolved through
+[`stimgen.calibration.SpectralOptions`](../+stimgen/+calibration/SpectralOptions.m),
+which `eng.spectral_options()` returns.
+
+Both defaults mean "leave each estimator with the choice it makes for itself",
+so an engine that has never been configured produces exactly the numbers it did
+before these settings existed:
+
+```matlab
+eng.set_configuration(SpectralWindow="hann", SpectralFftLength=2^16);
+s = eng.spectral_options();     % the two, as one value object
+w = s.taper(numel(y), "flattop");            % window vector for a record
+n = s.transform_length(2^nextpow2(numel(y))); % transform length to use
+```
+
+The window is what trades amplitude accuracy against frequency resolution. Flat
+top — the automatic choice wherever a *level* is measured — puts a tone within
+about 0.01 dB of its true amplitude wherever it falls between bins, at the cost
+of a main lobe too wide to separate close components. Hann (the automatic choice
+for the Welch averages that measure a *floor*), Hamming, Blackman and
+Blackman-Harris suppress progressively more leakage at progressively worse
+amplitude accuracy. Rectangular is no taper at all: the sharpest resolution and
+the worst leakage, right only for a signal exactly periodic in the record.
+Reading a 4 kHz tone with Hann instead of flat top moves it by roughly 0.2 dB,
+which is the scale of what changing this costs.
+
+`SpectralFftLength` is a **floor** on the transform length, not a replacement for
+it. It can only zero-pad further and never truncates, because a transform
+shorter than the record would make MATLAB wrap the record modulo the transform
+length and fold one part of the signal onto another. Padding buys finer bin
+spacing — a more precisely placed peak and a smoother curve — not resolution the
+record did not already contain.
+
+Both apply to what is measured next; nothing already in a lookup table is
+recomputed, so tables measured under different windows should not be mixed. Both
+are saved in the `.esgc` file, so a calibration records how its tables were
+analysed, and both ride in the `LiveUpdate` context, so a renderer transforms a
+record the same way the engine measured it rather than computing a second,
+differing number. A file written before these settings existed loads with the
+automatic behavior, which is what it was measured under.
 
 `ShowLivePlots` does not itself draw anything. It gates a `LiveUpdate` event that
 the engine broadcasts for every measurement; attach a
@@ -633,6 +683,8 @@ prefer a `LiveMonitor`.
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
+| `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
+| `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
 | `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
 
@@ -747,6 +799,7 @@ Source: `+stimgen/+calibration/`
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
+- `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).
 - `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes. Also draws the two off-run views of the transfer axes: `show_calibration` (the lookup tables) and `show_background` (a background capture).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
 

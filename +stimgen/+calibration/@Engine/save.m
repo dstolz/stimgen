@@ -42,6 +42,11 @@ s.MaxOutputVoltage    = obj.MaxOutputVoltage;
 s.ToneLutSource       = obj.ToneLutSource;
 s.AcCoupleResponse    = obj.AcCoupleResponse;
 s.AcCoupleFrequency   = obj.AcCoupleFrequency;
+% How the tables in this file were analysed, not just what they measured: a
+% level read with a different window is a different number, so the settings
+% travel with the data that was taken under them.
+s.SpectralWindow      = obj.SpectralWindow;
+s.SpectralFftLength   = obj.SpectralFftLength;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

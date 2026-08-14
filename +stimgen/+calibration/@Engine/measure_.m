@@ -38,6 +38,7 @@ switch mode
     case "peak"
         r = max(abs(y));
     case "specfreq"
-        r = stimgen.calibration.Engine.spectral_rms(y, options.StimFrequency, obj.Fs);
+        r = stimgen.calibration.Engine.spectral_rms(y, options.StimFrequency, obj.Fs, ...
+            Spectral=obj.spectral_options());
 end
 end

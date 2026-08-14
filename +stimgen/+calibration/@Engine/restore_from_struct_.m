@@ -35,4 +35,14 @@ end
 if isfield(s, 'AcCoupleFrequency')
     obj.AcCoupleFrequency = s.AcCoupleFrequency;
 end
+
+% Written since the analysis window and transform length became settings. A
+% file saved before that was measured with each estimator's own choice, which
+% is what the defaults still mean.
+if isfield(s, 'SpectralWindow')
+    obj.SpectralWindow = string(s.SpectralWindow);
+end
+if isfield(s, 'SpectralFftLength')
+    obj.SpectralFftLength = s.SpectralFftLength;
+end
 end

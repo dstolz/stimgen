@@ -1,4 +1,4 @@
-function [noiseFloorDb, snrDb] = estimate_noise_snr_(~, y, fs, toneFreq)
+function [noiseFloorDb, snrDb] = estimate_noise_snr_(obj, y, fs, toneFreq)
 noiseFloorDb = nan;
 snrDb = nan;
 if nargin < 4
@@ -9,8 +9,9 @@ if isempty(y) || fs <= 0
 end
 
 n = numel(y);
-w = flattopwin(n);
-[pxx, f] = periodogram(y, w, 2^nextpow2(n), fs, 'power');
+spec = obj.spectral_options();
+[pxx, f] = periodogram(y, spec.taper(n, "flattop"), ...
+    spec.transform_length(2^nextpow2(n)), fs, 'power');
 pxx = max(pxx, eps);
 pxxDb = 10 * log10(pxx);
 noiseFloorDb = median(pxxDb, 'omitnan');

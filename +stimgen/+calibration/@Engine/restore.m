@@ -34,7 +34,8 @@ end
 cfg = {};
 scalarFields = ["MicSensitivity", "ReferenceLevel", "ReferenceFrequency", ...
                 "NormativeValue", "MaxOutputVoltage", "ShowLivePlots", ...
-                "ToneLutSource", "AcCoupleResponse", "AcCoupleFrequency"];
+                "ToneLutSource", "AcCoupleResponse", "AcCoupleFrequency", ...
+                "SpectralWindow", "SpectralFftLength"];
 for k = 1:numel(scalarFields)
     f = scalarFields(k);
     if isfield(s, f) && ~isempty(s.(f))

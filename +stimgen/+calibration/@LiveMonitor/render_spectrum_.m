@@ -40,8 +40,12 @@ if isempty(y) || fs <= 0
     return
 end
 
+% The payload's own analysis settings, not the engine's current ones: a
+% record is drawn the way it was measured, so a setting changed after a run
+% does not silently restate what that run found.
 [f, vrms, noiseBw] = stimgen.calibration.LiveMonitor.spectrum_vrms_( ...
-    y, fs, obj.SpectrumBins);
+    y, fs, obj.SpectrumBins, ...
+    stimgen.calibration.SpectralOptions.fromStruct(d.Context));
 if isempty(f)
     clear_spectrum_(obj);
     title(ax, 'Spectrum  (no data)');

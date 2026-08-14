@@ -96,7 +96,7 @@ repeatSpl = refLvl + 20 * log10(rmsV ./ micSens);
 rangeDb   = max(repeatSpl) - min(repeatSpl);
 
 % --- Averaged power spectrum ----------------------------------------------
-[pxx, f] = welch_average_(records, fs);
+[pxx, f] = welch_average_(records, fs, obj.spectral_options());
 df = f(2) - f(1);
 
 % --- Broadband A-weighted level -------------------------------------------
@@ -204,24 +204,32 @@ results.flags               = flags;
 end
 
 % ------------------------------------------------------------------------ %
-function [pxx, f] = welch_average_(records, fs)
+function [pxx, f] = welch_average_(records, fs, spec)
 % Power-averaged Welch spectrum over every record, on one frequency axis.
 %
 % The window is sized for a few hertz of resolution -- fine enough to separate
 % a mains harmonic from the floor it sits on -- but never more than a quarter
 % of the shortest record, so even a brief capture is averaged over several
 % segments instead of being one noisy periodogram.
+%
+% Hann is the default here rather than the flat top the level measurements
+% use: this is a density over overlapped segments, where sidelobe suppression
+% decides whether a mains harmonic can be told from the floor beneath it, and
+% amplitude accuracy at an arbitrary bin offset -- what flat top buys -- is
+% not what a noise floor is read for. A configured window overrides it, since
+% a user comparing floors across analyses needs them computed alike.
 nMin = min(cellfun(@numel, records));
 
 nwin = 2 ^ nextpow2(fs / 4);
 nwin = min(nwin, 2 ^ floor(log2(max(nMin / 4, 256))));
 nwin = max(min(nwin, nMin), 8);
-nfft = max(nwin, 256);
+nfft = spec.transform_length(max(nwin, 256));
+win  = spec.taper(nwin, "hann", "periodic");
 
 pxx = [];
 f   = [];
 for k = 1:numel(records)
-    [p, fv] = pwelch(records{k}, hann(nwin, 'periodic'), floor(nwin / 2), nfft, fs, 'psd');
+    [p, fv] = pwelch(records{k}, win, floor(nwin / 2), nfft, fs, 'psd');
     if isempty(pxx)
         pxx = p(:);
         f   = fv(:);
