@@ -29,6 +29,11 @@ classdef LiveUpdate < event.EventData
     %   Repeat/RepeatTotal - pass being measured, and how many there are
     %   Progress     - fraction of the whole run complete, 0..1
     %   Elapsed      - seconds since the run started
+    %   Latency      - conduction-delay diagnostics: the correlation curve the
+    %                  delay was chosen from and the probe-region record it was
+    %                  measured against, on one lag axis (see default_latency
+    %                  and Engine/click_latency_). Populated only by the
+    %                  "latency" stage; empty arrays otherwise
     %   Metrics      - scalars for the current measurement (see default_metrics).
     %                  dc_v is the offset still in Response; dc_removed_v is the
     %                  offset AC coupling took off it and ac_coupled_hz the corner
@@ -63,6 +68,7 @@ classdef LiveUpdate < event.EventData
         Elapsed      (1,1) double
         Metrics      (1,1) struct
         Context      (1,1) struct
+        Latency      (1,1) struct
     end
 
     methods
@@ -92,6 +98,7 @@ classdef LiveUpdate < event.EventData
                 opts.Elapsed      (1,1) double = 0
                 opts.Metrics      (1,1) struct = stimgen.calibration.LiveUpdate.default_metrics()
                 opts.Context      (1,1) struct = stimgen.calibration.LiveUpdate.default_context()
+                opts.Latency      (1,1) struct = stimgen.calibration.LiveUpdate.default_latency()
             end
             obj.Stage        = stage;
             obj.Phase        = phase;
@@ -114,6 +121,8 @@ classdef LiveUpdate < event.EventData
                 opts.Metrics, stimgen.calibration.LiveUpdate.default_metrics());
             obj.Context      = stimgen.calibration.LiveUpdate.fill_defaults_( ...
                 opts.Context, stimgen.calibration.LiveUpdate.default_context());
+            obj.Latency      = stimgen.calibration.LiveUpdate.fill_defaults_( ...
+                opts.Latency, stimgen.calibration.LiveUpdate.default_latency());
 
             if isnan(opts.Progress)
                 obj.Progress = stimgen.calibration.LiveUpdate.infer_progress_(opts);
@@ -147,6 +156,27 @@ classdef LiveUpdate < event.EventData
                 'ac_coupled_hz',  nan, ...
                 'full_scale_v',   nan, ...
                 'clipping',       false);
+        end
+
+        function l = default_latency()
+            % Conduction-delay diagnostics, empty. A renderer tests lag_ms for
+            % emptiness rather than the stage name, so a payload that names no
+            % correlation simply does not draw one.
+            l = struct( ...
+                'fs',                nan, ...
+                'lag_ms',            [], ...
+                'corr',              [], ...
+                'probe_v',           [], ...
+                'probe_lag0_ms',     0, ...
+                'delay_ms',          nan, ...
+                'bound_ms',          nan, ...
+                'peak_v',            nan, ...
+                'noise_v',           nan, ...
+                'at_bound',          false, ...
+                'valid',             false, ...
+                'temperature_c',     nan, ...
+                'speed_of_sound_ms', nan, ...
+                'path_m',            nan);
         end
 
         function c = default_context()

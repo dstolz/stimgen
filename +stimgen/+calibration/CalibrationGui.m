@@ -14,6 +14,13 @@ classdef CalibrationGui < handle
     % When no engine is supplied, an offline Engine is created automatically;
     % hardware can be attached later via File > Initialize Runtime From Protocol.
     %
+    % The Microphone section holds everything about the microphone end of the
+    % rig: what the acoustic calibrator produces, the sensitivity measured from
+    % it, the room's Ambient Temperature, and the conduction delay probe that
+    % temperature is read through. A probe draws its correlation curve on the
+    % transfer panel -- the evidence one lag was chosen over another, which the
+    % waveform cannot show -- and the View menu keeps it reachable afterwards.
+    %
     % Hardware and Analysis Settings (Hardware menu) holds what is set once
     % per rig rather than once per sweep: the output ceiling, AC coupling of
     % the acquired record, and the analysis window and FFT length every
@@ -96,11 +103,17 @@ classdef CalibrationGui < handle
         % View menu
         CalibrationViewMenu
         BackgroundViewMenu
+        LatencyViewMenu
         WeightingMenus          % one checkable item per LiveMonitor.WeightingTypes
         SpectrumUnitMenus       % one checkable item per LiveMonitor.SpectrumUnitList
         GhostMenu
         VoltageMenu
         TransferView_ (1,1) string = "calibration"  % which view the transfer panel last drew
+
+        % Diagnostics of the last conduction delay probe, kept so the panel
+        % can be drawn again after another view has taken it. Session state,
+        % not calibration data: nothing saves it, and a new probe replaces it.
+        LastLatency_ = []
 
         % Display toolbar. Each of these mirrors a View menu item or the
         % Display section's checkbox rather than owning state of its own:
@@ -117,6 +130,7 @@ classdef CalibrationGui < handle
         RefLevelField
         RefFreqField
         MicSensField
+        AmbientTempField
         NormativeField
         ExcitationField
         ShowLivePlotsCheck
@@ -155,6 +169,7 @@ classdef CalibrationGui < handle
         BtnFilter
         BtnTestFilter
         BtnCopyFilter
+        BtnDelay
         BtnStop
         BtnReset
 
@@ -349,6 +364,14 @@ classdef CalibrationGui < handle
             obj.BackgroundViewMenu = uimenu(viewMenu, Text='Background Noise Analysis', ...
                 Enable='off', ...
                 MenuSelectedFcn=@(~,~) obj.set_transfer_view_("background"));
+            % The third view, and the only one that is not a property of the
+            % calibration: it belongs to the last delay probe of this session,
+            % which is why it is offered only once one has run. Without it the
+            % correlation the probe was judged from would be unrecoverable the
+            % moment anything else drew on the panel.
+            obj.LatencyViewMenu = uimenu(viewMenu, Text='Conduction Delay Probe', ...
+                Enable='off', ...
+                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("latency"));
 
             % Weightings annotate whichever view is up rather than being a
             % view of their own, and more than one at a time is a reasonable
@@ -417,7 +440,9 @@ classdef CalibrationGui < handle
             %
             % Stop, the conduction delay readout and the status line are in the
             % footer because they are what is needed while a sweep is running,
-            % when the stack may be scrolled anywhere.
+            % when the stack may be scrolled anywhere. The button that measures
+            % that delay is not: it is a step of the workflow like any other,
+            % and belongs with the microphone settings it is run against.
             col = uigridlayout(obj.Grid, [2 1]);
             col.Layout.Row = 1;
             col.Layout.Column = 1;
@@ -436,10 +461,10 @@ classdef CalibrationGui < handle
 
             h = zeros(1, 4);
 
-            [g, h(1)] = obj.add_section_(stack, 1, 'Microphone Reference', [24 24 24 30]);
+            [g, h(1)] = obj.add_section_(stack, 1, 'Microphone', [24 24 24 30 24 30]);
             obj.build_reference_section_(g);
 
-            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24 24]);
+            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
             obj.build_calibration_section_(g);
 
             [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30 24]);
@@ -477,8 +502,9 @@ classdef CalibrationGui < handle
         end
 
         function build_reference_section_(obj, g)
-            % What the acoustic calibrator produces, and the sensitivity
-            % measuring it yields.
+            % Everything about the microphone: what the acoustic calibrator
+            % produces, the sensitivity measuring it yields, and where the
+            % microphone is -- which is what the delay probe answers.
             obj.RefLevelField = numeric_row_(g, 1, 'Reference Level (dB SPL)', ...
                 [1, 160], '%.1f');
             obj.RefFreqField = numeric_row_(g, 2, 'Reference Frequency (Hz)', ...
@@ -494,6 +520,17 @@ classdef CalibrationGui < handle
             % in dB SPL once the reference has set the scale it is read on.
             obj.BtnBackground = action_button_(g, 4, 2, 'Measure Background', ...
                 'BtnBackground', @(~,~) obj.on_measure_background_());
+
+            % Directly above the probe it governs: a delay is only a distance
+            % once the air it crossed has a temperature. Nothing else on this
+            % window depends on it, so it sits with the one reading it changes
+            % rather than in the rig settings window.
+            obj.AmbientTempField = numeric_row_(g, 5, 'Ambient Temperature (°C)', ...
+                [-50, 60], '%.1f', ...
+                stimgen.util.tooltip('CalibrationGui', 'AmbientTemperature'));
+
+            obj.BtnDelay = action_button_(g, 6, [1 2], 'Measure Conduction Delay', ...
+                'BtnDelay', @(~,~) obj.on_measure_delay_());
         end
 
         function on_hardware_settings_(obj)
@@ -630,10 +667,36 @@ classdef CalibrationGui < handle
             obj.NormativeField = numeric_row_(g, 2, 'Normative Value (dB SPL)', ...
                 [1, 180], '%.1f');
 
-            % Tones get the full width and the two optional sweeps share the
-            % row below: the layout says which one an experiment normally needs.
-            obj.BtnTones = action_button_(g, 3, [1 2], 'Calibrate Tones', ...
+            % Tones and the refinement that follows them share the top row,
+            % and the two optional sweeps the row below: the layout says which
+            % one an experiment normally needs. The refinement is a modifier of
+            % the sweep beside it rather than a step of its own, so it reads as
+            % one line -- run tones, refined -- instead of as a setting several
+            % rows away that has to be remembered.
+            %
+            % Its own row rather than a check_row_ caption in column 1: that
+            % column belongs to the button here, and a checkbox carrying its
+            % own label is the only way to put a toggle beside one.
+            row = uigridlayout(g, [1 2]);
+            row.Layout.Row = 3;
+            row.Layout.Column = [1 2];
+            row.ColumnWidth = {'1x', 186};
+            row.Padding = [0 0 0 0];
+            row.ColumnSpacing = 8;
+
+            obj.BtnTones = action_button_(row, 1, 1, 'Calibrate Tones', ...
                 'BtnTones', @(~,~) obj.on_calibrate_tones_());
+
+            % Follows each tone or click sweep with Engine.refine_tones/
+            % refine_clicks: the finished table is tested at its own points
+            % and corrected from the errors that come back, until every point
+            % lands within a target accuracy. The sweep dialog collects the
+            % pass limit and target while this is checked.
+            obj.IterativeCheck = uicheckbox(row, Text='Iterative Level Refinement', ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'IterativeRefinement'));
+            obj.IterativeCheck.Layout.Row = 1;
+            obj.IterativeCheck.Layout.Column = 2;
+
             obj.BtnClicks = action_button_(g, 4, 1, 'Calibrate Clicks', ...
                 'BtnClicks', @(~,~) obj.on_calibrate_clicks_());
             obj.BtnSweptSine = action_button_(g, 4, 2, 'Calibrate Swept Sine', ...
@@ -643,14 +706,6 @@ classdef CalibrationGui < handle
             obj.ToneSweptSineCheck = check_row_(g, 5, 'Tone Lookup From Swept Sine', ...
                 stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine'), ...
                 @(~,~) obj.on_tone_lut_source_());
-
-            % Follows each tone or click sweep with Engine.refine_tones/
-            % refine_clicks: the finished table is tested at its own points
-            % and corrected from the errors that come back, until every point
-            % lands within a target accuracy. The sweep dialog collects the
-            % pass limit and target while this is checked.
-            obj.IterativeCheck = check_row_(g, 6, 'Iterative Level Refinement', ...
-                stimgen.util.tooltip('CalibrationGui', 'IterativeRefinement'));
         end
 
         function build_verification_section_(obj, g)
@@ -717,8 +772,9 @@ classdef CalibrationGui < handle
             % acquisition, so it moves while a sweep runs -- and a wrong
             % reading invalidates the levels the sweep is writing. That makes
             % it something to watch during the run rather than a rig fact to
-            % look up afterwards, which is why it sits here with the status
-            % line and not in the settings window.
+            % look up afterwards, which is why the readout sits here with the
+            % status line while the button that measures it on demand sits in
+            % the Microphone section with the rest of the workflow.
             obj.ConductionDelayLabel = readout_row_(foot, 2, 'Conduction Delay', ...
                 'Not measured', stimgen.util.tooltip('CalibrationGui', 'ConductionDelay'));
 
@@ -812,15 +868,18 @@ classdef CalibrationGui < handle
             % and what is on screen cannot disagree.
             arguments
                 obj
-                view (1,1) string {mustBeMember(view, ["calibration", "background"])}
+                view (1,1) string {mustBeMember(view, ["calibration", "background", "latency"])}
             end
             obj.TransferView_ = view;
             obj.sync_display_controls_();
             obj.redraw_transfer_view_();
-            if view == "background"
-                obj.set_status_('Showing background noise analysis.', false);
-            else
-                obj.set_status_('Showing calibration transfer curves.', false);
+            switch view
+                case "background"
+                    obj.set_status_('Showing background noise analysis.', false);
+                case "latency"
+                    obj.set_status_('Showing the last conduction delay probe.', false);
+                otherwise
+                    obj.set_status_('Showing calibration transfer curves.', false);
             end
         end
 
@@ -830,11 +889,22 @@ classdef CalibrationGui < handle
             % whole graphics cache, not just the transfer panel's share of it,
             % so the response panels have to be redrawn after it -- the same
             % ordering refresh_all_plots_ depends on.
-            if obj.TransferView_ == "background"
-                obj.Monitor.show_background(obj.Engine);
-                obj.Monitor.show_engine_state(obj.Engine);
-            else
-                obj.refresh_all_plots_();
+            switch obj.TransferView_
+                case "background"
+                    obj.Monitor.show_background(obj.Engine);
+                    obj.Monitor.show_engine_state(obj.Engine);
+                case "latency"
+                    % Nothing to reset here: the latency panel clears the
+                    % transfer objects itself and leaves the response panels
+                    % alone, which is what lets it be drawn mid-run.
+                    if isempty(obj.LastLatency_)
+                        obj.TransferView_ = "calibration";
+                        obj.refresh_all_plots_();
+                    else
+                        obj.Monitor.show_latency(obj.LastLatency_);
+                    end
+                otherwise
+                    obj.refresh_all_plots_();
             end
         end
 
@@ -850,14 +920,17 @@ classdef CalibrationGui < handle
                 return
             end
 
-            isBackground = obj.TransferView_ == "background";
-            set_checked_(obj.CalibrationViewMenu, ~isBackground);
-            set_checked_(obj.BackgroundViewMenu,  isBackground);
+            view = obj.TransferView_;
+            set_checked_(obj.CalibrationViewMenu, view == "calibration");
+            set_checked_(obj.BackgroundViewMenu,  view == "background");
+            set_checked_(obj.LatencyViewMenu,     view == "latency");
             set_checked_(obj.GhostMenu,   obj.Monitor.ShowGhost);
             set_checked_(obj.VoltageMenu, obj.Monitor.ShowVoltage);
 
-            set_tool_state_(obj.ToolCalibrationView, ~isBackground);
-            set_tool_state_(obj.ToolBackgroundView,  isBackground);
+            % No toolbar button for the delay probe: it is a diagnostic looked
+            % at once, not one of the two views a session lives in.
+            set_tool_state_(obj.ToolCalibrationView, view == "calibration");
+            set_tool_state_(obj.ToolBackgroundView,  view == "background");
             set_tool_state_(obj.ToolGhost,   obj.Monitor.ShowGhost);
             set_tool_state_(obj.ToolVoltage, obj.Monitor.ShowVoltage);
             set_tool_state_(obj.ToolLogX,    obj.Monitor.LogX);
@@ -1031,6 +1104,101 @@ classdef CalibrationGui < handle
             obj.set_pref_('backgroundDurationS', char(durationText));
             obj.set_pref_('backgroundRecords', char(recordsText));
             obj.set_pref_('backgroundProminenceDb', char(promText));
+            wasCancelled = false;
+        end
+
+        function on_measure_delay_(obj)
+            if ~obj.apply_controls_to_engine_()
+                return
+            end
+            obj.with_busy_state_(@() obj.run_measure_delay_(), ...
+                'Measuring conduction delay...', true);
+        end
+
+        function run_measure_delay_(obj)
+            % Probe the rig for its conduction delay on its own, outside any
+            % sweep. A tone run measures the same thing per acquisition and
+            % consumes it; here nothing consumes it, so the result is reported
+            % in a dialog rather than left as a number in the footer -- what
+            % this button is for is reading the delay and the distance it
+            % implies, and both are worth stating with the evidence behind
+            % them.
+            [maxDelayMs, nClicks, wasCancelled] = obj.prompt_delay_parameters_();
+            if wasCancelled
+                obj.set_status_('Conduction delay measurement cancelled.', false);
+                return
+            end
+
+            [d, diag] = obj.Engine.measure_conduction_delay( ...
+                MaxDelay=maxDelayMs / 1e3, NumClicks=nClicks);
+
+            % The probe record and the correlation read off it are the
+            % evidence for the reading, and with live plots off nothing has
+            % drawn either. Shown before the alert, so both are already on
+            % screen behind the numbers -- and drawn from the returned
+            % diagnostics rather than from the live stream, so the panel does
+            % not depend on a display toggle that has nothing to do with this
+            % measurement.
+            obj.LastLatency_ = diag;
+            set_enabled_(obj.LatencyViewMenu, true);
+            obj.Monitor.show_engine_state(obj.Engine);
+            obj.TransferView_ = "latency";
+            obj.Monitor.show_latency(diag);
+            obj.sync_display_controls_();
+            drawnow;
+
+            obj.set_status_(conduction_delay_summary_(d), ~d.valid);
+
+            if d.valid
+                icon = 'info';
+            else
+                icon = 'warning';
+            end
+            uialert(obj.Figure, conduction_delay_report_(d, maxDelayMs), ...
+                'Conduction Delay', Icon=icon);
+        end
+
+        function [maxDelayMs, nClicks, wasCancelled] = prompt_delay_parameters_(obj)
+            % Collect the probe's two parameters. The search bound is here
+            % rather than fixed because it is the one thing a failed
+            % measurement asks to be changed: a rig whose delay exceeds it
+            % cannot report a delay at all, and there is nowhere else to raise
+            % it from.
+            maxPref    = obj.get_pref_('delayMaxDelayMs', '50');
+            clicksPref = obj.get_pref_('delayNumClicks', '1');
+
+            prompts = {
+                ['A brief click is played and the delay of its response is ' ...
+                 'measured, so leave the speaker and microphone where an ' ...
+                 'experiment has them, and take the acoustic calibrator off ' ...
+                 'the microphone. Largest delay to search (ms, >0):'], ...
+                ['Clicks in the probe train (positive integer). More clicks buy ' ...
+                 'signal in a noisy room, but a delay near the click spacing ' ...
+                 'aliases -- leave at 1 unless one click''s response is too ' ...
+                 'weak to find:']
+            };
+            answer = inputdlg(prompts, 'Measure Conduction Delay', ...
+                [4 90; 3 90], {maxPref, clicksPref});
+
+            if isempty(answer)
+                maxDelayMs = 50;
+                nClicks = 1;
+                wasCancelled = true;
+                return
+            end
+
+            maxText = strtrim(string(answer{1}));
+            maxDelayMs = str2double(maxText);
+            if isnan(maxDelayMs) || ~isfinite(maxDelayMs) || maxDelayMs <= 0
+                error('stimgen:calibration:CalibrationGui:badMaxDelay', ...
+                    'The largest delay to search must be a positive number of milliseconds.');
+            end
+
+            clicksText = strtrim(string(answer{2}));
+            nClicks = obj.parse_positive_integer_(clicksText, 'number of clicks');
+
+            obj.set_pref_('delayMaxDelayMs', char(maxText));
+            obj.set_pref_('delayNumClicks', char(clicksText));
             wasCancelled = false;
         end
 
@@ -1674,6 +1842,7 @@ classdef CalibrationGui < handle
                     ReferenceLevel=obj.RefLevelField.Value, ...
                     ReferenceFrequency=obj.RefFreqField.Value, ...
                     MicSensitivity=obj.MicSensField.Value, ...
+                    AmbientTemperature=obj.AmbientTempField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
                     ExcitationVoltage=obj.ExcitationField.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
@@ -1695,6 +1864,7 @@ classdef CalibrationGui < handle
             obj.RefLevelField.Value = obj.Engine.ReferenceLevel;
             obj.RefFreqField.Value = obj.Engine.ReferenceFrequency;
             obj.MicSensField.Value = obj.Engine.MicSensitivity;
+            obj.AmbientTempField.Value = obj.Engine.AmbientTemperature;
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
@@ -1709,6 +1879,12 @@ classdef CalibrationGui < handle
             % panels have to be drawn after it, not before.
             obj.Monitor.show_calibration(obj.Engine);
             obj.Monitor.show_engine_state(obj.Engine);
+
+            % The panel is showing the lookup tables again, whatever it was
+            % showing before. Recorded here rather than at each of the dozen
+            % call sites that redraw after a run, a load or a reset.
+            obj.TransferView_ = "calibration";
+            obj.sync_display_controls_();
         end
 
         function update_runtime_state_(obj)
@@ -1725,12 +1901,18 @@ classdef CalibrationGui < handle
                 obj.BtnTones.Enable = 'on';
                 obj.BtnClicks.Enable = 'on';
                 obj.BtnSweptSine.Enable = 'on';
+                % The delay probe plays and records and needs nothing else:
+                % no reference, no table. It is measurable the moment there is
+                % hardware, which is what makes it usable to check a rig
+                % before calibrating it.
+                obj.BtnDelay.Enable = 'on';
             else
                 obj.BtnReference.Enable = 'off';
                 obj.BtnBackground.Enable = 'off';
                 obj.BtnTones.Enable = 'off';
                 obj.BtnClicks.Enable = 'off';
                 obj.BtnSweptSine.Enable = 'off';
+                obj.BtnDelay.Enable = 'off';
             end
 
             % Either LUT can drive the equalizer; Engine.design_filter picks.
@@ -1798,9 +1980,12 @@ classdef CalibrationGui < handle
 
         function refresh_conduction_delay_label_(obj)
             % Speaker-to-mic delay from the most recent click probe. The
-            % equivalent air path at 343 m/s is the sanity check -- a reading
-            % far from the actual mic distance means converter latency
-            % dominates, or the probe locked onto the wrong thing.
+            % equivalent air path is the sanity check -- a reading far from the
+            % actual mic distance means converter latency dominates, or the
+            % probe locked onto the wrong thing. The speed it is converted at
+            % is the one the reading was taken under, carried on the reading
+            % itself, so a temperature changed since does not restate an old
+            % measurement as a distance it never implied.
             % Guarded rather than ordered: update_runtime_state_ may run
             % before the footer is built.
             if isempty(obj.ConductionDelayLabel) || ~isvalid(obj.ConductionDelayLabel)
@@ -1808,8 +1993,8 @@ classdef CalibrationGui < handle
             end
             d = obj.Engine.ConductionDelay;
             if d.valid
-                txt = sprintf('%.2f ms  (~%.2f m at 343 m/s)', ...
-                    d.delay_s * 1e3, d.delay_s * 343);
+                txt = sprintf('%.2f ms  (~%.2f m at %.0f m/s)', ...
+                    d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms);
                 obj.ConductionDelayLabel.FontColor = [0 0 0];
             elseif d.at_bound || isfinite(d.delay_s)
                 txt = 'Measurement unreliable';
@@ -2327,6 +2512,7 @@ classdef CalibrationGui < handle
                 'ReferenceLevel',     obj.RefLevelField.Limits
                 'ReferenceFrequency', obj.RefFreqField.Limits
                 'MicSensitivity',     obj.MicSensField.Limits
+                'AmbientTemperature', obj.AmbientTempField.Limits
                 'NormativeValue',     obj.NormativeField.Limits
                 'ExcitationVoltage',  obj.ExcitationField.Limits
                 'MaxOutputVoltage',   [eps, 1000]
@@ -2427,6 +2613,7 @@ classdef CalibrationGui < handle
                 obj.set_pref_('ReferenceLevel',     sprintf('%.15g', obj.RefLevelField.Value));
                 obj.set_pref_('ReferenceFrequency', sprintf('%.15g', obj.RefFreqField.Value));
                 obj.set_pref_('MicSensitivity',     sprintf('%.15g', obj.MicSensField.Value));
+                obj.set_pref_('AmbientTemperature', sprintf('%.15g', obj.AmbientTempField.Value));
                 obj.set_pref_('NormativeValue',     sprintf('%.15g', obj.NormativeField.Value));
                 obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.ExcitationField.Value));
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
@@ -2505,6 +2692,7 @@ classdef CalibrationGui < handle
                 obj.BtnFilter.Enable = 'off';
                 obj.BtnTestFilter.Enable = 'off';
                 obj.BtnCopyFilter.Enable = 'off';
+                obj.BtnDelay.Enable = 'off';
                 obj.BtnReset.Enable = 'off';
                 if cancellable
                     obj.BtnStop.Enable = 'on';
@@ -2892,6 +3080,84 @@ if ~isempty(r.flags)
         lines{end+1} = sprintf('  - %s', r.flags(k));
     end
 end
+
+s = strjoin(string(lines), newline);
+end
+
+% -------------------------------------------------------------------------
+function s = conduction_delay_summary_(d)
+% s = conduction_delay_summary_(d)
+% One-line status-bar summary of a standalone conduction delay probe.
+if d.valid
+    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °C).', ...
+        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, d.temperature_c);
+else
+    s = 'Conduction delay could not be measured -- see the report.';
+end
+end
+
+% -------------------------------------------------------------------------
+function s = conduction_delay_report_(d, maxDelayMs)
+% s = conduction_delay_report_(d, maxDelayMs)
+% Full text of a standalone conduction delay probe, for the dialog shown
+% after it runs.
+%
+% A failed probe gets more text than a successful one, and deliberately: the
+% reading itself is two numbers, while a failure is only actionable once it
+% says which of the two ways it failed -- nothing came back, or something
+% came back that no delay within the search bound explains.
+lines = {};
+if d.valid
+    lines{end+1} = sprintf('Delay            %.3f ms   (%d samples at %.10g Hz)', ...
+        d.delay_s * 1e3, d.delay_samples, d.fs);
+    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °C)', ...
+        d.path_m, d.speed_of_sound_ms, d.temperature_c);
+    lines{end+1} = '';
+    lines{end+1} = ['The path is an upper bound on the speaker-to-microphone distance, ' ...
+        'not a measurement of it: the converters'' round-trip latency is inside the ' ...
+        'delay and cannot be told apart from time of flight. A path well above the ' ...
+        'actual distance means that latency dominates, which is normal for some ' ...
+        'devices but worth knowing.'];
+    lines{end+1} = '';
+    lines{end+1} = ['The distance is only as good as the temperature it was ' ...
+        'converted at: the speed of sound moves about 0.6 m/s per degree, so a ' ...
+        'room 5 degrees off the Ambient Temperature setting puts a 1% error on ' ...
+        'the path. The delay itself does not depend on it.'];
+elseif d.peak_v <= 10 * max(d.noise_v, eps)
+    lines{end+1} = 'No click response.';
+    lines{end+1} = '';
+    lines{end+1} = ['The record holds nothing standing above its own noise, so there ' ...
+        'is no response to time. Check that the speaker is driven and the ' ...
+        'microphone is connected and powered, then raise Excitation Voltage if ' ...
+        'the rig is simply quiet.'];
+else
+    lines{end+1} = sprintf('Response found, but no delay within %.1f ms explains it.', ...
+        maxDelayMs);
+    lines{end+1} = '';
+    lines{end+1} = ['Something came back and it is well above the noise, but no lag ' ...
+        'inside the search bound puts the click where the response actually sits. ' ...
+        'The true delay is probably larger than the bound: raise the largest delay ' ...
+        'to search and measure again.'];
+end
+
+% The evidence, on both paths: a valid reading is only as good as the
+% response it was read from, and an invalid one is diagnosed from the same
+% two numbers.
+lines{end+1} = '';
+lines{end+1} = sprintf('Click response   %.5f V peak over %.5f V noise', ...
+    d.peak_v, d.noise_v);
+lines{end+1} = sprintf('Correlation      %.3f at the chosen lag', d.corr);
+if d.at_bound
+    lines{end+1} = sprintf('                 correlation peaked on the %.1f ms bound', ...
+        maxDelayMs);
+end
+lines{end+1} = sprintf('Measured         %s', ...
+    char(datetime(d.measuredOn, Format='dd-MMM-yyyy HH:mm:ss')));
+
+lines{end+1} = '';
+lines{end+1} = ['This probe stands on its own and nothing consumes it: a tone ' ...
+    'calibration or tone table test measures its own delay per acquisition, ' ...
+    'because the latency need not repeat between records of different lengths.'];
 
 s = strjoin(string(lines), newline);
 end

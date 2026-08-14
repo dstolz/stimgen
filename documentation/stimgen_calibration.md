@@ -94,7 +94,7 @@ Click **Calibrate Tones**. A dialog will ask for:
 
 The sweep runs automatically. Progress is shown in the MATLAB command window. A transfer curve appears on the right plot when complete.
 
-With **Iterative Level Refinement** checked (bottom of the Calibration section), the dialog also asks for a pass limit and a target accuracy in dB, and the sweep is followed by an automatic refinement: the finished table is tested at its own points — each played at the drive voltage the table asks for, exactly as an experiment would — and corrected from the level errors that come back, repeating until every point lands within the target or the pass limit is reached. This removes what a one-shot sweep cannot see: gain that does not scale exactly as `20*log10(V)` between the excitation voltage the sweep played at and the drive the table actually commands (amplifier or speaker compression, typically). The table is always left in the state the last test pass verified, and Stop or an error restores the unrefined table. The same toggle applies to **Calibrate Clicks**.
+With **Iterative Level Refinement** checked (beside Calibrate Tones), the dialog also asks for a pass limit and a target accuracy in dB, and the sweep is followed by an automatic refinement: the finished table is tested at its own points — each played at the drive voltage the table asks for, exactly as an experiment would — and corrected from the level errors that come back, repeating until every point lands within the target or the pass limit is reached. This removes what a one-shot sweep cannot see: gain that does not scale exactly as `20*log10(V)` between the excitation voltage the sweep played at and the drive the table actually commands (amplifier or speaker compression, typically). The table is always left in the state the last test pass verified, and Stop or an error restores the unrefined table. The same toggle applies to **Calibrate Clicks**.
 
 ### Step 6 — Test The Tone Table
 
@@ -173,6 +173,8 @@ eng.set_configuration( ...
     MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
     AcCoupleResponse=true, ...  % high-pass the acquired record before analysis (default false)
     AcCoupleFrequency=20, ...   % Hz corner of that high-pass (default 20)
+    AmbientTemperature=20, ...  % deg C of the test space; sets the speed of
+                            ... % sound distances are derived at (default 20)
     SpectralWindow="auto", ...  % taper every spectral estimator applies (default "auto")
     SpectralFftLength=0, ...    % transform-length floor; 0 = automatic (default 0)
     ShowLivePlots=true);        % broadcast progress during sweeps (default false)
@@ -335,8 +337,32 @@ median and spread are logged and recorded in the committed table as
 click response cannot be trusted (nothing above the noise, or nothing
 within the search bound aligns), that record is warned about and falls
 back to whole-record cross-correlation. `measure_conduction_delay` remains
-as a standalone probe for checking a rig by hand; it shares the same
-estimator, so the two cannot disagree about what a latency is.
+as a standalone probe for checking a rig by hand — from the command line, or
+from the CalibrationGui's **Measure Conduction Delay** button, which reports
+the delay and the air path it implies in a dialog. It shares the same
+estimator, so the two cannot disagree about what a latency is. Nothing
+consumes the standalone reading: a tone run always measures its own.
+
+Every reading carries the conditions its distance was read under —
+`temperature_c`, `speed_of_sound_ms` and `path_m` alongside `delay_s` — so a
+[temperature](#reference-engine-parameters) changed afterwards cannot restate
+an old measurement as a distance it never implied. The standalone probe also
+returns a second output, the evidence behind the verdict:
+
+```matlab
+[info, diag] = eng.measure_conduction_delay();
+plot(diag.lag_ms, diag.corr);   % the correlation the lag was chosen from
+```
+
+`diag` carries that correlation over every lag searched (normalized to its own
+peak), the probe-region record on the same click-anchored lag axis
+(`probe_v`, `probe_lag0_ms`), the bound it was searched to, and the peak and
+noise the verdict compared. It is also broadcast as the `LiveUpdate` payload's
+`Latency`, so `LiveMonitor` draws the same panel live or after the fact — see
+[the GUI guide](stimgen_CalibrationGui.md#measuring-it-on-its-own). It is
+returned rather than stored on `ConductionDelay`, because a tone sweep fills
+that property once per acquisition and a curve per acquisition is not a rig
+fact worth keeping.
 
 Bursts are separated in *time*, not in frequency, so the analysis holds for any
 frequency list: adjacent points may sit closer together than their spectral
@@ -683,6 +709,7 @@ prefer a `LiveMonitor`.
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
+| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file |
 | `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |

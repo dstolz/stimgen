@@ -36,6 +36,13 @@ if isfield(s, 'AcCoupleFrequency')
     obj.AcCoupleFrequency = s.AcCoupleFrequency;
 end
 
+% Written since the speed of sound followed a measured temperature. A file
+% saved before that had its distances computed at 343 m/s, which is what the
+% 20 C default still means.
+if isfield(s, 'AmbientTemperature')
+    obj.AmbientTemperature = s.AmbientTemperature;
+end
+
 % Written since the analysis window and transform length became settings. A
 % file saved before that was measured with each estimator's own choice, which
 % is what the defaults still mean.

@@ -1,8 +1,16 @@
 function render_signal_(obj, d)
 % render_signal_(obj, d)
 % Waveform panel: the recorded response over time, the excitation behind it as
-% a scaled ghost, the span the measurement was actually computed over, and the
-% converter's clipping limits when the record comes near them.
+% a shaded area on its own voltage axis, the span the measurement was actually
+% computed over, and the converter's clipping limits when the record comes near
+% them.
+%
+% The two waveforms are volts on both sides of the rig and nowhere near the
+% same size -- a drive of a volt or two returns millivolts at the microphone --
+% so the excitation carries the right-hand axis and is read in the volts it was
+% actually played at. Scaling it into the response's axis, as this panel once
+% did, drew the shape but made the level unreadable, and the drive voltage is
+% half of what a headroom or clipping question is about.
 %
 % The span shading is the point of this panel. A level that looks wrong is
 % almost always a segmentation problem -- a burst measured over its ramp, or a
@@ -19,10 +27,17 @@ fs = d.Fs;
 if isempty(y) || fs <= 0
     obj.drop_('sig_span');
     obj.drop_('sig_exc');
+    obj.drop_('sig_exc_fill');
     obj.drop_('sig_resp');
     obj.drop_('sig_clip');
+    hide_excitation_axis_(ax);
     title(ax, 'Response  (no data)');
     return
+end
+
+% Everything below draws on the response's own axis unless it says otherwise.
+if numel(ax.YAxis) > 1
+    yyaxis(ax, 'left');
 end
 
 % Created before the traces so it stays behind them without a uistack call,
@@ -32,23 +47,10 @@ end
 % Children order, so this is drawn as a flat opaque tint (pre-blended
 % against a white background) rather than a translucent overlay.
 hSpan = obj.gobj_('sig_span', @() patch(ax, XData=NaN, YData=NaN, ...
-    FaceColor=[0.90 0.93 0.98], FaceAlpha=1, EdgeColor='none', ...
+    FaceColor=[0.85 0.90 0.99], FaceAlpha=1, EdgeColor='none', ...
     HandleVisibility='off'));
 
 [t, yv] = stimgen.calibration.LiveMonitor.envelope_decimate_(y, fs, obj.MaxPoints);
-
-x = d.Excitation;
-if numel(x) == numel(y) && any(x)
-    % Scaled to the response so both fit one axis; the shape, not the level,
-    % is what shows whether the record lines up with what was played.
-    [tx, xv] = stimgen.calibration.LiveMonitor.envelope_decimate_(x, fs, obj.MaxPoints);
-    xv = xv .* (max(abs(yv)) / max(abs(xv)));
-    hExc = obj.gobj_('sig_exc', @() line(ax, NaN, NaN, ...
-        Color=[0.78 0.78 0.82], LineWidth=0.5, DisplayName='excitation (scaled)'));
-    set(hExc, XData=tx, YData=xv);
-else
-    obj.drop_('sig_exc');
-end
 
 hResp = obj.gobj_('sig_resp', @() line(ax, NaN, NaN, ...
     Color=[0.10 0.25 0.60], LineWidth=0.75, DisplayName='response'));
@@ -71,18 +73,36 @@ else
     obj.drop_('sig_clip');
 end
 
+% After yl: the excitation is drawn into the response's axis and read off the
+% right-hand ruler, which is only a second scale over the same span.
+x = d.Excitation;
+if numel(x) == numel(y) && any(x)
+    render_excitation_(obj, ax, x, fs, obj.MaxPoints, yl);
+else
+    obj.drop_('sig_exc');
+    obj.drop_('sig_exc_fill');
+    hide_excitation_axis_(ax);
+end
+
 [tSpan, ySpan] = span_patch_(d, fs, yl);
 set(hSpan, XData=tSpan, YData=ySpan);
 
 % Forced every frame rather than trusted to creation order: this axis is
 % shared across a whole session, and a reference or background measurement
 % run earlier creates sig_resp with no excitation data at all. The first
-% time a real excitation ghost exists to draw -- once an actual calibration
+% time a real excitation trace exists to draw -- once an actual calibration
 % run starts -- sig_exc is created fresh at that point, after sig_resp
-% already exists, which would otherwise leave the ghost sitting in front of
-% the response it is meant to sit behind.
+% already exists, which would otherwise leave it sitting in front of the
+% response it is meant to sit behind.
+%
+% The span tint goes over the excitation's shading and under its outline:
+% both are opaque (see above), so whichever is drawn last is the only one
+% seen where they overlap -- and inside a burst they always overlap. The
+% outline is what carries the excitation's shape, the shading only makes it
+% read as the drive rather than as a second response, so the outline is the
+% one that has to survive.
 frontToBack = gobjects(0);
-for key = ["sig_clip", "sig_resp", "sig_exc", "sig_span"]
+for key = ["sig_clip", "sig_resp", "sig_exc", "sig_span", "sig_exc_fill"]
     if obj.has_(key)
         frontToBack(end+1) = obj.H_.(key); %#ok<AGROW>
     end
@@ -93,7 +113,7 @@ ylim(ax, [-yl yl]);
 xlim(ax, [t(1) max(t(end), t(1) + eps)]);
 grid(ax, 'on');
 xlabel(ax, 'time (ms)');
-ylabel(ax, 'volts');
+ylabel(ax, 'response (V)');
 
 dcTxt = dc_text_(d.Metrics, peak);
 
@@ -105,6 +125,72 @@ else
     title(ax, sprintf('Response  |  peak %.3f V (%.1f dB headroom), RMS %.3f V%s', ...
         peak, headroomDb, rms_, dcTxt), Color=[0 0 0]);
 end
+end
+
+% ------------------------------------------------------------------------ %
+function render_excitation_(obj, ax, x, fs, maxPoints, yl)
+% What was played, as a shaded area under its own outline, read off a
+% right-hand ruler carrying the volts it was actually played at.
+%
+% The drive and the response are volts on both sides of the rig and nowhere
+% near the same size, so one pair of limits cannot serve both. The trace is
+% drawn into the response's axis, scaled to fill it, and the right ruler is
+% set to the range that scaling implies -- so the shape is legible whatever
+% the ratio, and the number beside it is the drive voltage rather than a
+% dimensionless "scaled" curve.
+%
+% Drawn into the left axis, not onto the right one, for a mechanical reason:
+% with two y-axes ax.Children exposes only the active side, and the stacking
+% this panel depends on -- shading behind the span tint, outline in front of
+% it, response in front of everything -- cannot be expressed across sides.
+%
+% Shaded rather than left as a bare line because the two traces are otherwise
+% the same kind of mark, and the one that was commanded reads differently
+% from the one that came back. The area also makes a gated burst's envelope
+% legible at a glance, which is what the eye checks the response's
+% segmentation against.
+[tx, xv] = stimgen.calibration.LiveMonitor.envelope_decimate_(x, fs, maxPoints);
+
+xPeak = max(abs(xv));
+xl    = max(xPeak * 1.15, eps);
+k     = yl / xl;                     % volts of drive per volt of axis
+
+% Both kept light: at a full record's zoom the envelope is a dense
+% oscillation that fills its own outline, so a mid-grey trace here would
+% weigh more on the panel than the response it is background for.
+hFill = obj.gobj_('sig_exc_fill', @() patch(ax, XData=NaN, YData=NaN, ...
+    FaceColor=[0.92 0.92 0.94], FaceAlpha=1, EdgeColor='none', ...
+    HandleVisibility='off'));
+set(hFill, XData=[tx, fliplr(tx)], YData=[xv .* k, zeros(1, numel(tx))]);
+
+hExc = obj.gobj_('sig_exc', @() line(ax, NaN, NaN, ...
+    Color=[0.80 0.80 0.85], LineWidth=0.5, DisplayName='excitation'));
+set(hExc, XData=tx, YData=xv .* k);
+
+% The ruler, and only the ruler: nothing is drawn on this side. Its limits
+% are the left axis's divided by the same k, so a point of the trace read
+% against it gives the volt it was played at.
+yyaxis(ax, 'right');
+ax.YAxis(2).Visible = 'on';
+ylim(ax, [-xl xl]);
+ylabel(ax, 'excitation (V)');
+ax.YAxis(2).Color = [0.55 0.55 0.60];
+yyaxis(ax, 'left');
+end
+
+% ------------------------------------------------------------------------ %
+function hide_excitation_axis_(ax)
+% Retire the right-hand axis for the measurements that play nothing -- the
+% reference and the background. The axis outlives the traces on it, so
+% deleting those alone would leave an empty scale labelled in volts that
+% nothing on screen is drawn against.
+if ~isgraphics(ax) || numel(ax.YAxis) < 2
+    return
+end
+yyaxis(ax, 'right');
+ylabel(ax, '');
+ax.YAxis(2).Visible = 'off';
+yyaxis(ax, 'left');
 end
 
 % ------------------------------------------------------------------------ %

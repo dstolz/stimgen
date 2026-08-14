@@ -16,6 +16,11 @@ function set_configuration(obj, options)
 %                        slow drift does not inflate levels or bias burst
 %                        alignment.
 %   AcCoupleFrequency  - (1,1) double, > 0. Corner of that high-pass, Hz.
+%   AmbientTemperature - (1,1) double, > -273.15. Air temperature in the test
+%                        space, degrees Celsius. Sets the speed of sound every
+%                        distance derived from a time of flight is computed
+%                        with -- the air path of a conduction delay, the path
+%                        difference of a reflection. No level depends on it.
 %   SpectralWindow     - (1,1) string. Analysis window every spectral
 %                        estimator applies: "auto" (each keeps its own -- flat
 %                        top for level measurements, Hann for Welch averages),
@@ -40,6 +45,8 @@ arguments
     options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
     options.AcCoupleResponse   (1,1) logical = obj.AcCoupleResponse
     options.AcCoupleFrequency  (1,1) double {mustBePositive,mustBeFinite} = obj.AcCoupleFrequency
+    options.AmbientTemperature (1,1) double {mustBeFinite, ...
+        mustBeGreaterThan(options.AmbientTemperature, -273.15)} = obj.AmbientTemperature
     options.SpectralWindow     (1,1) string {mustBeMember(options.SpectralWindow, ...
         ["auto", "flattop", "hann", "hamming", "blackman", ...
          "blackmanharris", "rectangular"])} = obj.SpectralWindow
@@ -56,6 +63,7 @@ obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.MaxOutputVoltage  = options.MaxOutputVoltage;
 obj.AcCoupleResponse  = options.AcCoupleResponse;
 obj.AcCoupleFrequency = options.AcCoupleFrequency;
+obj.AmbientTemperature = options.AmbientTemperature;
 obj.SpectralWindow    = options.SpectralWindow;
 obj.SpectralFftLength = options.SpectralFftLength;
 obj.ShowLivePlots     = options.ShowLivePlots;

@@ -67,7 +67,7 @@ if obj.ShowVoltage
 end
 
 grid(ax, 'on');
-xlabel(ax, d.XLabel);
+xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, char(d.XLabel)));
 title(ax, transfer_title_(d, T, valid));
 
 hLeg = obj.gobj_('xfer_legend', @() legend(ax, Location='southwest', ...

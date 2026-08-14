@@ -38,13 +38,13 @@ if numel(ax.YAxis) > 1
     yyaxis(ax, 'left');
 end
 
-xlabel(ax, 'frequency (Hz)');
 ylabel(ax, 'level (dB SPL)');
 grid(ax, 'on');
 
 B = background_data_(eng);
 if isempty(B)
     title(ax, 'Background noise  (not measured)');
+    xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
     return
 end
 
@@ -64,6 +64,8 @@ else
     set(ax, XScale='linear');
 end
 set_limits_(ax, B, lvls);
+% After the limits, which the tick grid is placed within.
+xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
 
 title(ax, background_title_(B));
 hLeg = obj.gobj_('bg_legend', @() legend(ax, Location='southwest', ...

@@ -104,7 +104,7 @@ set(ax, XScale='log');
 render_markers_(obj, ax, d, f, lvl, lo, hi, info);
 
 grid(ax, 'on');
-xlabel(ax, 'frequency (Hz)');
+xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
 ylabel(ax, info.Label);
 title(ax, spectrum_title_(d, floorVal, info));
 end

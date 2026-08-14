@@ -96,6 +96,15 @@ classdef Engine < handle
         % measures, but above the drift and mains-adjacent rumble it is there
         % to block.
         AcCoupleFrequency   (1,1) double {mustBePositive,mustBeFinite}      = 20    % Hz
+        % Air temperature in the test space, in degrees Celsius. It sets
+        % SpeedOfSound, and through it every distance this class derives from
+        % a time of flight: the air path a conduction delay implies and the
+        % path difference of each reflection in a swept-sine impulse
+        % response. Nothing about a level depends on it. The default is the
+        % 20 C the fixed 343 m/s stood for before it was settable, so a rig
+        % that never sets it keeps the numbers it always reported.
+        AmbientTemperature  (1,1) double {mustBeFinite, ...
+            mustBeGreaterThan(AmbientTemperature, -273.15)}                 = 20    % deg C
         % Analysis window every spectral estimator here applies to a record,
         % and the transform length it runs over. "auto" and 0 leave each
         % estimator with the choice it makes for itself -- flat top over the
@@ -145,10 +154,17 @@ classdef Engine < handle
         % a .esgc -- it describes the rig at measurement time, not the LUTs
         % -- but the tone tables record the values their windows were cut
         % with. measure_conduction_delay fills it from a standalone probe.
+        %
+        % path_m is the air path the delay implies, carried alongside the
+        % temperature and speed of sound it was computed at: the same delay
+        % means a different distance in a cold room, and a reading kept
+        % without the conditions it was interpreted under cannot be checked
+        % against the tape measure afterwards.
         ConductionDelay (1,1) struct = struct( ...
             'delay_s', nan, 'delay_samples', nan, 'fs', nan, ...
             'peak_v', nan, 'noise_v', nan, 'corr', nan, ...
-            'at_bound', false, 'valid', false, 'measuredOn', NaT)
+            'at_bound', false, 'valid', false, 'measuredOn', NaT, ...
+            'temperature_c', nan, 'speed_of_sound_ms', nan, 'path_m', nan)
     end
 
     properties (Access = private)
@@ -164,6 +180,7 @@ classdef Engine < handle
     properties (Dependent)
         Fs          % sample rate from adapter (0 if no adapter)
         IsCalibrated % true when CalibrationData is a non-empty struct
+        SpeedOfSound % m/s in dry air at AmbientTemperature
     end
 
     methods
@@ -192,7 +209,7 @@ classdef Engine < handle
         set_configuration(obj, options) % Update engine calibration parameters.
         set_adapter(obj, adapter) % Attach, replace, or detach the hardware adapter.
         calibrate_reference(obj) % Measure microphone sensitivity by recording an acoustic calibrator (plays nothing).
-        info = measure_conduction_delay(obj, options) % Measure speaker-to-mic conduction delay with a click probe.
+        [info, diagnostics] = measure_conduction_delay(obj, options) % Measure speaker-to-mic conduction delay with a click probe.
         results = measure_background(obj, duration, repeatCount, options) % Capture and characterize the background with nothing presented.
         calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
@@ -222,6 +239,11 @@ classdef Engine < handle
         function tf = get.IsCalibrated(obj)
             % True when CalibrationData is a non-empty struct.
             tf = isstruct(obj.CalibrationData) && ~isempty(obj.CalibrationData);
+        end
+
+        function c = get.SpeedOfSound(obj)
+            % Speed of sound in air at the configured ambient temperature.
+            c = stimgen.calibration.Engine.speed_of_sound(obj.AmbientTemperature);
         end
 
         function plot_reset(obj)
@@ -452,8 +474,8 @@ classdef Engine < handle
         r = measure_(obj, signal, mode, options) % Acquire and compute measurement metric.
         [y, schedule] = build_tone_sequence_(obj, freqs, burstDur, gapDur) % Assemble one gated tone-burst train.
         [y, xClick, schedule, regionEnd] = add_click_probe_(obj, seq, schedule, maxLagN) % Prepend a delay probe click to a tone train.
-        info = click_latency_(obj, xClick, y, maxLagN, regionEnd) % Latency of a click's response within its own record.
-        [lag, atBound] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
+        [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd) % Latency of a click's response within its own record.
+        [lag, atBound, curve] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
         [exBurst, rsBurst, rsSteady, steadySpan] = extract_burst_(obj, x, response, s, lag) % Cut one scheduled burst from an excitation/response pair.
         [name, lut] = resolve_tone_lut_(obj) % Which LUT serves tone lookups, and its contents.
         [spl_db, voltage] = compute_spl_voltage_(obj, measurement, mode) % Convert measurement to SPL and normative voltage.
@@ -541,6 +563,32 @@ classdef Engine < handle
     methods (Static)
         [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
         r = spectral_rms(x, freq, fs, options) % Estimate RMS amplitude at a frequency.
+
+        function c = speed_of_sound(tempC)
+            % c = stimgen.calibration.Engine.speed_of_sound(tempC)
+            % Speed of sound in dry air, in m/s, at tempC degrees Celsius.
+            %
+            % c = 331.3 * sqrt(1 + T/273.15), the standard ideal-gas form:
+            % ~0.6 m/s per degree, so the 5 C between a cold morning and a
+            % warm afternoon is 1% of a measured distance. Humidity adds at
+            % most another ~0.3% at room temperature and is not modelled --
+            % it would need a second setting to buy less than the
+            % thermometer's own error.
+            %
+            % Static so a caller with a temperature but no engine -- a GUI
+            % converting a delay for display, a script checking a rig -- gets
+            % the same number the engine would use.
+            %
+            % Parameters:
+            %   tempC - (1,1) double air temperature, degrees Celsius
+            %
+            % Returns:
+            %   c - (1,1) double speed of sound, m/s
+            arguments
+                tempC (1,1) double {mustBeFinite, mustBeGreaterThan(tempC, -273.15)}
+            end
+            c = 331.3 * sqrt(1 + tempC / 273.15);
+        end
     end
 
     methods (Static, Access = private)

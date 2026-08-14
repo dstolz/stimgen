@@ -1,4 +1,4 @@
-function r = estimate_reflections_(~, h, fs, loc, maxCount)
+function r = estimate_reflections_(obj, h, fs, loc, maxCount)
 % r = estimate_reflections_(obj, h, fs, loc)
 % r = estimate_reflections_(obj, h, fs, loc, maxCount)
 % Find discrete arrivals after the direct sound in an impulse response.
@@ -10,7 +10,9 @@ function r = estimate_reflections_(~, h, fs, loc, maxCount)
 %
 % Reported times are relative to the direct-sound peak, which makes them
 % independent of the converter loopback latency folded into the absolute
-% arrival time. Path difference assumes dry air at 20 C.
+% arrival time. Path difference is computed at the speed of sound for the
+% engine's AmbientTemperature -- the times are the measurement, the
+% distances only the room temperature's reading of them.
 %
 % Parameters:
 %   h        - (:,1) double impulse response, index 1 at the deconvolution origin
@@ -28,7 +30,7 @@ function r = estimate_reflections_(~, h, fs, loc, maxCount)
 %       strongest_level_db      its level re direct
 %       detection_floor_db      threshold the search actually used
 
-SPEED_OF_SOUND = 343;      % m/s, dry air at 20 C
+SPEED_OF_SOUND = obj.SpeedOfSound;   % m/s, dry air at AmbientTemperature
 ENVELOPE_MS    = 0.2;      % arrival resolution
 MIN_SEPARATION_MS = 0.3;   % two arrivals closer than this are one arrival
 FLOOR_DB       = -30;      % quietest reflection worth reporting, re direct;

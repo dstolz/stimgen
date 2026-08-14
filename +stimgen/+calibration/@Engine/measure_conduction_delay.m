@@ -1,6 +1,7 @@
-function info = measure_conduction_delay(obj, options)
+function [info, diagnostics] = measure_conduction_delay(obj, options)
 % info = measure_conduction_delay(obj)
 % info = measure_conduction_delay(obj, Name=Value)
+% [info, diagnostics] = measure_conduction_delay(obj, ...)
 %
 % Standalone probe of the rig's acquisition latency -- acoustic propagation
 % from the speaker to the microphone plus the converters' round-trip
@@ -42,6 +43,14 @@ function info = measure_conduction_delay(obj, options)
 %     at_bound      - correlation peak sat on the MaxDelay search bound
 %     valid         - the measurement is trustworthy
 %     measuredOn    - datetime of the measurement
+%     temperature_c, speed_of_sound_ms, path_m - the air path the delay
+%                     implies, and the conditions it was derived at (see
+%                     AmbientTemperature)
+%
+%   diagnostics - the correlation curve the lag was chosen from and the
+%     probe-region record it was measured against, on one lag axis (see
+%     click_latency_). Also broadcast as the LiveUpdate payload's Latency,
+%     so the same panel draws it live or after the fact.
 %
 % See also: stimgen.calibration.Engine/calibrate_tones,
 %           stimgen.calibration.Engine/test_tones,
@@ -53,6 +62,11 @@ arguments
     options.NumClicks     (1,1) double {mustBeInteger, mustBePositive} = 1
 end
 obj.assert_adapter_();
+% A run of its own, short as it is: a Stop left over from a cancelled sweep
+% must not abort this one before it plays, and the live payload's elapsed
+% time is measured from here.
+obj.reset_cancel_();
+obj.begin_run_();
 fs = obj.Fs;
 
 clickN  = max(round(options.ClickDuration * fs), 1);
@@ -76,14 +90,15 @@ y = obj.ac_couple_response_(obj.trim_response_(y(:).'));
 obj.ResponseSignal = y;
 
 % The whole record is probe: x is nonzero only at the clicks already.
-info = obj.click_latency_(x, y, maxLagN, numel(y));
+[info, diagnostics] = obj.click_latency_(x, y, maxLagN, numel(y));
 obj.ConductionDelay = info;
 
 if info.valid
     stimgen.util.vprintf(1, ...
         ['Conduction delay: %.2f ms (%d samples at %.10g Hz; ~%.2f m of air ' ...
-         'at 343 m/s, converter latency included)'], ...
-        info.delay_s * 1e3, info.delay_samples, fs, info.delay_s * 343);
+         'at %.1f m/s for %.1f C, converter latency included)'], ...
+        info.delay_s * 1e3, info.delay_samples, fs, info.path_m, ...
+        info.speed_of_sound_ms, info.temperature_c);
 elseif info.peak_v <= 10 * max(info.noise_v, eps)
     stimgen.util.vprintf(0, 1, ...
         ['Conduction delay could not be measured: the click response (peak ' ...
@@ -98,8 +113,11 @@ else
 end
 
 % The span marks where the click response was found, so the waveform panel
-% shows what the delay was read from.
+% shows what the delay was read from; Latency carries the correlation the
+% delay was actually chosen from, which is the part of the measurement the
+% waveform cannot show.
 obj.emit_live_("latency", "measure", ...
     'Span', [onsets(1) + info.delay_samples, ...
-             min(onsets(end) + clickN - 1 + info.delay_samples, numel(y))]);
+             min(onsets(end) + clickN - 1 + info.delay_samples, numel(y))], ...
+    'Latency', diagnostics);
 end

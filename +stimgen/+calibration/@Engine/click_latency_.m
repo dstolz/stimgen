@@ -1,5 +1,6 @@
-function info = click_latency_(obj, xClick, y, maxLagN, regionEnd)
+function [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd)
 % info = click_latency_(obj, xClick, y, maxLagN, regionEnd)
+% [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd)
 % Latency of a click's response within the record that contains it.
 %
 % The one estimator behind every conduction delay measurement: the
@@ -43,6 +44,20 @@ function info = click_latency_(obj, xClick, y, maxLagN, regionEnd)
 %     at_bound               - correlation peak sat on the search bound
 %     valid                  - the measurement is trustworthy
 %     measuredOn             - datetime of the measurement
+%     temperature_c          - AmbientTemperature the path was derived at
+%     speed_of_sound_ms      - speed of sound at that temperature
+%     path_m                 - air path the delay implies (delay x speed)
+%
+%   diagnostics - struct of the evidence the verdict was reached from, for
+%     a caller that draws or archives it. Built only when asked for, so a
+%     sweep taking one of these per acquisition pays nothing for it:
+%     lag_ms, corr           - the searched correlation curve
+%     probe_v, probe_lag0_ms - the probe-region response and where its first
+%                              sample sits relative to the click onset, so
+%                              record and correlation share one lag axis
+%     bound_ms               - the search bound, in the same units
+%     plus delay_ms, peak_v, noise_v, valid, at_bound, fs and the speed of
+%     sound, so the panel drawing it needs nothing but this struct
 %
 % See also: stimgen.calibration.Engine/measure_conduction_delay,
 %           stimgen.calibration.Engine/align_response_
@@ -54,7 +69,7 @@ fs = obj.Fs;
 % measurement exists to remove.
 y0 = y - mean(y);
 
-[lagN, atBound] = obj.align_response_(xClick, y0, maxLagN);
+[lagN, atBound, curve] = obj.align_response_(xClick, y0, maxLagN);
 
 n = max(min(regionEnd, numel(y0)), 0);
 region = y0(1:n);
@@ -84,8 +99,11 @@ if ~isempty(clickIdx) && clickIdx(end) + lagN <= numel(y0)
     corr = abs(sum(xa .* ya)) / (norm(xa) * norm(ya) + eps);
 end
 
+delayS = lagN / fs;
+speed  = obj.SpeedOfSound;
+
 info = struct( ...
-    'delay_s',       lagN / fs, ...
+    'delay_s',       delayS, ...
     'delay_samples', lagN, ...
     'fs',            fs, ...
     'peak_v',        peakV, ...
@@ -93,5 +111,38 @@ info = struct( ...
     'corr',          corr, ...
     'at_bound',      atBound, ...
     'valid',         peakOk && agree && ~atBound, ...
-    'measuredOn',    datetime('now'));
+    'measuredOn',    datetime('now'), ...
+    'temperature_c',     obj.AmbientTemperature, ...
+    'speed_of_sound_ms', speed, ...
+    'path_m',            delayS * speed);
+
+if nargout < 2
+    return
+end
+
+% Everything the correlation and the record are read against, on one lag
+% axis anchored to the click onset: sample 1 of the region sits that far
+% before the click, so a response drawn on it lands where its own delay
+% says it should.
+if isempty(clickIdx)
+    lag0Ms = 0;
+else
+    lag0Ms = -(clickIdx(1) - 1) / fs * 1e3;
+end
+
+diagnostics = struct( ...
+    'fs',                fs, ...
+    'lag_ms',            curve.lag_samples ./ fs .* 1e3, ...
+    'corr',              curve.value, ...
+    'probe_v',           region, ...
+    'probe_lag0_ms',     lag0Ms, ...
+    'delay_ms',          delayS * 1e3, ...
+    'bound_ms',          maxLagN / fs * 1e3, ...
+    'peak_v',            peakV, ...
+    'noise_v',           noiseV, ...
+    'at_bound',          atBound, ...
+    'valid',             info.valid, ...
+    'temperature_c',     obj.AmbientTemperature, ...
+    'speed_of_sound_ms', speed, ...
+    'path_m',            info.path_m);
 end

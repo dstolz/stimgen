@@ -29,16 +29,22 @@ obj.reset();
 C = eng.CalibrationData;
 if ~eng.IsCalibrated
     title(ax, 'Calibration transfer curves  (no data)');
+    % Left in hertz, and the ticks left alone: there is no curve to place a
+    % frequency grid around, and an empty axis relabelled in kHz reads as a
+    % measurement of something rather than as the placeholder it is.
     xlabel(ax, 'frequency (Hz) / duration (\mus)');
     ylabel(ax, 'level (dB SPL)');
     grid(ax, 'on');
     return
 end
 
+% The unit in each name is the axis's, not the table's: all three are drawn
+% against one x whose ticks are written in kHz, and a click duration read on
+% that scale is milliseconds.
 specs = { ...
-    'tone',       'frequency', 1,    'o-', [0.10 0.25 0.60], 'tone (Hz)'; ...
-    'swept_sine', 'frequency', 1,    '^-', [0.20 0.55 0.25], 'swept sine (Hz)'; ...
-    'click',      'duration',  1e6,  's-', [0.75 0.30 0.10], 'click (\mus)'};
+    'tone',       'frequency', 1,    'o-', [0.10 0.25 0.60], 'tone (kHz)'; ...
+    'swept_sine', 'frequency', 1,    '^-', [0.20 0.55 0.25], 'swept sine (kHz)'; ...
+    'click',      'duration',  1e6,  's-', [0.75 0.30 0.10], 'click (ms)'};
 
 yyaxis(ax, 'left');
 % show_background leaves this axis on a manual ylim sized to the noise
@@ -74,7 +80,6 @@ for k = 1:size(specs, 1)
 end
 
 ylabel(ax, 'level (dB SPL)');
-xlabel(ax, 'frequency (Hz) / duration (\mus)');
 if obj.LogX
     set(ax, XScale='log');
 else
@@ -83,6 +88,10 @@ end
 if numel(allX) > 1
     xlim(ax, [min(allX) * 0.93, max(allX) * 1.07]);
 end
+% After the limits: the ticks are placed within them, so a caption applied
+% earlier would carry the last view's grid.
+xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, ...
+    'frequency (Hz) / duration (\mus)'));
 
 % Only the frequency-keyed tables anchor a weighting curve. The click LUT
 % shares this axis but its x is a duration, and a weighting evaluated there

@@ -1,6 +1,6 @@
 # stimgen.calibration.CalibrationGui
 
-![CalibrationGui in offline mode: the controls column on the left split into Microphone Reference, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer](images/CalibrationGui.png)
+![CalibrationGui in offline mode: the controls column on the left split into Microphone, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer above the Conduction Delay readout](images/CalibrationGui.png)
 
 Source file: +stimgen/+calibration/CalibrationGui.m  
 Related reference: [stimgen_calibration.md](stimgen_calibration.md)
@@ -39,13 +39,28 @@ line. Loading a .esgc re-attaches the monitor to the loaded engine, and closing
 the window detaches and deletes the monitor so the engine does not keep
 notifying a renderer whose axes are gone.
 
-The transfer panel serves two views, one at a time — the lookup tables, and the
-background noise analysis. The **View** menu and the toolbar switch between
-`LiveMonitor.show_calibration` and `LiveMonitor.show_background` without
-re-measuring anything. **Background Noise Analysis** is disabled until a
-background capture exists, in the engine or in a loaded `.esgc`; a Reset that
-takes the data away drops the panel back to the lookup tables rather than
-leaving it on a view that can no longer be drawn.
+The waveform panel carries both sides of the rig: the response in volts on the
+left axis, and behind it the excitation as a grey shaded area read off a
+right-hand **excitation (V)** axis. The two are volts at opposite ends of the
+signal path and nowhere near the same size — a drive of a volt or two returns
+millivolts at the microphone — so each gets its own scale, and the drive
+voltage stays a number rather than a shape.
+
+Frequency axes are ticked at the 1-2-5 points of each decade and labelled in
+**kHz**, so every tick reads as a number a rig is set to instead of as a power
+of ten. The click LUT shares that axis where it is drawn beside a frequency
+table, and its durations are labelled in milliseconds by the same factor.
+
+The transfer panel serves three views, one at a time — the lookup tables, the
+background noise analysis, and the last conduction delay probe. The **View**
+menu and the toolbar switch between `LiveMonitor.show_calibration`,
+`show_background` and `show_latency` without re-measuring anything.
+**Background Noise Analysis** is disabled until a background capture exists, in
+the engine or in a loaded `.esgc`, and **Conduction Delay Probe** until one has
+run in this session (it belongs to the probe, not to the calibration, so
+nothing saves it); a Reset that takes the background away drops the panel back
+to the lookup tables rather than leaving it on a view that can no longer be
+drawn.
 
 ### Choosing what the plots show
 
@@ -58,6 +73,7 @@ one overlay each:
 |---|---|---|
 | Calibration transfer curves | View ▸ Calibration Transfer Curves | the transfer panel's view |
 | Background noise analysis | View ▸ Background Noise Analysis | the transfer panel's view |
+| *(no button)* | View ▸ Conduction Delay Probe | the transfer panel's view — menu only: a diagnostic looked at once, not one of the two views a session lives in |
 | Previous-measurement ghost | View ▸ Previous-Measurement Ghost | `LiveMonitor.ShowGhost` |
 | Drive-voltage axis | View ▸ Transfer Drive-Voltage Axis | `LiveMonitor.ShowVoltage` |
 | Log frequency axis | Display ▸ Transfer Plot Log X-Axis | `LiveMonitor.LogX` |
@@ -222,11 +238,22 @@ position in one long list:
 
 | Section | Contents |
 |---|---|
-| Microphone Reference | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference and Measure Background — the two measurements that play nothing |
-| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones, with the two optional sweeps below it, Tone Lookup From Swept Sine, and Iterative Level Refinement |
+| Microphone | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference beside Measure Background — the two measurements that play nothing — then Ambient Temperature and Measure Conduction Delay |
+| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
-| Footer (pinned) | Stop, Reset Calibration, the Conduction Delay readout, and the status line |
+| Footer (pinned) | Stop beside Reset Calibration, then the Conduction Delay readout and the status line |
+
+The whole microphone end of the rig is in one section: what the calibrator
+produces, the sensitivity measured from it, the room the microphone sits in,
+and the probe that measures how far away it is. **Ambient Temperature** is
+directly above **Measure Conduction Delay** because it is the setting that
+probe's distance is read through — see
+[Ambient temperature](#ambient-temperature).
+
+**Iterative Level Refinement** sits beside **Calibrate Tones** rather than on a
+row of its own: it is a modifier of the sweep next to it, not a step, and the
+pair reads as one line — run tones, refined.
 
 Everything in the footer is there because it is what is needed while a sweep is
 running, when the stack may be scrolled anywhere: Stop, the delay the sweep's
@@ -338,10 +365,13 @@ need not repeat between records. Each record's burst analysis windows are
 shifted by its own measured delay, so levels are measured over the response
 rather than over the silence before it arrives.
 
-The readout shows the delay in milliseconds with its equivalent air path at
-343 m/s as a sanity check: a value far from the actual microphone distance
-means converter latency dominates, which is normal for some devices but worth
-knowing. It updates as each acquisition's probe lands (the GUI listens to the
+The readout shows the delay in milliseconds with its equivalent air path at the
+speed of sound for the [ambient temperature](#ambient-temperature), as a sanity
+check: a value far from the actual microphone distance means converter latency
+dominates, which is normal for some devices but worth knowing. The speed is
+carried on the reading itself, so a temperature changed afterwards does not
+restate an old measurement as a distance it never implied. It updates as each
+acquisition's probe lands (the GUI listens to the
 engine's observable `ConductionDelay` property), not when the run finishes,
 and being in the footer it stays in view however the stack is scrolled.
 **Measurement unreliable** in red means the last record's click response was
@@ -350,6 +380,97 @@ not clearly above the noise or could not be aligned within the search bound
 cross-correlation and its analysis windows may include pre-response samples.
 `Not measured` simply means no tone run has happened yet — clicks and swept
 sine runs do not probe, because neither cuts per-burst windows.
+
+### Measuring it on its own
+
+**Measure Conduction Delay**, at the bottom of the Microphone section, probes
+the rig for that same delay without running a sweep: it plays a brief click,
+times the response, and reports the result in a dialog. It asks nothing of the
+calibration — no reference, no lookup table, only an attached adapter — so it
+is also the quickest check that a rig is wired up and audible before anything
+is calibrated.
+
+The button prompts for two things, both remembered between sessions:
+
+| Prompt | What it does |
+|---|---|
+| Largest delay to search (ms) | Upper bound of the correlation search, 50 ms by default. A rig whose delay exceeds it cannot be measured at all, which is the one thing a failed probe asks to have raised |
+| Clicks in the probe train | 1 by default. More clicks buy signal in a noisy room, but a delay near the click spacing aliases — raise it only when one click's response is too weak to find |
+
+The dialog reports the delay in milliseconds and samples, the sample rate it
+was measured at, and the air path it corresponds to at the speed of sound for
+the [ambient temperature](#ambient-temperature), followed by the evidence
+behind it: the click response peak against the record's noise, and the
+correlation at the chosen lag. The path is an upper bound on the
+speaker-to-microphone distance rather than a measurement of it — the
+converters' round-trip latency is inside the delay and cannot be told apart
+from time of flight.
+
+The transfer panel draws that evidence at the same time (whether or not
+**Show Engine Live Plots** is on, since this measurement is a diagnostic and
+not a sweep):
+
+- the **click correlation** over every lag searched, normalized to its own
+  peak. A single narrow spike is a delay worth trusting; a broad hump or a
+  second comparable peak means a room, a resonance or an aliased click train,
+  and the reading should be repeated before it is used
+- the **probe response** in volts on the right-hand axis, on the same lag axis
+  — lag 0 is the moment the click was played — so the arrival the correlation
+  points at is visible as a waveform rather than inferred
+- the **detection floor**, ten times the region's robust noise, which the
+  response peak had to clear for the reading to be trusted
+- vertical rules at the **measured delay** and at the **search bound**
+
+A valid reading is drawn zoomed around its own peak; a failed one is drawn out
+to the bound, because a correlation still climbing where the search stopped is
+the signature of a delay larger than the bound. The panel stays until another
+view takes it, and **View > Conduction Delay Probe** brings the last one back.
+
+A probe that fails says which of the two ways it failed, because they call for
+different fixes: **no click response** means nothing came back above the
+record's own noise (check that the speaker is driven and the microphone
+connected and powered, and raise Excitation Voltage if the rig is simply
+quiet), while **response found, but no delay within the bound explains it**
+means something came back that no lag inside the search bound aligns — the true
+delay is larger, so raise the bound and measure again.
+
+Nothing consumes this reading. A tone calibration or tone table test measures
+its own delay for every acquisition, for the reason above; this probe reports
+the rig, and the readout it writes is replaced by the next run's.
+
+## Ambient Temperature
+
+The Ambient Temperature field (Microphone section, directly above Measure
+Conduction Delay) sets `Engine.AmbientTemperature` in degrees Celsius, and
+through it `Engine.SpeedOfSound`:
+
+$$c = 331.3\sqrt{1 + \frac{T}{273.15}}\ \text{m/s}$$
+
+which is 343.2 m/s at the 20 °C default — the value that was hardcoded before
+this was settable, so a rig that never touches it keeps the numbers it always
+reported.
+
+Every distance this package derives from a time of flight is computed at that
+speed, and nothing else is:
+
+- the air path a conduction delay implies, in the footer readout, the probe
+  dialog, and the probe's own panel
+- `path_difference_m` for each reflection found in a swept-sine impulse
+  response ([swept sine](stimgen_SweptSineCalibration.md))
+
+No measured level depends on it, and neither does any delay or arrival time —
+only the distance those times are read as. Sound gains about 0.6 m/s per
+degree, so a setting 5 °C away from the room puts about 1% of error on a
+distance; that is worth setting for a rig where the mic distance is being
+checked against a tape measure, and not worth agonizing over otherwise.
+Humidity is not modelled: at room temperature it contributes a few tenths of a
+percent, less than the thermometer's own error.
+
+The temperature is saved in the `.esgc` file, because the reflection distances
+in a saved analysis were computed with it — loading the file without it would
+restate them at whatever the loading rig happens to be set to. A file written
+before this setting existed loads at 20 °C, which is what its distances were
+computed at.
 
 ## AC Couple Acquired Signal
 
@@ -436,7 +557,7 @@ Semantics to be aware of:
 
 ## Iterative Level Refinement
 
-With this checkbox (bottom of the Calibration section) checked, each tone or click
+With this checkbox (beside Calibrate Tones) checked, each tone or click
 sweep is followed by `Engine.refine_tones`/`refine_clicks`: the finished table is
 tested at its **own** points — each played at the drive voltage the table asks
 for, through the same `test_tones`/`test_clicks` pathway that scales a real
@@ -667,7 +788,7 @@ Everything else is left untouched: the attached adapter, the loaded protocol/hos
 
 ## Button Enable Rules
 
-1. Measure Reference, Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine: enabled only when Engine.Adapter is attached.
+1. Measure Reference, Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine, Measure Conduction Delay: enabled only when Engine.Adapter is attached. The delay probe needs nothing beyond that — no reference and no lookup table — so it is available from the moment there is hardware.
 2. Test Tones: enabled when tone **or** swept sine calibration data exists **and** an adapter is attached — verification is a live measurement. The condition is deliberately not tone-only: with Tone Lookup From Swept Sine checked, the sweep is the table a `Tone` stimulus is scaled by, so it is the one that has to be verified.
 3. Test Clicks: enabled when click calibration data exists **and** an adapter is attached. Only `calibrate_clicks` ever writes that table, so unlike Test Tones there is no alternative source to account for.
 4. Design Filter: enabled when tone **or** swept sine calibration data exists — no adapter needed, since the design sample rate can be entered in the dialog. `Engine.design_filter` prefers the tone LUT and falls back to swept sine.

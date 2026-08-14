@@ -139,6 +139,7 @@ classdef LiveMonitor < handle
         show_engine_state(obj, eng)  % Draw an engine's current response, off-run.
         show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer axes.
         show_background(obj, eng)    % Draw an engine's background analysis on the transfer axes.
+        show_latency(obj, lat)       % Draw a conduction-delay probe's diagnostics on the transfer axes.
 
         function set.Weightings(obj, value)
             obj.Weightings = unique(value, 'stable');
@@ -213,6 +214,7 @@ classdef LiveMonitor < handle
         render_signal_(obj, d)      % Waveform panel.
         render_spectrum_(obj, d)    % Spectrum panel.
         render_transfer_(obj, d)    % Transfer-curve panel.
+        render_latency_(obj, lat)   % Conduction-delay panel, on the transfer axes.
         render_weighting_(obj, ax, f, lvl)  % Weighting curves over a level/frequency axis.
 
         function h = gobj_(obj, key, ctor)
@@ -267,6 +269,74 @@ classdef LiveMonitor < handle
         [t, y] = envelope_decimate_(y, fs, maxPoints)   % Min/max envelope for display.
         [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins, spec)  % V rms spectrum on a log grid.
         [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)  % V rms to a display unit.
+
+        function label = frequency_ticks_(ax, labelText)
+            % label = frequency_ticks_(ax, labelText)
+            % Label a frequency axis in kHz and return the axis caption to use
+            % with it.
+            %
+            % A log frequency axis is labelled 10^3, 10^4 by default, which
+            % states the decade and leaves the reader to work out that the tick
+            % between them is 2 kHz. Ticks are placed at the 1-2-5 points of
+            % each decade instead and written as the kHz value they are, so
+            % every tick on screen is a number a rig is set to.
+            %
+            % Only the tick text is in kHz; the data stays in Hz. The caption
+            % returned is labelText with its unit rewritten by a factor of a
+            % thousand, which is why a mixed axis works too -- a click LUT's
+            % microseconds and a tone LUT's hertz divide by the same 1000, so
+            % "frequency (Hz) / duration (us)" reads correctly as
+            % "frequency (kHz) / duration (ms)".
+            %
+            % Parameters:
+            %   ax        - axes whose XLim and XScale are already set
+            %   labelText - the axis caption in Hz/us units
+            %
+            % Returns:
+            %   label - the caption to apply, in kHz/ms units
+            arguments
+                ax
+                labelText (1,:) char = ''
+            end
+            label = strrep(strrep(labelText, '(Hz)', '(kHz)'), '(\mus)', '(ms)');
+
+            if ~isgraphics(ax)
+                return
+            end
+
+            lims = xlim(ax);
+            if ~all(isfinite(lims)) || lims(2) <= lims(1)
+                return
+            end
+
+            if strcmp(ax.XScale, 'log')
+                decades = floor(log10(max(lims(1), realmin))) : ceil(log10(lims(2)));
+                ticks = reshape([1; 2; 5] * 10 .^ decades, 1, []);
+                ticks = ticks(ticks >= lims(1) & ticks <= lims(2));
+                % A span too narrow to hold three of those decade points --
+                % a zoomed axis, a two-point LUT -- keeps whatever MATLAB
+                % chose for it, relabelled. Forcing the 1-2-5 grid there
+                % would leave an axis with one tick on it.
+                if numel(ticks) < 3
+                    ticks = [];
+                end
+            else
+                ticks = [];
+            end
+
+            if isempty(ticks)
+                ax.XTickMode = 'auto';   % re-derive: the last call set it manual
+                ticks = ax.XTick;
+                ticks = ticks(ticks >= lims(1) & ticks <= lims(2));
+            end
+            if isempty(ticks)
+                return
+            end
+
+            ax.XTick = ticks;
+            ax.XTickLabel = arrayfun(@(v) sprintf('%g', round(v / 1e3, 6)), ...
+                ticks, UniformOutput=false);
+        end
 
         function s = clock_(seconds)
             % Format a duration as m:ss, or --:-- when unknown.

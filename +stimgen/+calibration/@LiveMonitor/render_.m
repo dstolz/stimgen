@@ -9,7 +9,17 @@ end
 if isgraphics(obj.AxSpectrum)
     obj.render_spectrum_(d);
 end
-if isgraphics(obj.AxTransfer) && ~isempty(d.Table.x)
+
+% The transfer panel serves whichever of its views the payload carries data
+% for. A delay probe has no lookup table and would otherwise leave the panel
+% showing the last sweep's curve while the measurement it is running has
+% nowhere to be drawn.
+if ~isgraphics(obj.AxTransfer)
+    return
+end
+if ~isempty(d.Latency.lag_ms)
+    obj.render_latency_(d.Latency);
+elseif ~isempty(d.Table.x)
     obj.render_transfer_(d);
 end
 end

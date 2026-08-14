@@ -42,6 +42,11 @@ s.MaxOutputVoltage    = obj.MaxOutputVoltage;
 s.ToneLutSource       = obj.ToneLutSource;
 s.AcCoupleResponse    = obj.AcCoupleResponse;
 s.AcCoupleFrequency   = obj.AcCoupleFrequency;
+% The room the measurement was made in, to the extent this class knows it:
+% the reflection distances in a swept-sine analysis were computed at this
+% temperature, so reading them back later without it would be reading them
+% at whatever the loading rig happens to be set to.
+s.AmbientTemperature  = obj.AmbientTemperature;
 % How the tables in this file were analysed, not just what they measured: a
 % level read with a different window is a different number, so the settings
 % travel with the data that was taken under them.
