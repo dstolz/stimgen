@@ -53,7 +53,7 @@ hSpan = obj.gobj_('sig_span', @() patch(ax, XData=NaN, YData=NaN, ...
 [t, yv] = stimgen.calibration.LiveMonitor.envelope_decimate_(y, fs, obj.MaxPoints);
 
 hResp = obj.gobj_('sig_resp', @() line(ax, NaN, NaN, ...
-    Color=[0.10 0.25 0.60], LineWidth=0.75, DisplayName='response'));
+    Color=[0.10 0.25 0.60], Marker='none', LineWidth=0.75, DisplayName='response'));
 set(hResp, XData=t, YData=yv);
 
 peak = max(abs(y));
