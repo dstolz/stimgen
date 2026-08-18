@@ -10,9 +10,9 @@ function show_background(obj, eng)
 % to judge a floor by; the band levels are the averaged, comparable form, and
 % the only form that survives into the saved file once the raw record is gone.
 %
-% Shares the transfer axes with show_calibration, which draws the lookup tables
-% there instead. Whichever ran last owns the panel -- CalibrationGui's View menu
-% is how a user switches between them.
+% Draws on its own panel where the host supplied one (CalibrationGui's
+% Background Noise tab). Where it does not, this shares the transfer axes
+% with show_calibration and whichever ran last owns the panel.
 %
 % Parameters:
 %   eng - stimgen.calibration.Engine
@@ -21,16 +21,17 @@ arguments
     eng (1,1) stimgen.calibration.Engine
 end
 
-ax = obj.AxTransfer;
+ax = obj.AxBackground;
 if ~isgraphics(ax)
     return
 end
 
-obj.reset();
+obj.clear_for_("background");
 
-% The LUT view leaves a right-hand drive-voltage axis behind. Nothing here has
-% a voltage, so it is hidden rather than left showing an empty scale; the LUT
-% view turns it back on when it draws.
+% Sharing the panel, the LUT view leaves a right-hand drive-voltage axis
+% behind. Nothing here has a voltage, so it is hidden rather than left
+% showing an empty scale; the LUT view turns it back on when it draws. On a
+% panel of its own there is no second axis and this does nothing.
 if numel(ax.YAxis) > 1
     yyaxis(ax, 'right');
     ylabel(ax, '');
@@ -43,7 +44,7 @@ grid(ax, 'on');
 
 B = background_data_(eng);
 if isempty(B)
-    title(ax, 'Background noise  (not measured)');
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Background noise  (not measured)');
     xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
     return
 end
@@ -56,7 +57,7 @@ lvls = [lvls, draw_peaks_(obj, ax, B, lvls)];
 % the averaged form the rest of this view is read against. Its levels stay
 % out of lvls, as the A-weighted band curve's do, so the overlay cannot
 % rescale the axis.
-obj.render_weighting_(ax, B.bands.frequency, B.bands.level_db);
+obj.render_weighting_("background", B.bands.frequency, B.bands.level_db);
 
 if obj.LogX
     set(ax, XScale='log');
@@ -67,7 +68,8 @@ set_limits_(ax, B, lvls);
 % After the limits, which the tick grid is placed within.
 xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
 
-title(ax, background_title_(B));
+stimgen.calibration.LiveMonitor.caption_(ax, 'Background noise', ...
+    background_subtitle_(B));
 hLeg = obj.gobj_('bg_legend', @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
@@ -203,9 +205,10 @@ r = max(v) - min(v);
 end
 
 % ------------------------------------------------------------------------ %
-function s = background_title_(B)
-% Two lines: what the floor is, then what it is made of.
-head = sprintf('Background noise  |  %.1f dB SPL  ·  %.1f dB(A)', B.spl_db, B.spl_dba);
+function s = background_subtitle_(B)
+% Two subtitle lines under the short title: what the floor is, then what it
+% is made of.
+head = sprintf('%.1f dB SPL  ·  %.1f dB(A)', B.spl_db, B.spl_dba);
 if isfinite(B.duration_s) && B.repeat_count > 0
     head = sprintf('%s  ·  %g s x %d', head, round(B.duration_s, 2), B.repeat_count);
 end
@@ -227,5 +230,5 @@ end
 parts{end+1} = sprintf('%.0f dB below the %g dB SPL normative level', ...
     B.headroom_to_normative_db, B.normative_value_db);
 
-s = {head, strjoin(parts, '  |  ')};
+s = {head, strjoin(parts, '  ·  ')};
 end

@@ -20,10 +20,18 @@ arguments
 end
 
 if d.Phase == "start"
-    % A new run owns the panels: drop the previous run's traces rather than
-    % leaving them to be silently overwritten point by point.
+    % A new run owns the panels it draws on: drop the previous run's traces
+    % rather than leaving them to be silently overwritten point by point.
+    % Only those panels, though -- a sweep starting must not take a
+    % background analysis or a delay probe with it when the host has given
+    % those views panels of their own.
     if d.Stage ~= obj.LastStage_
-        obj.reset();
+        obj.clear_for_("response");
+        if d.Stage == "latency"
+            obj.clear_for_("latency");
+        else
+            obj.clear_for_("transfer");
+        end
     end
     obj.LastStage_ = d.Stage;
     obj.PrevSpectrum_ = {[], []};

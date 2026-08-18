@@ -42,6 +42,10 @@ s.MaxOutputVoltage    = obj.MaxOutputVoltage;
 s.ToneLutSource       = obj.ToneLutSource;
 s.AcCoupleResponse    = obj.AcCoupleResponse;
 s.AcCoupleFrequency   = obj.AcCoupleFrequency;
+% The ramp the tables' own bursts were gated with -- refine_tones/test_tones
+% replay a table at this shape, so a mismatched ramp would be measuring a
+% different burst than the one that built the table.
+s.ToneRampDuration    = obj.ToneRampDuration;
 % The room the measurement was made in, to the extent this class knows it:
 % the reflection distances in a swept-sine analysis were computed at this
 % temperature, so reading them back later without it would be reading them

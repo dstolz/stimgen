@@ -23,16 +23,49 @@ CalibrationGui.m implements:
 
 ## Plots
 
-The three axes (waveform, spectrum, transfer curve) are drawn exclusively by a
+The five axes (waveform, spectrum, and one per measurement tab) are drawn
+exclusively by a
 [`stimgen.calibration.LiveMonitor`](stimgen_calibration.md#watching-a-run)
 attached to them at construction. During a run with **Show Engine Live Plots**
 checked, the monitor renders the engine's `LiveUpdate` stream measurement by
 measurement — analysed-span shading and clipping limits on the waveform, the
 spectrum with harmonic markers and a previous-measurement ghost, and the
 transfer curve filling in with a ±1 SD repeat ribbon, required drive voltage
-against the `MaxOutputVoltage` ceiling, and a progress/ETA title. Between runs
-the same monitor draws the committed lookup tables and the last response, so
-the live and static views are one rendering, not two.
+against the `MaxOutputVoltage` ceiling, and progress/ETA in its caption.
+Between runs the same monitor draws the committed lookup tables and the last
+response, so the live and static views are one rendering, not two.
+
+Every panel is captioned the same way: a short bold title naming what is on
+screen (**Response**, **Spectrum**, **Tone sweep 12/40**), with the
+measurement's numbers — peak and headroom, SNR/THD and floor, elapsed time
+and level span — in a smaller subtitle underneath. That split is what keeps
+a metrics-laden caption inside its panel instead of running past it, and the
+two are always written together so no view inherits the previous view's
+subtitle. The one-word verdicts stay in the title, where they cannot be
+missed: **CLIPPING** on the waveform, and **UNRELIABLE** in red on a
+conduction-delay probe that should not be trusted.
+
+### Waveform resolution
+
+Time-domain records — the response, the excitation behind it, and the delay
+probe's own record — are drawn as a **min/max envelope** by default, at most
+`LiveMonitor.MaxPoints` blocks per trace. A calibration record can be hundreds
+of thousands of samples, and handing all of them to a line object costs more
+than the measurement did; the envelope keeps a redraw the same price whatever
+the record length, which is what a per-measurement live update needs.
+
+The envelope preserves every block's **peak**, so a clipped record still reads
+as clipped and a transient still shows — what it drops is the shape *within* a
+block, which at full-record zoom is below one pixel. That only starts to matter
+once you have zoomed in far enough for a block to span several pixels, which is
+when **View ▸ Full-Resolution Waveforms** is worth checking: it sets
+`LiveMonitor.DecimateWaveforms = false` and redraws the record already on
+screen at every sample. It is remembered across sessions as the
+`decimateWaveforms` preference.
+
+All three traces follow the one setting (`LiveMonitor.waveform_xy_`), because
+they are read against each other — an envelope beside a full-resolution trace
+would invite a comparison neither supports.
 
 **Max Output Voltage** feeds both the clipping test and the unreachable-voltage
 line. Loading a .esgc re-attaches the monitor to the loaded engine, and closing
@@ -51,46 +84,71 @@ Frequency axes are ticked at the 1-2-5 points of each decade and labelled in
 of ten. The click LUT shares that axis where it is drawn beside a frequency
 table, and its durations are labelled in milliseconds by the same factor.
 
-The transfer panel serves three views, one at a time — the lookup tables, the
-background noise analysis, and the last conduction delay probe. The **View**
-menu and the toolbar switch between `LiveMonitor.show_calibration`,
-`show_background` and `show_latency` without re-measuring anything.
-**Background Noise Analysis** is disabled until a background capture exists, in
-the engine or in a loaded `.esgc`, and **Conduction Delay Probe** until one has
-run in this session (it belongs to the probe, not to the calibration, so
-nothing saves it); a Reset that takes the background away drops the panel back
-to the lookup tables rather than leaving it on a view that can no longer be
-drawn.
+### One tab per measurement
 
-### Choosing what the plots show
+The waveform and the spectrum are always on screen — they are the record being
+acquired, and watching a run means watching them. Below them is a **tab per
+measurement**:
 
-The toolbar's second group is the quick way to change what is on screen, since
-a display choice is made while reading a plot rather than while setting a sweep
-up. The first two buttons are the exclusive transfer-panel view; the rest toggle
-one overlay each:
+| Tab | Drawn by | Holds |
+|---|---|---|
+| Transfer Curves | a live sweep, then `LiveMonitor.show_calibration` | every lookup table overlaid, with the drive voltage each point needs |
+| Background Noise | Measure Background, via `show_background` | band levels, the broadband and A-weighted level, tonal peaks |
+| Conduction Delay | Measure Conduction Delay, via `show_latency` | the click correlation the delay was chosen from, over the probe response |
+
+Each tab owns its own axes, which is the point: the three used to share one
+panel and take turns on it, so measuring a background threw away the sweep on
+screen and a delay probe threw away both. Now every panel keeps whatever was
+last drawn on it, switching tabs costs nothing and re-measures nothing, and a
+panel with no measurement yet says so (`(no data)`, `(not measured)`) rather
+than sitting blank.
+
+The tab strip is the view selector *and* the readout of which view is up, in
+the place the plot is read. That made three controls redundant, and they were
+removed: the **Calibration transfer curves** and **Background noise analysis**
+toolbar buttons, and the **View ▸ Calibration Transfer Curves / Background
+Noise Analysis / Conduction Delay Probe** menu items. `TransferView_` now
+*follows* the tab strip instead of driving it — a user's click arrives through
+`on_plot_tab_changed_`, and the code's own switches go through
+`set_transfer_view_`, so the two can never disagree.
+
+Starting a sweep brings the Transfer Curves tab forward
+(`focus_sweep_panel_`), so a run is never watched off-screen; finishing a
+background capture or a delay probe brings that measurement's own tab forward.
+Nothing else steals the tab — a load, a reset or a redraw leaves the operator
+where they were.
+
+The tab which was last selected is remembered across MATLAB sessions as the
+`transferTab` preference. Only the selection is: what the panels held belonged
+to a session that has ended.
+
+### Choosing how the plots draw
+
+The toolbar's second group is the quick way to change how the panels draw,
+since a display choice is made while reading a plot rather than while setting a
+sweep up. Each button toggles one overlay:
 
 | Toolbar button | Also at | Sets |
 |---|---|---|
-| Calibration transfer curves | View ▸ Calibration Transfer Curves | the transfer panel's view |
-| Background noise analysis | View ▸ Background Noise Analysis | the transfer panel's view |
-| *(no button)* | View ▸ Conduction Delay Probe | the transfer panel's view — menu only: a diagnostic looked at once, not one of the two views a session lives in |
 | Previous-measurement ghost | View ▸ Previous-Measurement Ghost | `LiveMonitor.ShowGhost` |
 | Drive-voltage axis | View ▸ Transfer Drive-Voltage Axis | `LiveMonitor.ShowVoltage` |
 | Log frequency axis | Display ▸ Transfer Plot Log X-Axis | `LiveMonitor.LogX` |
 
-Every one of these is a *mirror*: the state lives on the monitor (and, for the
-view, on the GUI's own `TransferView_`), and `sync_display_controls_` is the one
-writer that pushes it to the toolbar, the menu and the checkbox together. A
-change made through any of them therefore shows on the others, and the toolbar
-reads as a display readout as well as a control. Setting a toggle tool's `State`
-programmatically does not fire its `ClickedCallback`, which is what keeps the
-sync from re-entering the handler that triggered it.
+Every one of these is a *mirror*: the state lives on the monitor, and
+`sync_display_controls_` is the one writer that pushes it to the toolbar, the
+menu and the checkbox together. A change made through any of them therefore
+shows on the others, and the toolbar reads as a display readout as well as a
+control. Setting a toggle tool's `State` programmatically does not fire its
+`ClickedCallback`, which is what keeps the sync from re-entering the handler
+that triggered it.
 
-Switching the ghost off redraws only the response panels — a transfer redraw
-resets the monitor's whole graphics cache, which is where the measurement behind
-the one on screen is held. Switching the drive-voltage axis off also hides the
-right-hand axis itself, the same way `show_background` does, rather than leaving
-an empty scale and a label behind.
+A display option applies to every panel, not just the one on top, so the two
+tabs behind are redrawn along with it (`redraw_transfer_panels_`) — a
+weighting overlay turned on while reading the noise floor is already there when
+you switch to the transfer curves. Switching the ghost off redraws only the
+response panels, the ghost being a spectrum object. Switching the
+drive-voltage axis off also hides the right-hand axis itself, rather than
+leaving an empty scale and a label behind.
 
 ### Spectrum y-axis
 
@@ -116,13 +174,16 @@ the noise floor lies on the axis with only the fundamental visible.
 ### Weighting overlays
 
 **View ▸ Weighting Overlay** draws the standard A, B, C and D weighting curves
-over whichever view the transfer panel is showing, and sets the monitor's
+over each frequency panel, and sets the monitor's
 [`Weightings`](stimgen_calibration.md#weighting-overlays) property. The items are
 checkable and independent — any combination at once — and **None** clears them.
 
-They annotate the current view rather than replacing it, so toggling one while
-the background analysis is up redraws the background analysis, not the lookup
-tables. During a run the curve re-anchors as the sweep fills in.
+They annotate a panel rather than replacing it, and every panel that can carry
+one gets it: turn A-weighting on while reading the noise floor and it is
+already on the transfer curves when you switch tabs. Each panel holds its own
+copy of the curve (the monitor's cache keys carry the panel name), so they do
+not fight over one object. The Conduction Delay panel has no frequency axis
+and takes no overlay. During a run the curve re-anchors as the sweep fills in.
 
 ## Constructor
 
@@ -239,7 +300,7 @@ position in one long list:
 | Section | Contents |
 |---|---|
 | Microphone | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference beside Measure Background — the two measurements that play nothing — then Measure Conduction Delay |
-| Calibration | Excitation Voltage and Normative Value — the settings every sweep runs at — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
+| Calibration | Normative Value — the level every sweep's table is anchored to — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Footer (pinned) | Stop beside Reset Calibration, then the Conduction Delay readout and the status line |
@@ -297,7 +358,21 @@ press. They are asked once here instead, so the button measures when it is
 pressed — the probe is the measurement most often repeated back to back, and a
 prompt in front of it made one action into three.
 
-Every field and toggle in this column, both settings windows' fields,
+**Options > Excitation Settings...** is the third window, on the same terms —
+non-modal, and pushing each change to the engine immediately rather than at
+the next run:
+
+| Setting | Owner |
+|---|---|
+| Excitation Voltage (V) | `Engine.ExcitationVoltage` — the drive voltage every sweep plays at |
+| Tone Rise/Fall Time (ms) | `Engine.ToneRampDuration`, in seconds — see [Tone Rise/Fall Time](#tone-risefall-time) |
+
+Neither setting is a step of its own — both apply to whichever sweep runs
+next — which is why they live in a window rather than a row in the Calibration
+section, on the same reasoning as Max Output Voltage and Ambient Temperature
+above.
+
+Every field and toggle in this column, all three settings windows' fields,
 and the whole display state — spectrum unit, weighting overlays,
 ghost, drive-voltage axis, log frequency axis — are remembered across MATLAB sessions as
 `StimCalibrationGui` preferences. They are written when the window closes and
@@ -317,26 +392,40 @@ File menu actions:
 5. Load .esgc
 6. Save .esgc
 7. Recent Calibrations (submenu)
+8. Save Screenshot... — the entire window, controls column included, to a
+   PNG/JPG/PDF via `exportapp` (the one capture that includes UI components;
+   `copygraphics` and `print` render the axes alone). The folder is
+   remembered as the `ScreenshotDir` preference, separately from the .esgc
+   folders — screenshots go to notebooks and reports, not the data tree
+9. Copy Window to Clipboard — the same full-window capture, onto the system
+   clipboard as an image (through .NET, so the full-window form is
+   Windows-only; elsewhere the plot area alone is copied via `copygraphics`
+   and the status line says so). Also on the toolbar as the camera button
 
 The toolbar's first group mirrors the five non-submenu File actions, plus the
-Quick Start, as push buttons for one-click access; its second group is the
-display controls (see [Choosing what the plots
-show](#choosing-what-the-plots-show)). Both are built by `build_toolbar_` and
+window copy (camera) and the Quick Start, as push buttons for one-click
+access; its second group is the overlay toggles (see [Choosing how the plots
+draw](#choosing-how-the-plots-draw)). Both are built by `build_toolbar_` and
 neither adds behavior the menus do not have.
 
 View menu items, all checkable:
 
-1. Calibration Transfer Curves / Background Noise Analysis — exclusive; which
-   view the transfer panel serves
-2. Weighting Overlay ▸ A / B / C / D, and None
-3. Spectrum Y-Axis ▸ one item per `LiveMonitor.SpectrumUnitList` entry, exclusive
-4. Previous-Measurement Ghost
-5. Transfer Drive-Voltage Axis
+1. Weighting Overlay ▸ A / B / C / D, and None
+2. Spectrum Y-Axis ▸ one item per `LiveMonitor.SpectrumUnitList` entry, exclusive
+3. Previous-Measurement Ghost
+4. Transfer Drive-Voltage Axis
+5. Full-Resolution Waveforms
 
-The **Options** menu holds the two settings windows described above,
-**Hardware and Analysis Settings...** and **Conduction Delay Settings...** (see
-[Controls Layout](#controls-layout)). Either one, asked for while it already
-exists, is brought forward rather than made a second time.
+Everything on this menu changes *how* the panels draw. *Which* measurement is
+being looked at is the plots panel's tab strip (see [One tab per
+measurement](#one-tab-per-measurement)); the three menu items that used to
+select a view were removed with the shared panel they switched.
+
+The **Options** menu holds the three settings windows described above,
+**Hardware and Analysis Settings...**, **Conduction Delay Settings...**, and
+**Excitation Settings...** (see [Controls Layout](#controls-layout)). Any one
+of them, asked for while it already exists, is brought forward rather than
+made a second time.
 
 Recent Protocols and Recent Calibrations each list up to nine most-recently-used
 paths (newest first), persisted across MATLAB sessions as `StimCalibrationGui`
@@ -430,9 +519,9 @@ speaker-to-microphone distance rather than a measurement of it — the
 converters' round-trip latency is inside the delay and cannot be told apart
 from time of flight.
 
-The transfer panel draws that evidence at the same time (whether or not
-**Show Engine Live Plots** is on, since this measurement is a diagnostic and
-not a sweep):
+The **Conduction Delay** tab draws that evidence at the same time and comes to
+the front (whether or not **Show Engine Live Plots** is on, since this
+measurement is a diagnostic and not a sweep):
 
 - the **click correlation** over every lag searched, normalized to its own
   peak. A single narrow spike is a delay worth trusting; a broad hump or a
@@ -445,10 +534,14 @@ not a sweep):
   response peak had to clear for the reading to be trusted
 - vertical rules at the **measured delay** and at the **search bound**
 
-A valid reading is drawn zoomed around its own peak; a failed one is drawn out
-to the bound, because a correlation still climbing where the search stopped is
-the signature of a delay larger than the bound. The panel stays until another
-view takes it, and **View > Conduction Delay Probe** brings the last one back.
+A valid reading is drawn zoomed around its own peak, with a fixed slice of the
+pre-click record beside it for the flat baseline the arrival is read against; a
+failed one is drawn out to the bound, because a correlation still climbing
+where the search stopped is the signature of a delay larger than the bound. The
+title states the reading, or **UNRELIABLE** in red when there is none. The
+panel keeps the last probe of the session — nothing else draws over it — so it
+is one tab click away for as long as the window is open. Nothing saves it: it
+belongs to the probe, not to the calibration.
 
 A probe that fails says which of the two ways it failed, because they call for
 different fixes: **no click response** means nothing came back above the
@@ -587,6 +680,14 @@ Semantics to be aware of:
 - If no swept sine data exists yet, the direct tone table still serves lookups (the option is a preference, not an error), and takes effect as soon as a sweep is run.
 - The choice takes effect immediately when toggled, and is persisted in the `.esgc` file, so a calibration saved with it checked drives Tone stimuli from the swept sine table wherever that file is loaded.
 
+## Tone Rise/Fall Time
+
+The Tone Rise/Fall Time field, in **Options > Excitation Settings...**, sets `Engine.ToneRampDuration` — the per-edge onset/offset ramp every tone burst is gated with in `build_tone_sequence_`, the one chokepoint every tone-burst measurement goes through: Calibrate Tones, Test Tones, and therefore refine_tones (which replays the table through `test_tones`). It has no effect on clicks or the swept sine, neither of which builds a burst train through it.
+
+The field is in milliseconds; `Engine.ToneRampDuration` stores it in seconds, per edge. A raised-cosine (cos²) window of twice that length brackets each burst — split evenly across onset and offset — clamped to a quarter of the burst duration so the two ramps never overlap on a short burst. The default, 5 ms, is the fixed edge this class used before the setting existed, so a rig that never touches it keeps measuring bursts shaped the way it always has.
+
+A longer ramp suppresses the broadband click transient a hard edge would put into the spectrum, at the cost of steady-state signal left to average the level over on a short burst; a shorter ramp recovers that signal when `BurstDuration` (set in the Calibrate Tones/Test Tones dialogs, not here) is itself short. Like Excitation Voltage, which shares its window, it is a setting a sweep is run at rather than a step of its own: it pushes to the engine the moment it changes and takes effect on the next tone measurement — not retroactively on a table already built — and is persisted in the `.esgc` file: **a table measured with one ramp and a test run with another should not be mixed**, since `test_tones` is verifying the shape of the burst that made the table only when the two agree.
+
 ## Iterative Level Refinement
 
 With this checkbox (beside Calibrate Tones) checked, each tone or click
@@ -673,11 +774,13 @@ is cancellable with Stop.
 - **stability** — the spread of the per-record levels, which is what says whether
   a single number describes the room at all.
 
-The panel is drawn on the transfer axes by `LiveMonitor.show_background`: the
-1/12-octave spectrum behind, the analysis bands on top, the A-weighted bands
-alongside, the broadband level across, and the tonal components marked and
-labelled. A dialog gives the numbers that are awkward to read off a curve, and
-the status line carries the headline. Findings — clipping, a quantizer-limited
+The **Background Noise** tab is drawn by `LiveMonitor.show_background` and
+comes to the front: the 1/12-octave spectrum behind, the analysis bands on top,
+the A-weighted bands alongside, the broadband level across, and the tonal
+components marked and labelled. It has its own axes, so a sweep already on the
+Transfer Curves tab is untouched and still there afterwards. A dialog gives the
+numbers that are awkward to read off a curve, and the status line carries the
+headline. Findings — clipping, a quantizer-limited
 input, an unsteady room, mains hum, a floor close to the normative level — turn
 that dialog into a warning and are listed in it.
 
@@ -811,9 +914,9 @@ The readout assumes a 1 V RMS white source, for which the filtered RMS has a clo
 
 ## Reset Calibration
 
-Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. If a calibration is currently loaded, it prompts for confirmation first.
+Reset Calibration discards `Engine.CalibrationData` (tone/click/swept-sine tables, any designed filter, and any background capture), the last response record, and the calibration timestamp, then redraws the plots empty via `Engine.reset_calibration()`. Every tab is redrawn, each to its own "no data" state; the tab in front stays in front, since a reset changes what the panels hold rather than which one is being read. If a calibration is currently loaded, it prompts for confirmation first.
 
-Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Max Output Voltage, AC Couple Acquired Signal and its corner, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
+Everything else is left untouched: the attached adapter, the loaded protocol/host, and every persistent Engine parameter — Reference Level, Reference Frequency, **Mic Sensitivity** (including one set by Measure Reference), Normative Value, Excitation Voltage, Tone Rise/Fall Time, Max Output Voltage, AC Couple Acquired Signal and its corner, Show Engine Live Plots, and Tone Lookup From Swept Sine. Use it to redo a calibration run from scratch without re-attaching hardware or re-measuring the microphone.
 
 ## Button Enable Rules
 

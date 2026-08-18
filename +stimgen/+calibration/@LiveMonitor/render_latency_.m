@@ -20,22 +20,37 @@ function render_latency_(obj, lat)
 %     still climbing at the bound is the signature of a delay larger than the
 %     search, which is the one failure the operator can act on.
 %
-% The title carries the air path the delay implies, at the speed of sound for
-% the configured ambient temperature.
+% The title carries the reading (red when unreliable); the subtitle carries
+% the air path the delay implies, at the speed of sound for the configured
+% ambient temperature, and the evidence the verdict was judged on.
 %
 % Parameters:
 %   lat - diagnostics struct from Engine/click_latency_ (the LiveUpdate
-%         payload's Latency)
+%         payload's Latency), or [] for the not-measured placeholder
 
-ax = obj.AxTransfer;
+ax = obj.AxLatency;
 if ~isgraphics(ax)
     return
 end
 
-% This panel and the transfer curve share one axes. Whatever was on it --
-% a live sweep, the static LUTs, a background analysis -- goes, or its lines
-% would be read against a lag axis they have nothing to do with.
-clear_transfer_(obj);
+% Sharing one axes with the transfer curve, whatever was on it -- a live
+% sweep, the static LUTs, a background analysis -- goes, or its lines would
+% be read against a lag axis they have nothing to do with. On a panel of its
+% own only this view's own leftovers go.
+obj.clear_for_("latency");
+
+if isempty(lat) || ~isfield(lat, 'lag_ms') || isempty(lat.lag_ms)
+    % A panel of its own is on screen before any probe has run, so it has to
+    % say that rather than sit blank and read as a broken plot.
+    hide_probe_axis_(ax);
+    set(ax, XScale='linear', YScale='linear');
+    grid(ax, 'on');
+    xlabel(ax, 'delay after click onset (ms)');
+    ylabel(ax, 'correlation (norm.)');
+    stimgen.calibration.LiveMonitor.caption_(ax, ...
+        'Conduction delay  (not measured)');
+    return
+end
 
 yyaxis(ax, 'left');
 ax.YLimMode = 'auto';
@@ -55,29 +70,30 @@ xlim(ax, x_limits_(lat));
 render_probe_(obj, ax, lat);
 
 grid(ax, 'on');
-title(ax, title_(lat));
+[head, sub, headColor] = latency_caption_(lat);
+stimgen.calibration.LiveMonitor.caption_(ax, head, sub, headColor);
 
-hLeg = obj.gobj_('lat_legend', @() legend(ax, Location='northeast', ...
+% Placed automatically, unlike the fixed corners the other panels use: where
+% this one is empty depends on where the arrival landed, and the arrival can
+% be anywhere from a tenth of the way across to most of it. A probe draws
+% this panel once, so the search costs nothing that a sweep would notice.
+hLeg = obj.gobj_('lat_legend', @() legend(ax, Location='best', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
 end
 
 % ------------------------------------------------------------------------ %
-function clear_transfer_(obj)
-% Release every object the panel's other views own. Named rather than
-% reset(), which would take the waveform and spectrum panels with it -- this
-% runs mid-render, after those two have already drawn.
-keys = {'xfer_meas', 'xfer_sd', 'xfer_pending', 'xfer_cur', 'xfer_norm', ...
-        'xfer_volt', 'xfer_vmax', 'xfer_vover', 'xfer_legend', ...
-        'static_tone', 'static_swept_sine', 'static_click', ...
-        'static_tone_v', 'static_swept_sine_v', 'static_click_v', ...
-        'static_vmax', 'static_legend', 'bg_legend'};
-for k = 1:numel(keys)
-    obj.drop_(keys{k});
+function hide_probe_axis_(ax)
+% Retire the right-hand probe-response axis for the placeholder. The axis
+% outlives the traces on it, so clearing those alone would leave an empty
+% scale labelled in volts with nothing drawn against it.
+if ~isgraphics(ax) || numel(ax.YAxis) < 2
+    return
 end
-for t = stimgen.calibration.LiveMonitor.WeightingTypes
-    obj.drop_(char("wt_" + t));
-end
+yyaxis(ax, 'right');
+ylabel(ax, '');
+ax.YAxis(2).Visible = 'off';
+yyaxis(ax, 'left');
 end
 
 % ------------------------------------------------------------------------ %
@@ -112,8 +128,8 @@ end
 % ------------------------------------------------------------------------ %
 function render_probe_(obj, ax, lat)
 % Right axis: the probe-region record in volts, on the same lag axis, with the
-% floor its peak had to clear. Drawn as a min/max envelope like the waveform
-% panel, so a long record costs the same as a short one.
+% floor its peak had to clear. Drawn under the same DecimateWaveforms policy
+% as the waveform panel, so the two records read alike.
 if isempty(lat.probe_v) || ~isfinite(lat.fs) || lat.fs <= 0
     obj.drop_('lat_probe');
     obj.drop_('lat_floor');
@@ -124,9 +140,7 @@ yyaxis(ax, 'right');
 ax.YAxis(2).Visible = 'on';
 set(ax, YScale='linear');
 
-[t, v] = stimgen.calibration.LiveMonitor.envelope_decimate_( ...
-    lat.probe_v, lat.fs, obj.MaxPoints);
-t = t + lat.probe_lag0_ms;
+[t, v] = obj.waveform_xy_(lat.probe_v, lat.fs, lat.probe_lag0_ms);
 
 h = obj.gobj_('lat_probe', @() line(ax, NaN, NaN, Color=[0.72 0.72 0.76], ...
     LineWidth=0.5, DisplayName='probe response'));
@@ -171,32 +185,44 @@ end
 if lat.valid && isfinite(lat.delay_ms) && lat.delay_ms > 0
     hi = min(hi, max(4 * lat.delay_ms, 0.1 * hi));
 end
-lo = min(-0.05 * hi, lat.probe_lag0_ms / 4);
+
+% To the left, a fixed fraction of what is shown to the right -- never the
+% probe region's own start, which begins a whole search bound before the
+% click and on a short delay would take most of the panel to show noise.
+% It is still bounded by that start, since there is no record to its left.
+lo = max(-0.15 * hi, lat.probe_lag0_ms);
 lims = [lo, hi * 1.05];
 end
 
 % ------------------------------------------------------------------------ %
-function s = title_(lat)
-% Two lines: the reading and what it means in metres, then the evidence it was
-% judged on. An invalid measurement says so first -- the curve below it is
-% then read as a diagnosis rather than as a result.
+function [head, sub, headColor] = latency_caption_(lat)
+% Title: the reading, or the verdict when there is none -- red, so an
+% unreliable probe cannot be mistaken for a measurement. Subtitle: what the
+% reading means in metres, then the evidence it was judged on; an invalid
+% one carries its diagnosis there instead, and the curve below is read as a
+% diagnosis rather than as a result.
 if lat.valid
+    head = sprintf('Conduction delay  %.3f ms', lat.delay_ms);
+    headColor = [0 0 0];
     % Temperature in °F to match the setting it came from, which the
     % CalibrationGui takes in Fahrenheit; the payload carries Celsius,
     % the unit the Engine works in.
-    head = sprintf('Conduction delay  %.3f ms  ·  ~%.2f m of air at %.1f m/s (%.1f °F)', ...
-        lat.delay_ms, lat.path_m, lat.speed_of_sound_ms, lat.temperature_c * 9/5 + 32);
+    line1 = sprintf('~%.2f m of air at %.1f m/s (%.1f °F)', ...
+        lat.path_m, lat.speed_of_sound_ms, lat.temperature_c * 9/5 + 32);
 elseif lat.at_bound
-    head = sprintf('Conduction delay  UNRELIABLE  ·  correlation peaked on the %.1f ms bound', ...
-        lat.bound_ms);
+    head = 'Conduction delay  \bfUNRELIABLE\rm';
+    headColor = [0.75 0 0];
+    line1 = sprintf('correlation peaked on the %.1f ms search bound', lat.bound_ms);
 else
-    head = 'Conduction delay  UNRELIABLE  ·  see the response and its floor';
+    head = 'Conduction delay  \bfUNRELIABLE\rm';
+    headColor = [0.75 0 0];
+    line1 = 'see the response and its detection floor';
 end
 
-tail = sprintf('peak %s over %s noise  ·  searched 0–%.1f ms', ...
+line2 = sprintf('peak %s over %s noise  ·  searched 0–%.1f ms', ...
     volts_(lat.peak_v), volts_(lat.noise_v), lat.bound_ms);
 
-s = {head, tail};
+sub = {line1, line2};
 end
 
 % ------------------------------------------------------------------------ %

@@ -83,7 +83,7 @@ What comes back, on the transfer panel and in a summary dialog:
 - **acquisition health** — DC offset, crest factor, headroom to full scale, and whether the input is quantizer-limited. A "silent" room measured through a converter that has run out of bits is measuring the converter.
 - **stability** across the records. If the level moved several dB between them, something intermittent is running and one number will not describe it.
 
-The result is stored as `background` in the calibration and saved with it, so a `.esgc` records the floor its tables were measured over. It does not change `CalibrationTimestamp` — a background capture does not re-date the transfer measurements. **View > Background Noise Analysis** brings the panel back after another view has taken it.
+The result is stored as `background` in the calibration and saved with it, so a `.esgc` records the floor its tables were measured over. It does not change `CalibrationTimestamp` — a background capture does not re-date the transfer measurements. In `CalibrationGui` it has a tab of its own, so it stays on screen alongside the transfer curves rather than replacing them.
 
 ### Step 5 — Calibrate Tones
 
@@ -607,8 +607,8 @@ event for every measurement, carrying a
 waveform just acquired, the span of it that was measured, the partial lookup table, and
 the scalar metrics for that point.
 
-`stimgen.calibration.LiveMonitor` renders that stream into three panels — waveform,
-spectrum, and the transfer curve as it fills in:
+`stimgen.calibration.LiveMonitor` renders that stream into the waveform and spectrum
+panels and the transfer curve as it fills in:
 
 ```matlab
 eng.set_configuration(ShowLivePlots=true);
@@ -623,9 +623,38 @@ shows a run beside the controls driving it:
 mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSignal axSpectrum axTransfer]);
 ```
 
-Outside a run, `mon.show_engine_state(eng)` redraws the response panels and
-`mon.show_calibration(eng)` draws the committed lookup tables — call
-`show_calibration` first, since it resets the monitor's graphics cache.
+The transfer curve, the background analysis and the delay probe are one family
+of views. With three axes they share the third one and each clears the last on
+its way in — one panel, one measurement at a time. Pass **five** to give each
+its own, and a redraw of one leaves the other two standing:
+
+```matlab
+mon = stimgen.calibration.LiveMonitor(eng, ...
+    Axes=[axSignal axSpectrum axTransfer axBackground axLatency]);
+```
+
+That is what lets a host keep three measurements on screen at once;
+`CalibrationGui` puts each on a tab. Either way each view clears only what it
+must: with separate axes, only its own objects.
+
+Outside a run, `mon.show_engine_state(eng)` redraws the response panels,
+`mon.show_calibration(eng)` draws the committed lookup tables,
+`mon.show_background(eng)` the stored noise analysis, and `mon.show_latency(d)`
+a delay probe's diagnostics (`mon.show_latency()` draws its not-measured
+placeholder). They may be called in any order — each clears only its own
+panel, so none of them can undo another.
+
+### Waveform resolution
+
+Time-domain traces are decimated to a min/max envelope of at most `MaxPoints`
+blocks, so a redraw costs the same on a record of ten thousand samples as on one
+of a million. Every block's peak survives, so clipping and transients still read
+correctly; the shape within a block does not.
+
+```matlab
+mon.DecimateWaveforms = false;   % every sample, for a zoomed-in look
+mon.MaxPoints = 8000;            % or just more blocks
+```
 
 ### Spectrum units
 

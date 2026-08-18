@@ -1,7 +1,7 @@
-function render_weighting_(obj, ax, f, lvl)
-% render_weighting_(obj, ax, f, lvl)
-% Overlay the standard weighting curves named by obj.Weightings onto a
-% level-versus-frequency axis, and remove the ones no longer named.
+function render_weighting_(obj, panel, f, lvl)
+% render_weighting_(obj, panel, f, lvl)
+% Overlay the standard weighting curves named by obj.Weightings onto one
+% panel's level-versus-frequency axis, and remove the ones no longer named.
 %
 % A weighting is a relative curve -- 0 dB at 1 kHz by definition -- so it has
 % no meaning on an absolute dB SPL axis until it is given a level to sit at.
@@ -16,12 +16,16 @@ function render_weighting_(obj, ax, f, lvl)
 % would rescale the axis until every measured curve on the panel was flat.
 %
 % Parameters:
-%   ax  - target axes; the left y-axis must already be the active one
-%   f   - reference frequencies in Hz; need not be sorted
-%   lvl - reference levels in dB SPL, same size as f
+%   panel - which view is asking ("transfer" | "background"); its axes must
+%           already have the left y-axis active. The cache key carries the
+%           panel, so the same overlay drawn on two views that own separate
+%           axes is two objects rather than one fought over.
+%   f     - reference frequencies in Hz; need not be sorted
+%   lvl   - reference levels in dB SPL, same size as f
 
 types = stimgen.calibration.LiveMonitor.WeightingTypes;
 want  = obj.Weightings;
+ax    = obj.panel_axes_(panel);
 
 f   = double(f(:)).';
 lvl = double(lvl(:)).';
@@ -33,7 +37,7 @@ lvl = lvl(iu);
 
 if isempty(want) || numel(f) < 2
     for k = 1:numel(types)
-        obj.drop_(key_(types(k)));
+        obj.drop_(key_(panel, types(k)));
     end
     return
 end
@@ -50,7 +54,7 @@ fGrid = logspace(log10(f(1)), log10(f(end)), 256);
 for k = 1:numel(types)
     t = types(k);
     if ~any(want == t)
-        obj.drop_(key_(t));
+        obj.drop_(key_(panel, t));
         continue
     end
 
@@ -59,17 +63,18 @@ for k = 1:numel(types)
     y(y < yLo | y > yHi) = NaN;   % clipped in the data, not by the axis limits
 
     name = sprintf('%s-weighting (%+.0f dB)', t, offset);
-    h = obj.gobj_(key_(t), @() line(ax, NaN, NaN, LineStyle='-.', ...
+    h = obj.gobj_(key_(panel, t), @() line(ax, NaN, NaN, LineStyle='-.', ...
         Color=color_(t), LineWidth=1, DisplayName=name));
     set(h, XData=fGrid, YData=y, DisplayName=name);
 end
 end
 
 % ------------------------------------------------------------------------ %
-function k = key_(type)
-% Cache key for one weighting curve. LiveMonitor.set.Weightings builds the
-% same names to drop them when the selection changes.
-k = char("wt_" + type);
+function k = key_(panel, type)
+% Cache key for one panel's copy of one weighting curve.
+% LiveMonitor.set.Weightings and panel_keys_ build the same names to drop
+% them when the selection changes or the panel is cleared.
+k = char("wt_" + panel + "_" + type);
 end
 
 % ------------------------------------------------------------------------ %

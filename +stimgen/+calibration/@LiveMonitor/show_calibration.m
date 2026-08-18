@@ -24,11 +24,17 @@ if ~isgraphics(ax)
     return
 end
 
-obj.reset();
+% Only this panel's objects: the waveform and spectrum are a different
+% record entirely, and where the host gave the background analysis and the
+% delay probe panels of their own, those are three measurements that have
+% no reason to vanish because the lookup tables were redrawn. It is also
+% what frees a caller from having to redraw the response panels afterwards.
+obj.clear_for_("transfer");
 
 C = eng.CalibrationData;
 if ~eng.IsCalibrated
-    title(ax, 'Calibration transfer curves  (no data)');
+    stimgen.calibration.LiveMonitor.caption_(ax, ...
+        'Calibration transfer curves  (no data)');
     % Left in hertz, and the ticks left alone: there is no curve to place a
     % frequency grid around, and an empty axis relabelled in kHz reads as a
     % measurement of something rather than as the placeholder it is.
@@ -95,7 +101,7 @@ xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, ...
 % Only the frequency-keyed tables anchor a weighting curve. The click LUT
 % shares this axis but its x is a duration, and a weighting evaluated there
 % would be a plot of nothing.
-obj.render_weighting_(ax, freqX, freqY);
+obj.render_weighting_("transfer", freqX, freqY);
 
 if obj.ShowVoltage && ~isempty(allV)
     draw_voltage_(obj, ax, eng, C, specs, allX);
@@ -103,7 +109,8 @@ if obj.ShowVoltage && ~isempty(allV)
 end
 
 grid(ax, 'on');
-title(ax, sprintf('Calibration transfer curves  |  %s', stamp_(eng)));
+stimgen.calibration.LiveMonitor.caption_(ax, ...
+    'Calibration transfer curves', stamp_(eng));
 hLeg = obj.gobj_('static_legend', @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
@@ -150,8 +157,8 @@ function s = stamp_(eng)
 % Age of the calibration, so a stale file is obvious on screen.
 t = eng.CalibrationTimestamp;
 if isnat(t)
-    s = 'timestamp unknown';
+    s = 'measurement date unknown';
     return
 end
-s = char(datetime(t, Format='dd-MMM-yyyy HH:mm'));
+s = sprintf('measured %s', char(datetime(t, Format='dd-MMM-yyyy HH:mm')));
 end

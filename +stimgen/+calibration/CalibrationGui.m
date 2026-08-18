@@ -21,7 +21,7 @@ classdef CalibrationGui < handle
     % the waveform cannot show -- and the View menu keeps it reachable
     % afterwards.
     %
-    % The Options menu holds the two settings windows. Hardware and Analysis
+    % The Options menu holds three settings windows. Hardware and Analysis
     % Settings is what is set once per rig rather than once per sweep: the
     % output ceiling, AC coupling of the acquired record, and the analysis
     % window and FFT length every spectral measurement is made with. The last
@@ -31,7 +31,18 @@ classdef CalibrationGui < handle
     % Temperature its result is read as a distance through -- the probe runs
     % straight from its button, asking nothing. Temperature is entered and
     % displayed in degrees Fahrenheit throughout this window; the Engine holds
-    % it -- and an .esgc file records it -- in Celsius.
+    % it -- and an .esgc file records it -- in Celsius. Excitation Settings
+    % holds the drive voltage every sweep plays at and the per-edge rise/fall
+    % time every tone burst is gated with -- both apply to whichever sweep
+    % runs next, like the two windows above, rather than to a step of their
+    % own.
+    %
+    % The window itself can be captured as a record of the session: File >
+    % Save Screenshot... writes the entire window -- controls column
+    % included -- to an image file, and File > Copy Window to Clipboard
+    % (also the toolbar's camera button) puts the same capture on the
+    % system clipboard. The full-window clipboard copy is Windows-only;
+    % elsewhere the plot area alone is copied.
     %
     % Settings are remembered across MATLAB sessions as StimCalibrationGui
     % preferences: the controls-column fields and toggles, both settings
@@ -46,12 +57,19 @@ classdef CalibrationGui < handle
     % (gated by the Show Engine Live Plots checkbox), and between runs the same
     % renderer draws the committed calibration and the last response.
     %
-    % What those panels show is chosen from the toolbar's second group -- which
-    % of the two views the transfer panel serves, and one button per overlay --
-    % mirrored by the View menu and the Display section, since a display choice
-    % is made while reading a plot rather than while setting a sweep up. The
-    % state itself lives on the monitor and on TransferView_; every control is
-    % a mirror of it, written only by sync_display_controls_.
+    % The waveform and the spectrum are always on screen -- they are the record
+    % being acquired -- and under them a tab per measurement: the transfer
+    % curves, the background noise analysis, and the conduction delay probe.
+    % Each has its own axes, so all three keep what was last drawn on them and
+    % switching between them costs nothing and loses nothing.
+    %
+    % How those panels draw -- the overlays -- is chosen from the toolbar's
+    % second group, mirrored by the View menu and the Display section, since a
+    % display choice is made while reading a plot rather than while setting a
+    % sweep up. That state lives on the monitor; every control is a mirror of
+    % it, written only by sync_display_controls_. WHICH measurement is being
+    % read is the tab strip's own business: it selects and reports in one
+    % place, and TransferView_ follows it.
     %
     % Arguments are identified by type, so an Engine and a HardwareHost may be
     % passed in either order, either one alone, or as Engine=/Host= pairs.
@@ -114,14 +132,16 @@ classdef CalibrationGui < handle
         RecentCalibrationsMenu
 
         % View menu
-        CalibrationViewMenu
-        BackgroundViewMenu
-        LatencyViewMenu
         WeightingMenus          % one checkable item per LiveMonitor.WeightingTypes
         SpectrumUnitMenus       % one checkable item per LiveMonitor.SpectrumUnitList
         GhostMenu
         VoltageMenu
-        TransferView_ (1,1) string = "calibration"  % which view the transfer panel last drew
+        WaveformResMenu         % checked = every sample; see set_full_resolution_
+
+        % Which measurement the lower plots area is showing. Follows the tab
+        % strip rather than driving it -- the tabs are the selector, this is
+        % the name the rest of the object and the saved preference use.
+        TransferView_ (1,1) string = "calibration"
 
         % Diagnostics of the last conduction delay probe, kept so the panel
         % can be drawn again after another view has taken it. Session state,
@@ -133,8 +153,10 @@ classdef CalibrationGui < handle
         % what a plot shows is changed while reading the plot, which is when
         % crossing the window to a menu is most in the way. sync_display_-
         % controls_ is the one writer that keeps every mirror in step.
-        ToolCalibrationView
-        ToolBackgroundView
+        %
+        % Overlays only. Choosing which measurement to look at is the tab
+        % strip's job, so the two view-selecting tools that were here went
+        % with the panel they switched.
         ToolGhost
         ToolVoltage
         ToolLogX
@@ -144,7 +166,6 @@ classdef CalibrationGui < handle
         RefFreqField
         MicSensField
         NormativeField
-        ExcitationField
         ShowLivePlotsCheck
         TransferLogXCheck
         ToneSweptSineCheck
@@ -164,6 +185,15 @@ classdef CalibrationGui < handle
         SpectralWindowDrop
         SpectralFftDrop
         SampleRateLabel
+
+        % Excitation Settings window (Options menu), on demand and guarded
+        % the same way. The drive voltage every sweep plays at and the
+        % per-edge rise/fall time every tone burst is gated with -- neither
+        % is a step of its own, and both apply to whichever sweep runs next
+        % rather than to the one that made an already-committed table.
+        ExcitationDialog_
+        ExcitationField
+        ToneRampField
 
         % Conduction Delay Settings window (Options menu), on demand and
         % guarded the same way. Unlike the settings above, the probe's two
@@ -199,10 +229,20 @@ classdef CalibrationGui < handle
         BtnStop
         BtnReset
 
-        % Axes
+        % Axes. The first two are always on screen; the rest are one per tab.
         AxTime
         AxSpectrum
         AxTransfer
+        AxBackground
+        AxLatency
+
+        % The plots panel's tab strip and its tabs. Each tab holds one
+        % measurement, so switching between them costs nothing and loses
+        % nothing -- every panel keeps whatever was last drawn on it.
+        PlotTabs
+        TransferTab
+        BackgroundTab
+        LatencyTab
     end
 
     methods
@@ -262,6 +302,9 @@ classdef CalibrationGui < handle
             end
             if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
                 delete(obj.DelayDialog_);
+            end
+            if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
+                delete(obj.ExcitationDialog_);
             end
         end
 
@@ -325,6 +368,13 @@ classdef CalibrationGui < handle
                 Icon=stimgen.util.toolbar_icon('save'), ...
                 ClickedCallback=@(~,~) obj.on_save_());
 
+            % The whole window -- controls column included -- onto the
+            % clipboard in one press. Mirrors File > Copy Window to
+            % Clipboard, the way every other tool here mirrors a menu item.
+            uipushtool(tb, Tooltip=tip('CopyWindowTool'), Separator='on', ...
+                Icon=stimgen.util.toolbar_icon('camera'), ...
+                ClickedCallback=@(~,~) obj.on_copy_window_());
+
             uipushtool(tb, Tooltip=tip('QuickStartTool'), Separator='on', ...
                 Icon=stimgen.util.toolbar_icon('help'), ...
                 ClickedCallback=@(~,~) obj.on_show_quick_start_());
@@ -333,22 +383,15 @@ classdef CalibrationGui < handle
         end
 
         function build_display_tools_(obj, tb, tip)
-            % Second toolbar group: what the panels show. The first pair
-            % chooses which view the transfer panel serves and is exclusive;
-            % the second group toggles one overlay each. All five are toggle
-            % tools rather than push tools so the toolbar states what is on
-            % screen as well as changing it -- which is what makes it usable
-            % as the display readout it now is.
-            obj.ToolCalibrationView = uitoggletool(tb, Separator='on', ...
-                Tooltip=tip('TransferViewTool'), ...
-                Icon=stimgen.util.toolbar_icon('transfer'), ...
-                ClickedCallback=@(~,~) obj.set_transfer_view_("calibration"));
-
-            obj.ToolBackgroundView = uitoggletool(tb, Enable='off', ...
-                Tooltip=tip('BackgroundViewTool'), ...
-                Icon=stimgen.util.toolbar_icon('background'), ...
-                ClickedCallback=@(~,~) obj.set_transfer_view_("background"));
-
+            % Second toolbar group: how the panels draw. One overlay each,
+            % as toggle tools rather than push tools so the toolbar states
+            % what is on screen as well as changing it -- which is what makes
+            % it usable as the display readout it is.
+            %
+            % Which measurement is on screen is not here: that is the plots
+            % panel's tab strip, which selects a view and reports it in the
+            % same place the view is read. The two toggle tools that used to
+            % do it were removed with the shared panel they switched.
             obj.ToolGhost = uitoggletool(tb, Separator='on', ...
                 Tooltip=tip('SpectrumGhost'), ...
                 Icon=stimgen.util.toolbar_icon('ghost'), ...
@@ -382,31 +425,29 @@ classdef CalibrationGui < handle
             obj.RecentCalibrationsMenu = uimenu(fileMenu, Text='Recent Calibrations');
             obj.refresh_recent_calibrations_menu_();
 
-            % The transfer panel serves one view at a time; this is how a user
-            % gets back to the other one without re-running anything. Checkable
-            % rather than plain items, so the menu names the view that is up
-            % instead of only offering to change it.
+            % The window itself as a record: a calibration ends up in a lab
+            % notebook or an e-mail, and the whole window -- settings and
+            % plots together -- is the state worth reporting. exportapp is
+            % the one capture that includes the UI components; copygraphics
+            % and print skip them.
+            uimenu(fileMenu, Text='Save Screenshot...', Separator='on', ...
+                MenuSelectedFcn=@(~,~) obj.on_save_screenshot_());
+            uimenu(fileMenu, Text='Copy Window to Clipboard', ...
+                MenuSelectedFcn=@(~,~) obj.on_copy_window_());
+
+            % Everything on this menu changes how the panels draw; which
+            % measurement is being looked at is chosen on the plots panel's
+            % tab strip. The three checkable items that used to select a view
+            % were removed with the shared panel: a tab both selects and
+            % reports, in the place the plot is read, and a menu duplicating
+            % it would be one more thing that can disagree with the screen.
             viewMenu = uimenu(obj.Figure, Text='View');
-            obj.CalibrationViewMenu = uimenu(viewMenu, ...
-                Text='Calibration Transfer Curves', ...
-                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("calibration"));
-            obj.BackgroundViewMenu = uimenu(viewMenu, Text='Background Noise Analysis', ...
-                Enable='off', ...
-                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("background"));
-            % The third view, and the only one that is not a property of the
-            % calibration: it belongs to the last delay probe of this session,
-            % which is why it is offered only once one has run. Without it the
-            % correlation the probe was judged from would be unrecoverable the
-            % moment anything else drew on the panel.
-            obj.LatencyViewMenu = uimenu(viewMenu, Text='Conduction Delay Probe', ...
-                Enable='off', ...
-                MenuSelectedFcn=@(~,~) obj.set_transfer_view_("latency"));
 
             % Weightings annotate whichever view is up rather than being a
             % view of their own, and more than one at a time is a reasonable
             % thing to want -- hence checkable items instead of a dropdown,
             % which also keeps them off the already-crowded controls panel.
-            weightMenu = uimenu(viewMenu, Text='Weighting Overlay', Separator='on');
+            weightMenu = uimenu(viewMenu, Text='Weighting Overlay');
             types = stimgen.calibration.LiveMonitor.WeightingTypes;
             obj.WeightingMenus = gobjects(1, numel(types));
             for k = 1:numel(types)
@@ -446,6 +487,16 @@ classdef CalibrationGui < handle
                 Tooltip=stimgen.util.tooltip('CalibrationGui', 'TransferVoltage'), ...
                 MenuSelectedFcn=@(~,~) obj.set_show_voltage_(~obj.Monitor.ShowVoltage));
 
+            % How much of a time-domain record is handed to the renderer.
+            % Off by default -- the envelope is what keeps a redraw cheap on
+            % a record of hundreds of thousands of samples -- and worth
+            % turning on when zoomed in far enough that a block of it spans
+            % several pixels. Phrased as what checking it gets you rather
+            % than as the mechanism it turns off.
+            obj.WaveformResMenu = uimenu(viewMenu, Text='Full-Resolution Waveforms', ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'FullResolutionWaveforms'), ...
+                MenuSelectedFcn=@(~,~) obj.set_full_resolution_(obj.Monitor.DecimateWaveforms));
+
             % Rig facts, acquisition and analysis settings live in their own
             % window rather than the controls column: they are set once per
             % rig, not once per sweep, and the column reads better carrying
@@ -459,6 +510,11 @@ classdef CalibrationGui < handle
             % instead of stopping to ask.
             uimenu(optMenu, Text='Conduction Delay Settings...', ...
                 MenuSelectedFcn=@(~,~) obj.on_delay_settings_());
+            % The drive voltage and the tone burst's rise/fall shape: settings
+            % every sweep runs at, but not steps of their own, so they earn a
+            % window over a place in the per-sweep controls column.
+            uimenu(optMenu, Text='Excitation Settings...', ...
+                MenuSelectedFcn=@(~,~) obj.on_excitation_settings_());
 
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start (Wiki)', ...
@@ -499,7 +555,7 @@ classdef CalibrationGui < handle
             [g, h(1)] = obj.add_section_(stack, 1, 'Microphone', [24 24 24 30 30]);
             obj.build_reference_section_(g);
 
-            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 24 30 30 24]);
+            [g, h(2)] = obj.add_section_(stack, 2, 'Calibration', [24 30 30 24]);
             obj.build_calibration_section_(g);
 
             [g, h(3)] = obj.add_section_(stack, 3, 'Verification & Equalization', [30 30 30 24]);
@@ -794,12 +850,71 @@ classdef CalibrationGui < handle
                 obj.AmbientTempField.Limits(1)), obj.AmbientTempField.Limits(2));
         end
 
-        function build_calibration_section_(obj, g)
-            % The sweeps and the two settings every sweep is run at: the drive
-            % voltage it plays at, and the level its table is anchored to.
+        function on_excitation_settings_(obj)
+            % Open (or refocus) the Excitation Settings window: the drive
+            % voltage every sweep plays at, and the per-edge rise/fall time
+            % every tone burst is gated with. Non-modal, so it can stay up
+            % during a run, and pushes to the engine the moment either field
+            % changes -- the window may be closed by the time a sweep starts.
+            if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
+                figure(obj.ExcitationDialog_);
+                return
+            end
+
+            pos = obj.Figure.Position;
+            obj.ExcitationDialog_ = uifigure( ...
+                Name='Excitation Settings', ...
+                Position=[pos(1)+55 pos(2)+pos(4)-190 380 108], ...
+                Resize='off');
+
+            g = uigridlayout(obj.ExcitationDialog_, [2 2]);
+            g.RowHeight = {24 24};
+            g.ColumnWidth = {'1.3x', '1x'};
+            g.Padding = [8 8 8 8];
+            g.RowSpacing = 4;
+            g.ColumnSpacing = 8;
+
             obj.ExcitationField = numeric_row_(g, 1, 'Excitation Voltage (V)', ...
                 [eps, 10], '%.3f');
-            obj.NormativeField = numeric_row_(g, 2, 'Normative Value (dB SPL)', ...
+            obj.ToneRampField = numeric_row_(g, 2, 'Tone Rise/Fall Time (ms)', ...
+                [0.1, 50], '%.2f', ...
+                stimgen.util.tooltip('CalibrationGui', 'ToneRampDuration'));
+
+            obj.ExcitationField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
+            obj.ToneRampField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
+
+            obj.sync_excitation_dialog_();
+        end
+
+        function on_excitation_setting_changed_(obj)
+            try
+                obj.Engine.set_configuration( ...
+                    ExcitationVoltage=obj.ExcitationField.Value, ...
+                    ToneRampDuration=obj.ToneRampField.Value / 1000);
+                obj.set_status_('Excitation settings applied.', false);
+            catch ME
+                obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
+                obj.sync_excitation_dialog_();
+            end
+        end
+
+        function sync_excitation_dialog_(obj)
+            % Same contract as sync_hardware_dialog_: the engine owns these
+            % values, the window is only a view of them.
+            if isempty(obj.ExcitationDialog_) || ~isvalid(obj.ExcitationDialog_)
+                return
+            end
+            obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
+            obj.ToneRampField.Value = obj.Engine.ToneRampDuration * 1000;
+        end
+
+        function build_calibration_section_(obj, g)
+            % The level every sweep's table is anchored to. The drive voltage
+            % and the tone burst rise/fall time are also settings every sweep
+            % runs at, but live in Options > Excitation Settings... instead: a
+            % window rather than a place in this column, since neither is a
+            % step of its own.
+            obj.NormativeField = numeric_row_(g, 1, 'Normative Value (dB SPL)', ...
                 [1, 180], '%.1f');
 
             % Tones and the refinement that follows them share the top row,
@@ -813,7 +928,7 @@ classdef CalibrationGui < handle
             % column belongs to the button here, and a checkbox carrying its
             % own label is the only way to put a toggle beside one.
             row = uigridlayout(g, [1 2]);
-            row.Layout.Row = 3;
+            row.Layout.Row = 2;
             row.Layout.Column = [1 2];
             row.ColumnWidth = {'1x', 186};
             row.Padding = [0 0 0 0];
@@ -832,13 +947,13 @@ classdef CalibrationGui < handle
             obj.IterativeCheck.Layout.Row = 1;
             obj.IterativeCheck.Layout.Column = 2;
 
-            obj.BtnClicks = action_button_(g, 4, 1, 'Calibrate Clicks', ...
+            obj.BtnClicks = action_button_(g, 3, 1, 'Calibrate Clicks', ...
                 'BtnClicks', @(~,~) obj.on_calibrate_clicks_());
-            obj.BtnSweptSine = action_button_(g, 4, 2, 'Calibrate Swept Sine', ...
+            obj.BtnSweptSine = action_button_(g, 3, 2, 'Calibrate Swept Sine', ...
                 'BtnSweptSine', @(~,~) obj.on_calibrate_swept_sine_());
 
             % Directly under the sweep it redirects tone lookups to.
-            obj.ToneSweptSineCheck = check_row_(g, 5, 'Tone Lookup From Swept Sine', ...
+            obj.ToneSweptSineCheck = check_row_(g, 4, 'Tone Lookup From Swept Sine', ...
                 stimgen.util.tooltip('CalibrationGui', 'ToneLutFromSweptSine'), ...
                 @(~,~) obj.on_tone_lut_source_());
         end
@@ -919,8 +1034,19 @@ classdef CalibrationGui < handle
         end
 
         function build_plots_panel_(obj)
-            % Create the three axes and hand them to a LiveMonitor, which does
+            % Create the five axes and hand them to a LiveMonitor, which does
             % all the drawing -- live during a run, static between runs.
+            %
+            % The waveform and the spectrum are always on screen: they are the
+            % record being acquired right now, and watching a run means
+            % watching them. Below them, a tab per measurement -- the transfer
+            % curves, the background noise analysis, the conduction delay
+            % probe. Those three used to be one panel three views took turns
+            % on, which meant measuring a background threw away the sweep that
+            % was on screen and a delay probe threw away both. A panel each
+            % keeps all three, and the tab strip both selects a view and says
+            % which one is up, which is what makes the two toolbar buttons and
+            % the three View-menu items that used to do that redundant.
             panel = uipanel(obj.Grid, Title='Visualization');
             panel.Layout.Row = 1;
             panel.Layout.Column = 2;
@@ -939,15 +1065,48 @@ classdef CalibrationGui < handle
             obj.AxSpectrum.Layout.Column = 2;
             grid(obj.AxSpectrum, 'on');
 
-            obj.AxTransfer = uiaxes(g);
-            obj.AxTransfer.Layout.Row = 2;
-            obj.AxTransfer.Layout.Column = [1 2];
-            grid(obj.AxTransfer, 'on');
+            obj.PlotTabs = uitabgroup(g, ...
+                SelectionChangedFcn=@(~,evt) obj.on_plot_tab_changed_(evt));
+            obj.PlotTabs.Layout.Row = 2;
+            obj.PlotTabs.Layout.Column = [1 2];
+
+            [obj.TransferTab, obj.AxTransfer] = obj.add_plot_tab_('Transfer Curves', ...
+                'TabTransfer');
+            [obj.BackgroundTab, obj.AxBackground] = obj.add_plot_tab_('Background Noise', ...
+                'TabBackground');
+            [obj.LatencyTab, obj.AxLatency] = obj.add_plot_tab_('Conduction Delay', ...
+                'TabLatency');
 
             obj.Monitor = stimgen.calibration.LiveMonitor(obj.Engine, ...
-                Axes=[obj.AxTime obj.AxSpectrum obj.AxTransfer]);
+                Axes=[obj.AxTime obj.AxSpectrum obj.AxTransfer ...
+                      obj.AxBackground obj.AxLatency]);
             obj.Monitor.LogX = obj.TransferLogXCheck.Value;
             obj.sync_spectrum_units_menu_();
+        end
+
+        function [tab, ax] = add_plot_tab_(obj, titleText, tooltipKey)
+            % One tab in the plots panel, carrying one axes. The axes needs a
+            % layout container of its own: dropped straight into a uitab it
+            % would take its default Position rather than filling the tab.
+            tab = uitab(obj.PlotTabs, Title=titleText, ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', tooltipKey));
+            tg = uigridlayout(tab, [1 1]);
+            tg.Padding = [2 2 2 2];
+            ax = uiaxes(tg);
+            grid(ax, 'on');
+        end
+
+        function on_plot_tab_changed_(obj, evt)
+            % The tab strip is the view selector; TransferView_ only follows
+            % it, so what is on screen and what the object thinks is on screen
+            % cannot disagree. Nothing is redrawn: all three panels are drawn
+            % as their measurements arrive and stay drawn, which is the whole
+            % point of the tabs.
+            switch evt.NewValue
+                case obj.BackgroundTab, obj.TransferView_ = "background";
+                case obj.LatencyTab,    obj.TransferView_ = "latency";
+                otherwise,              obj.TransferView_ = "calibration";
+            end
         end
 
         function on_spectrum_units_(obj, src)
@@ -972,17 +1131,17 @@ classdef CalibrationGui < handle
         end
 
         function set_transfer_log_x_(obj, tf)
-            % Log or linear frequency on the transfer panel.
+            % Log or linear frequency on every frequency panel.
             obj.Monitor.LogX = tf;
             obj.sync_display_controls_();
-            obj.redraw_transfer_view_();
+            obj.redraw_transfer_panels_();
         end
 
         function set_show_ghost_(obj, tf)
-            % Overlay of the previous spectrum. Only the response panels are
-            % redrawn: a transfer redraw resets the monitor's whole graphics
-            % cache, and the ghost being toggled -- along with the measurement
-            % behind it that has not been drawn yet -- lives in that cache.
+            % Overlay of the previous spectrum. Only the response panels need
+            % redrawing -- the ghost is a spectrum-panel object, and the
+            % measurement behind the one on screen lives in the monitor's
+            % cache, which a redraw of any other panel now leaves alone.
             obj.Monitor.ShowGhost = tf;
             obj.sync_display_controls_();
             obj.Monitor.show_engine_state(obj.Engine);
@@ -992,55 +1151,77 @@ classdef CalibrationGui < handle
             % Right-hand drive-voltage axis on the transfer panel.
             obj.Monitor.ShowVoltage = tf;
             obj.sync_display_controls_();
-            obj.redraw_transfer_view_();
+            obj.redraw_transfer_panels_();
+        end
+
+        function set_full_resolution_(obj, tf)
+            % Draw the time-domain panels at every sample (tf true) or as a
+            % min/max envelope (false, the default). The menu item is the
+            % inverse of the monitor's DecimateWaveforms, which names the
+            % mechanism; the menu names what the operator gets.
+            %
+            % Both panels that carry a waveform are redrawn, so the change
+            % shows on the record already on screen rather than at the next
+            % measurement -- which is the point, since this is turned on to
+            % look harder at a record that has already been acquired.
+            obj.Monitor.DecimateWaveforms = ~tf;
+            obj.sync_display_controls_();
+            obj.Monitor.show_engine_state(obj.Engine);
+            obj.Monitor.show_latency(obj.LastLatency_);
+            if tf
+                obj.set_status_(['Waveforms at full resolution. ' ...
+                    'Redraws are slower on long records.'], false);
+            else
+                obj.set_status_('Waveforms drawn as a min/max envelope.', false);
+            end
         end
 
         function set_transfer_view_(obj, view)
-            % Point the transfer panel at one of its two views. Everything
-            % that switches it comes through here -- both menu items, both
-            % toolbar buttons, and the fallback when a reset takes the
-            % background data away -- so the state, the controls mirroring it,
-            % and what is on screen cannot disagree.
+            % Bring one of the plot tabs to the front. Everything that
+            % selects a view programmatically comes through here -- a
+            % finished background capture, a finished delay probe, a sweep
+            % about to fill the transfer panel in -- so the tab on screen and
+            % TransferView_ cannot disagree. A user clicking a tab arrives at
+            % the same state through on_plot_tab_changed_ instead.
+            %
+            % Nothing is redrawn: every panel already holds its measurement.
             arguments
                 obj
                 view (1,1) string {mustBeMember(view, ["calibration", "background", "latency"])}
             end
-            obj.TransferView_ = view;
-            obj.sync_display_controls_();
-            obj.redraw_transfer_view_();
             switch view
-                case "background"
-                    obj.set_status_('Showing background noise analysis.', false);
-                case "latency"
-                    obj.set_status_('Showing the last conduction delay probe.', false);
-                otherwise
-                    obj.set_status_('Showing calibration transfer curves.', false);
+                case "background", tab = obj.BackgroundTab;
+                case "latency",    tab = obj.LatencyTab;
+                otherwise,         tab = obj.TransferTab;
             end
+            if ~isempty(obj.PlotTabs) && isgraphics(obj.PlotTabs) && isgraphics(tab)
+                obj.PlotTabs.SelectedTab = tab;
+            end
+            % Setting SelectedTab does not fire SelectionChangedFcn, so the
+            % state this callback would have written is written here.
+            obj.TransferView_ = view;
         end
 
-        function redraw_transfer_view_(obj)
-            % Redraw whichever view the transfer panel is serving, without
-            % changing which one that is. show_background resets the monitor's
-            % whole graphics cache, not just the transfer panel's share of it,
-            % so the response panels have to be redrawn after it -- the same
-            % ordering refresh_all_plots_ depends on.
-            switch obj.TransferView_
-                case "background"
-                    obj.Monitor.show_background(obj.Engine);
-                    obj.Monitor.show_engine_state(obj.Engine);
-                case "latency"
-                    % Nothing to reset here: the latency panel clears the
-                    % transfer objects itself and leaves the response panels
-                    % alone, which is what lets it be drawn mid-run.
-                    if isempty(obj.LastLatency_)
-                        obj.TransferView_ = "calibration";
-                        obj.refresh_all_plots_();
-                    else
-                        obj.Monitor.show_latency(obj.LastLatency_);
-                    end
-                otherwise
-                    obj.refresh_all_plots_();
-            end
+        function focus_sweep_panel_(obj)
+            % Bring the Transfer Curves tab up for a sweep that is about to
+            % fill it in. Called by each measurement that draws there, so a
+            % run started while the background or the delay panel is on top
+            % is watched rather than happening off screen -- the one cost of
+            % tabs, and the one place worth spending a tab switch on.
+            obj.set_transfer_view_("calibration");
+        end
+
+        function redraw_transfer_panels_(obj)
+            % Redraw all three measurement panels. They own separate axes and
+            % no longer clear each other, so there is no view to choose
+            % between and no ordering to respect -- this is what a display
+            % option that applies to every panel (the log x-axis, the drive
+            % voltage axis, a weighting overlay) calls to make the change
+            % show on the two panels that are not on top as well as the one
+            % that is.
+            obj.Monitor.show_calibration(obj.Engine);
+            obj.Monitor.show_background(obj.Engine);
+            obj.Monitor.show_latency(obj.LastLatency_);
         end
 
         function sync_display_controls_(obj)
@@ -1051,21 +1232,18 @@ classdef CalibrationGui < handle
             % what the others are. Setting a toggle tool's State
             % programmatically does not fire its ClickedCallback, so this
             % cannot re-enter the handler that called it.
+            %
+            % Which measurement is on screen is not among them: the tab strip
+            % is the only control that says so, and it is its own mirror.
             if isempty(obj.Monitor) || ~isvalid(obj.Monitor)
                 return
             end
 
-            view = obj.TransferView_;
-            set_checked_(obj.CalibrationViewMenu, view == "calibration");
-            set_checked_(obj.BackgroundViewMenu,  view == "background");
-            set_checked_(obj.LatencyViewMenu,     view == "latency");
             set_checked_(obj.GhostMenu,   obj.Monitor.ShowGhost);
             set_checked_(obj.VoltageMenu, obj.Monitor.ShowVoltage);
+            % Checked means every sample, which is the monitor's flag off.
+            set_checked_(obj.WaveformResMenu, ~obj.Monitor.DecimateWaveforms);
 
-            % No toolbar button for the delay probe: it is a diagnostic looked
-            % at once, not one of the two views a session lives in.
-            set_tool_state_(obj.ToolCalibrationView, view == "calibration");
-            set_tool_state_(obj.ToolBackgroundView,  view == "background");
             set_tool_state_(obj.ToolGhost,   obj.Monitor.ShowGhost);
             set_tool_state_(obj.ToolVoltage, obj.Monitor.ShowVoltage);
             set_tool_state_(obj.ToolLogX,    obj.Monitor.LogX);
@@ -1090,14 +1268,14 @@ classdef CalibrationGui < handle
         function apply_weightings_(obj)
             % Push the checked set to the monitor, which owns the curves, and
             % redraw so the change shows without waiting for a measurement.
-            % Redrawn in whichever view is up: an overlay is an annotation on
-            % the current view, and switching the panel out from under a user
-            % who asked for A-weighting on the noise floor is not what they
-            % asked for.
+            % Every panel is redrawn, not just the one on top: an overlay is
+            % an annotation on each view that can carry one, and a user who
+            % turns on A-weighting while reading the noise floor should not
+            % have to switch tabs to make it appear.
             checked = arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus);
             obj.Monitor.Weightings = ...
                 stimgen.calibration.LiveMonitor.WeightingTypes(checked);
-            obj.redraw_transfer_view_();
+            obj.redraw_transfer_panels_();
         end
 
         function on_close_(obj, fig)
@@ -1119,6 +1297,9 @@ classdef CalibrationGui < handle
             end
             if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
                 delete(obj.DelayDialog_);
+            end
+            if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
+                delete(obj.ExcitationDialog_);
             end
             delete(fig);
         end
@@ -1176,11 +1357,12 @@ classdef CalibrationGui < handle
             r = obj.Engine.measure_background(duration, nRecords, ...
                 TonalProminenceDb=promDb);
 
-            % The panels are left showing the background rather than refreshed
-            % back to the lookup tables: the band curve is the result, and
-            % View > Calibration Transfer Curves brings the tables back. Routed
-            % through set_transfer_view_ rather than drawn directly, so the
-            % view the panel is left on is the view the menu and toolbar report.
+            % Drawn, then brought to the front: the band curve is the result
+            % of the step just run, and the operator is about to read an
+            % alert about it. Nothing else is disturbed -- a sweep already on
+            % the Transfer Curves tab is still there afterwards, which it was
+            % not when the two shared a panel.
+            obj.Monitor.show_background(obj.Engine);
             obj.set_transfer_view_("background");
 
             hasFindings = ~isempty(r.flags);
@@ -1277,11 +1459,9 @@ classdef CalibrationGui < handle
             % not depend on a display toggle that has nothing to do with this
             % measurement.
             obj.LastLatency_ = diag;
-            set_enabled_(obj.LatencyViewMenu, true);
             obj.Monitor.show_engine_state(obj.Engine);
-            obj.TransferView_ = "latency";
             obj.Monitor.show_latency(diag);
-            obj.sync_display_controls_();
+            obj.set_transfer_view_("latency");
             drawnow;
 
             obj.set_status_(conduction_delay_summary_(d), ~d.valid);
@@ -1293,25 +1473,6 @@ classdef CalibrationGui < handle
             end
             uialert(obj.Figure, conduction_delay_report_(d, maxDelayMs), ...
                 'Conduction Delay', Icon=icon);
-        end
-
-        function update_background_view_state_(obj)
-            % The background view is only reachable once something has been
-            % captured; there is nothing to draw before that. A Reset takes the
-            % data away without touching the panel, so a view still pointing at
-            % it falls back to the lookup tables rather than leaving the menu
-            % and toolbar claiming a view that can no longer be drawn. Nothing
-            % is redrawn here: every caller draws for its own reasons.
-            C = obj.Engine.CalibrationData;
-            hasBackground = isstruct(C) && isfield(C, 'background') && ~isempty(C.background);
-
-            set_enabled_(obj.BackgroundViewMenu,  hasBackground);
-            set_enabled_(obj.ToolBackgroundView,  hasBackground);
-
-            if ~hasBackground && obj.TransferView_ == "background"
-                obj.TransferView_ = "calibration";
-            end
-            obj.sync_display_controls_();
         end
 
         function on_calibrate_tones_(obj)
@@ -1334,6 +1495,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Tone calibration cancelled.', false);
                 return
             end
+            obj.focus_sweep_panel_();
             if isempty(freqs)
                 obj.Engine.calibrate_tones([], repeatCount);
             else
@@ -1380,6 +1542,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Click calibration cancelled.', false);
                 return
             end
+            obj.focus_sweep_panel_();
             if isempty(durs)
                 obj.Engine.calibrate_clicks([], repeatCount);
             else
@@ -1420,6 +1583,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Swept sine calibration cancelled.', false);
                 return
             end
+            obj.focus_sweep_panel_();
             if isempty(freqs)
                 obj.Engine.calibrate_swept_sine(duration, [], repeatCount);
             else
@@ -1464,6 +1628,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Tone LUT test cancelled.', false);
                 return
             end
+            obj.focus_sweep_panel_();
 
             % The plots are deliberately left showing the test's own curve
             % rather than refreshed back to the committed LUTs -- the measured
@@ -1513,6 +1678,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Click LUT test cancelled.', false);
                 return
             end
+            obj.focus_sweep_panel_();
 
             % Prompt is in ms; Engine.test_clicks takes seconds. The plots are
             % deliberately left showing the test's own curve rather than
@@ -1602,6 +1768,7 @@ classdef CalibrationGui < handle
             % the sweep raw and through the filter and compares the flatness
             % of the two measured responses. Stored in
             % CalibrationData.filterTest by the engine.
+            obj.focus_sweep_panel_();
             r = obj.Engine.test_filter();
             if r.passed
                 verdict = 'PASS';
@@ -1670,6 +1837,85 @@ classdef CalibrationGui < handle
                 msg = sprintf('%d filter coefficients copied to the clipboard.', numel(b));
             end
             obj.set_status_(msg, false);
+        end
+
+        function on_save_screenshot_(obj)
+            % Save the entire window -- controls column, footer and plots
+            % alike -- to an image file. exportapp is used because it is the
+            % one capture that includes UI components; print and copygraphics
+            % render the axes alone. The folder is remembered separately from
+            % the .esgc folders: screenshots go to notebooks and reports, not
+            % to the calibration data tree.
+            startDir = obj.get_pref_('ScreenshotDir', '');
+            if isempty(startDir) || ~isfolder(startDir)
+                startDir = pwd;
+            end
+            defaultName = sprintf('StimCalibration_%s.png', ...
+                char(datetime('now', Format='yyyyMMdd_HHmmss')));
+            [fn, pn] = uiputfile( ...
+                {'*.png', 'PNG image (*.png)'; ...
+                 '*.jpg', 'JPEG image (*.jpg)'; ...
+                 '*.pdf', 'PDF (*.pdf)'}, ...
+                'Save Screenshot', fullfile(startDir, defaultName));
+            % uiputfile drops the main window behind whichever window last
+            % had focus; put it back where exportapp is about to capture it.
+            obj.show();
+            if isequal(fn, 0)
+                obj.set_status_('Screenshot cancelled.', false);
+                return
+            end
+
+            ffn = fullfile(pn, fn);
+            try
+                exportapp(obj.Figure, ffn);
+            catch ME
+                stimgen.util.vprintf(0, 1, ME);
+                obj.set_status_(sprintf('Screenshot failed: %s', ME.message), true);
+                return
+            end
+            obj.set_pref_('ScreenshotDir', pn);
+            obj.set_status_(sprintf('Screenshot saved to %s', ffn), false);
+        end
+
+        function on_copy_window_(obj)
+            % Put the entire window on the system clipboard as an image.
+            % MATLAB's clipboard() is text-only and copygraphics skips UI
+            % components, so the window goes through exportapp to a
+            % temporary PNG and onto the clipboard through .NET -- which is
+            % why the full-window form is Windows-only. Elsewhere the plot
+            % area alone is copied via copygraphics, and the status line
+            % says which of the two happened.
+            tmp = [tempname, '.png'];
+            cleaner = onCleanup(@() delete_quietly_(tmp));
+            try
+                if ispc
+                    exportapp(obj.Figure, tmp);
+                    NET.addAssembly('System.Windows.Forms');
+                    NET.addAssembly('System.Drawing');
+                    bmp = System.Drawing.Bitmap(tmp);
+                    err = [];
+                    try
+                        % SetImage copies the pixels into the clipboard, so
+                        % the bitmap -- which holds the PNG open -- can be
+                        % released as soon as it returns, and must be before
+                        % the temp file can be deleted.
+                        System.Windows.Forms.Clipboard.SetImage(bmp);
+                    catch err
+                    end
+                    bmp.Dispose();
+                    if ~isempty(err)
+                        rethrow(err);
+                    end
+                    obj.set_status_('Window copied to the clipboard.', false);
+                else
+                    copygraphics(obj.Figure, ContentType='image');
+                    obj.set_status_(['Plots copied to the clipboard. ' ...
+                        '(The full window, controls included, is a Windows-only copy.)'], false);
+                end
+            catch ME
+                stimgen.util.vprintf(0, 1, ME);
+                obj.set_status_(sprintf('Copy to clipboard failed: %s', ME.message), true);
+            end
         end
 
         function on_save_(obj)
@@ -1917,16 +2163,16 @@ classdef CalibrationGui < handle
                 else
                     toneLutSource = "tone";
                 end
-                % Max Output Voltage, AC Couple and Ambient Temperature are
-                % absent deliberately: the settings window pushes them to the
-                % engine the moment they change, and its controls exist only
-                % while it is open.
+                % Max Output Voltage, AC Couple, Ambient Temperature,
+                % Excitation Voltage and Tone Rise/Fall Time are absent
+                % deliberately: their settings windows push them to the engine
+                % the moment they change, and their controls exist only while
+                % those windows are open.
                 obj.Engine.set_configuration( ...
                     ReferenceLevel=obj.RefLevelField.Value, ...
                     ReferenceFrequency=obj.RefFreqField.Value, ...
                     MicSensitivity=obj.MicSensField.Value, ...
                     NormativeValue=obj.NormativeField.Value, ...
-                    ExcitationVoltage=obj.ExcitationField.Value, ...
                     ShowLivePlots=obj.ShowLivePlotsCheck.Value, ...
                     ToneLutSource=toneLutSource);
                 ok = true;
@@ -1947,25 +2193,26 @@ classdef CalibrationGui < handle
             obj.RefFreqField.Value = obj.Engine.ReferenceFrequency;
             obj.MicSensField.Value = obj.Engine.MicSensitivity;
             obj.NormativeField.Value = obj.Engine.NormativeValue;
-            obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
             obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
             obj.sync_hardware_dialog_();
             obj.sync_delay_dialog_();
+            obj.sync_excitation_dialog_();
         end
 
         function refresh_all_plots_(obj)
-            % Redraw all three panels from the Engine's current state, via the
-            % monitor. Order matters: show_calibration resets the monitor's
-            % graphics cache before drawing the lookup tables, so the response
-            % panels have to be drawn after it, not before.
-            obj.Monitor.show_calibration(obj.Engine);
+            % Redraw every panel from the Engine's current state, via the
+            % monitor: the response pair, the lookup tables, the background
+            % analysis, and the last delay probe. Each clears only its own
+            % objects now, so there is no ordering between them -- what used
+            % to matter here was that show_calibration reset the whole
+            % graphics cache and the response panels had to follow it.
+            %
+            % Which tab is on top is left alone. A load or a reset changes
+            % what the panels hold, not which measurement the operator was
+            % reading, and every panel is redrawn either way.
             obj.Monitor.show_engine_state(obj.Engine);
-
-            % The panel is showing the lookup tables again, whatever it was
-            % showing before. Recorded here rather than at each of the dozen
-            % call sites that redraw after a run, a load or a reset.
-            obj.TransferView_ = "calibration";
+            obj.redraw_transfer_panels_();
             obj.sync_display_controls_();
         end
 
@@ -1973,8 +2220,6 @@ classdef CalibrationGui < handle
             obj.refresh_sample_rate_label_();
             obj.refresh_conduction_delay_label_();
             obj.refresh_level_reference_label_();
-
-            obj.update_background_view_state_();
 
             hasAdapter = ~isempty(obj.Engine.Adapter);
             if hasAdapter
@@ -2585,12 +2830,14 @@ classdef CalibrationGui < handle
             % Preference keys are the Engine property names. Numeric values
             % are validated against the field each is headed for via
             % sync_controls_: a hand-edited preference outside its range
-            % would otherwise throw there rather than here. Max Output, the
-            % ambient temperature and the FFT length state their limits
-            % literally because their controls live in the on-demand settings
-            % window and do not exist yet. Every value here is in the unit the
-            % Engine property holds -- the temperature preference is Celsius,
-            % not the Fahrenheit its field shows.
+            % would otherwise throw there rather than here. Max Output,
+            % Excitation Voltage, Tone Rise/Fall Time, the ambient temperature
+            % and the FFT length state their limits literally because their
+            % controls live in an on-demand settings window and do not exist
+            % yet. Every value here is in the unit the Engine property holds
+            % -- the temperature preference is Celsius, not the Fahrenheit its
+            % field shows, and the ramp is seconds, not the milliseconds its
+            % field shows.
             factory = stimgen.calibration.Engine();
             numericPairs = {
                 'ReferenceLevel',     obj.RefLevelField.Limits
@@ -2598,7 +2845,8 @@ classdef CalibrationGui < handle
                 'MicSensitivity',     obj.MicSensField.Limits
                 'AmbientTemperature', obj.AmbientTempLimitsC
                 'NormativeValue',     obj.NormativeField.Limits
-                'ExcitationVoltage',  obj.ExcitationField.Limits
+                'ExcitationVoltage',  [eps, 10]
+                'ToneRampDuration',   [0.1e-3, 50e-3]
                 'MaxOutputVoltage',   [eps, 1000]
                 'SpectralFftLength',  [0, 2^24]
                 };
@@ -2662,6 +2910,11 @@ classdef CalibrationGui < handle
                 obj.Monitor.ShowVoltage = strcmp(stored, '1');
             end
 
+            stored = obj.get_pref_('decimateWaveforms', '');
+            if any(strcmp(stored, {'0', '1'}))
+                obj.Monitor.DecimateWaveforms = strcmp(stored, '1');
+            end
+
             units = string(obj.get_pref_('spectrumUnits', ''));
             if ismember(units, stimgen.calibration.LiveMonitor.SpectrumUnitList)
                 obj.Monitor.SpectrumUnits = units;
@@ -2679,6 +2932,14 @@ classdef CalibrationGui < handle
                 obj.Monitor.Weightings = types(checked);
             end
 
+            % The tab last read, so a window reopens where its operator left
+            % off. Only the selection is remembered -- what the panels held
+            % belonged to a session that has ended.
+            tab = string(obj.get_pref_('transferTab', ''));
+            if ismember(tab, ["calibration", "background", "latency"])
+                obj.set_transfer_view_(tab);
+            end
+
             % Everything above writes the monitor; this is what makes the
             % controls that mirror it agree with what was restored.
             obj.sync_display_controls_();
@@ -2688,19 +2949,21 @@ classdef CalibrationGui < handle
             % Snapshot every remembered setting: the controls-column values
             % and the View menu's display state. Read from the controls
             % rather than the engine -- the controls hold what the user
-            % last set, applied to an engine or not. The settings window's
-            % fields are the exception: it pushes every change to the engine
-            % immediately and may be closed by now, so the engine is where
-            % what the user last set lives -- and is why the temperature is
-            % written in Celsius, the unit it is read back in. Never throws:
-            % this runs on the window's close path.
+            % last set, applied to an engine or not. The settings windows'
+            % fields are the exception: each pushes every change to the
+            % engine immediately and may be closed by now, so the engine is
+            % where what the user last set lives -- and is why the
+            % temperature is written in Celsius and the ramp in seconds, the
+            % units they are read back in. Never throws: this runs on the
+            % window's close path.
             try
                 obj.set_pref_('ReferenceLevel',     sprintf('%.15g', obj.RefLevelField.Value));
                 obj.set_pref_('ReferenceFrequency', sprintf('%.15g', obj.RefFreqField.Value));
                 obj.set_pref_('MicSensitivity',     sprintf('%.15g', obj.MicSensField.Value));
                 obj.set_pref_('AmbientTemperature', sprintf('%.15g', obj.Engine.AmbientTemperature));
                 obj.set_pref_('NormativeValue',     sprintf('%.15g', obj.NormativeField.Value));
-                obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.ExcitationField.Value));
+                obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.Engine.ExcitationVoltage));
+                obj.set_pref_('ToneRampDuration',   sprintf('%.15g', obj.Engine.ToneRampDuration));
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
                 obj.set_pref_('AcCoupleResponse',   sprintf('%d', obj.Engine.AcCoupleResponse));
                 obj.set_pref_('SpectralWindow',     char(obj.Engine.SpectralWindow));
@@ -2718,7 +2981,9 @@ classdef CalibrationGui < handle
                 obj.set_pref_('transferLogX',    sprintf('%d', obj.Monitor.LogX));
                 obj.set_pref_('spectrumGhost',   sprintf('%d', obj.Monitor.ShowGhost));
                 obj.set_pref_('transferVoltage', sprintf('%d', obj.Monitor.ShowVoltage));
+                obj.set_pref_('decimateWaveforms', sprintf('%d', obj.Monitor.DecimateWaveforms));
                 obj.set_pref_('spectrumUnits', char(obj.Monitor.SpectrumUnits));
+                obj.set_pref_('transferTab',   char(obj.TransferView_));
                 types = stimgen.calibration.LiveMonitor.WeightingTypes;
                 sel = types(arrayfun(@(h) strcmp(h.Checked, 'on'), obj.WeightingMenus));
                 if isempty(sel)
@@ -2898,13 +3163,6 @@ if ~isempty(h) && all(isgraphics(h))
 end
 end
 
-% -------------------------------------------------------------------------
-function set_enabled_(h, tf)
-% Enable state of a menu item or toolbar tool. Same guard, same reason.
-if ~isempty(h) && all(isgraphics(h))
-    h.Enable = matlab.lang.OnOffSwitchState(tf);
-end
-end
 
 % -------------------------------------------------------------------------
 function chk = check_row_(g, row, labelText, tip, callback)
@@ -2963,6 +3221,18 @@ dd.Layout.Column = 2;
 if ~isempty(tip)
     lbl.Tooltip = tip;
     dd.Tooltip = tip;
+end
+end
+
+% -------------------------------------------------------------------------
+function delete_quietly_(ffn)
+% Remove a temporary file. Never throws: this runs from an onCleanup, where
+% an error would mask whatever ended the function that scheduled it.
+try
+    if isfile(ffn)
+        delete(ffn);
+    end
+catch
 end
 end
 

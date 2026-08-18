@@ -96,6 +96,18 @@ classdef Engine < handle
         % measures, but above the drift and mains-adjacent rumble it is there
         % to block.
         AcCoupleFrequency   (1,1) double {mustBePositive,mustBeFinite}      = 20    % Hz
+        % Per-edge rise/fall (onset/offset ramp) time applied to every tone
+        % burst this class plays: calibrate_tones, test_tones (and therefore
+        % refine_tones), and the burst the conduction-delay probe is embedded
+        % ahead of. build_tone_sequence_ hands twice this value to the
+        % excitation Tone's WindowDuration -- a raised-cosine (cos^2) window
+        % split evenly across onset and offset -- clamped so the two ramps
+        % never overlap on a very short burst. Longer suppresses broadband
+        % click transients at the burst edges at the cost of less steady-state
+        % signal to average over; shorter recovers signal on very short
+        % bursts. The default is the fixed 5 ms edge this class used before
+        % the setting existed.
+        ToneRampDuration    (1,1) double {mustBePositive,mustBeFinite}      = 0.005 % s, per edge
         % Air temperature in the test space, in degrees Celsius. It sets
         % SpeedOfSound, and through it every distance this class derives from
         % a time of flight: the air path a conduction delay implies and the

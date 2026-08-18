@@ -16,9 +16,14 @@ classdef LiveMonitor < handle
     % Graphics objects are created once and then updated in place, so a long
     % sweep does not rebuild the axes on every measurement. Updates are
     % rate-limited to MinInterval seconds; the final update of a run always
-    % renders. Long records are drawn as a min/max envelope and spectra are
+    % renders. Waveforms are drawn as a min/max envelope and spectra are
     % peak-held onto a log grid, which keeps redraw cost flat regardless of
-    % record length.
+    % record length; DecimateWaveforms=false trades that back for every
+    % sample of the time-domain panels.
+    %
+    % Every panel is captioned the same way: a short title naming what is
+    % on screen, with the measurement's numbers in a smaller subtitle
+    % underneath (caption_), so a caption never runs past its panel.
     %
     % The transfer panel also carries the standard A/B/C/D weighting curves on
     % request (Weightings), anchored to the measured level at 1 kHz so the gap
@@ -28,6 +33,13 @@ classdef LiveMonitor < handle
     % given none. Objects it created are the only ones reset() deletes, so it
     % can share axes with a host that draws its own static plots.
     %
+    % The transfer curve, the background analysis and the delay probe are one
+    % family of views. Given three axes they share the third and each clears
+    % the last one on its way in -- one panel, one view at a time. Given five,
+    % each gets its own and a redraw of one leaves the other two standing,
+    % which is what lets a host put them on tabs and keep three measurements
+    % on screen at once (CalibrationGui does).
+    %
     % Usage:
     %   % Own window, driven by an engine run:
     %   eng = stimgen.calibration.Engine(adapter);
@@ -35,16 +47,37 @@ classdef LiveMonitor < handle
     %   mon = stimgen.calibration.LiveMonitor(eng);
     %   eng.calibrate_tones();
     %
-    %   % Into a host GUI's axes:
+    %   % Into a host GUI's axes, sharing one transfer panel:
     %   mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSig axSpec axXfer]);
+    %
+    %   % ... or with a panel per view:
+    %   mon = stimgen.calibration.LiveMonitor(eng, ...
+    %       Axes=[axSig axSpec axXfer axBackground axLatency]);
     %
     % See also: stimgen.calibration.Engine, stimgen.calibration.LiveUpdate,
     %           stimgen.calibration.CalibrationGui
 
     properties
         MinInterval (1,1) double {mustBeNonnegative} = 0.05  % s between redraws
-        MaxPoints   (1,1) double {mustBePositive}    = 4000  % samples drawn per waveform
         SpectrumBins (1,1) double {mustBePositive}   = 1200  % log-grid bins in the spectrum
+
+        % How a time-domain waveform is drawn. On (the default), a record
+        % longer than 2*MaxPoints is reduced to the min/max envelope of each
+        % block, which keeps a redraw the same cost whatever the record
+        % length -- a calibration record can be hundreds of thousands of
+        % samples, and handing all of them to a line object costs more than
+        % the measurement did. Off draws every sample, which is what an
+        % operator zooming into the panel to see the record itself wants.
+        %
+        % The envelope preserves the peak of every block, so a clipped or
+        % transient record still reads as one; what it costs is the shape
+        % *within* a block, which at full-record zoom is below a pixel
+        % anyway. It only starts to matter once zoomed in far enough that a
+        % block spans several pixels -- which is exactly when to turn this
+        % off.
+        DecimateWaveforms (1,1) logical = true
+        MaxPoints (1,1) double {mustBePositive} = 4000  % blocks per decimated waveform
+
         SpectrumUnits (1,1) string = "dB SPL"  % y-axis of the spectrum panel; see SpectrumUnitList
         ShowGhost   (1,1) logical = true   % overlay the previous spectrum
         ShowVoltage (1,1) logical = true   % required-drive-voltage axis on the transfer plot
@@ -57,6 +90,11 @@ classdef LiveMonitor < handle
 
     properties (Constant)
         WeightingTypes = ["A", "B", "C", "D"]   % offered as overlays, in legend order
+
+        % The views that draw on the transfer panel -- one axes between them,
+        % or one each. Named here because the clearing rules, the cache keys
+        % and the weighting overlays are all per-view.
+        TransferPanels = ["transfer", "background", "latency"]
 
         % Units the spectrum panel can be drawn in, in menu order. dB SPL is the
         % calibration's own scale; the electrical units say whether the input
@@ -72,6 +110,8 @@ classdef LiveMonitor < handle
         AxSignal        % matlab.graphics.axis.Axes | matlab.ui.control.UIAxes | []
         AxSpectrum
         AxTransfer
+        AxBackground    % own axes when the host supplied five; else AxTransfer
+        AxLatency       % likewise
         Engine          % stimgen.calibration.Engine | []
         OwnsFigure (1,1) logical = false
     end
@@ -97,8 +137,10 @@ classdef LiveMonitor < handle
             %
             % Parameters:
             %   eng  - stimgen.calibration.Engine to follow; omit to attach later
-            %   Axes - [signal spectrum transfer] axes handles. Omit to create a
-            %          dedicated figure.
+            %   Axes - [signal spectrum transfer] axes handles, or five --
+            %          [signal spectrum transfer background latency] -- to give
+            %          each transfer-family view a panel of its own. Omit to
+            %          create a dedicated figure.
             arguments
                 eng = []
                 opts.Axes = []
@@ -110,13 +152,25 @@ classdef LiveMonitor < handle
                 obj.build_figure_();
             else
                 ax = opts.Axes;
-                if numel(ax) ~= 3
+                if numel(ax) ~= 3 && numel(ax) ~= 5
                     error('stimgen:calibration:LiveMonitor:badAxes', ...
-                        'Axes must be three handles: [signal spectrum transfer].');
+                        ['Axes must be three handles -- [signal spectrum transfer] ' ...
+                        '-- or five: [signal spectrum transfer background latency].']);
                 end
                 obj.AxSignal   = ax(1);
                 obj.AxSpectrum = ax(2);
                 obj.AxTransfer = ax(3);
+                % Three is the shared form: the background analysis and the
+                % delay probe draw on the transfer axes and clear whatever
+                % was there. Five gives each its own, so all three survive
+                % together.
+                if numel(ax) == 5
+                    obj.AxBackground = ax(4);
+                    obj.AxLatency    = ax(5);
+                else
+                    obj.AxBackground = ax(3);
+                    obj.AxLatency    = ax(3);
+                end
             end
 
             if ~isempty(eng)
@@ -137,9 +191,9 @@ classdef LiveMonitor < handle
         update(obj, d)     % Render one stimgen.calibration.LiveUpdate payload.
         reset(obj)         % Delete every graphics object this monitor created.
         show_engine_state(obj, eng)  % Draw an engine's current response, off-run.
-        show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer axes.
-        show_background(obj, eng)    % Draw an engine's background analysis on the transfer axes.
-        show_latency(obj, lat)       % Draw a conduction-delay probe's diagnostics on the transfer axes.
+        show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer panel.
+        show_background(obj, eng)    % Draw an engine's background analysis on its panel.
+        show_latency(obj, lat)       % Draw a conduction-delay probe's diagnostics on its panel.
 
         function set.Weightings(obj, value)
             obj.Weightings = unique(value, 'stable');
@@ -149,8 +203,12 @@ classdef LiveMonitor < handle
             % on the panel and a legend that disagrees with it: the legends
             % are built with AutoUpdate off and never pick up a line added
             % after them. Dropping both makes the next render rebuild them.
-            for t = stimgen.calibration.LiveMonitor.WeightingTypes
-                obj.drop_(char("wt_" + t));
+            % Every panel's copy goes, not just the one on screen: with a
+            % panel per view the same overlay is drawn on more than one.
+            for p = stimgen.calibration.LiveMonitor.TransferPanels
+                for t = stimgen.calibration.LiveMonitor.WeightingTypes
+                    obj.drop_(char("wt_" + p + "_" + t));
+                end
             end
             obj.drop_('xfer_legend');
             obj.drop_('static_legend');
@@ -214,8 +272,78 @@ classdef LiveMonitor < handle
         render_signal_(obj, d)      % Waveform panel.
         render_spectrum_(obj, d)    % Spectrum panel.
         render_transfer_(obj, d)    % Transfer-curve panel.
-        render_latency_(obj, lat)   % Conduction-delay panel, on the transfer axes.
-        render_weighting_(obj, ax, f, lvl)  % Weighting curves over a level/frequency axis.
+        render_latency_(obj, lat)   % Conduction-delay panel.
+        render_weighting_(obj, panel, f, lvl)  % Weighting curves over a level/frequency axis.
+
+        function ax = panel_axes_(obj, panel)
+            % The axes one view draws on. The three transfer-family views
+            % return the same handle unless the host gave each its own.
+            switch panel
+                case "background", ax = obj.AxBackground;
+                case "latency",    ax = obj.AxLatency;
+                otherwise,         ax = obj.AxTransfer;
+            end
+        end
+
+        function clear_for_(obj, panel)
+            % clear_for_(obj, panel)
+            % Release every graphics object one view owns, and those of any
+            % other view sharing its axes.
+            %
+            % With a panel per view only this view's objects go, which is
+            % what lets a background analysis and a delay probe outlive a
+            % sweep being redrawn over them. Where the views share one axes
+            % every view on it has to go instead: a curve left from another
+            % would be read against limits, a scale and an x-axis that are
+            % no longer its own.
+            obj.drop_keys_(stimgen.calibration.LiveMonitor.panel_keys_(panel));
+
+            family = stimgen.calibration.LiveMonitor.TransferPanels;
+            if ~any(panel == family)
+                return
+            end
+            ax = obj.panel_axes_(panel);
+            if isempty(ax)
+                return
+            end
+            for p = family(family ~= panel)
+                if isequal(obj.panel_axes_(p), ax)
+                    obj.drop_keys_(stimgen.calibration.LiveMonitor.panel_keys_(p));
+                end
+            end
+        end
+
+        function drop_keys_(obj, keys)
+            % Delete a list of cached objects and forget them.
+            for k = 1:numel(keys)
+                obj.drop_(keys{k});
+            end
+        end
+
+        function [t, v] = waveform_xy_(obj, y, fs, t0Ms)
+            % [t, v] = waveform_xy_(obj, y, fs)
+            % [t, v] = waveform_xy_(obj, y, fs, t0Ms)
+            % One waveform's display points, in milliseconds from t0Ms,
+            % following DecimateWaveforms. The single place that policy is
+            % applied, so the response, the excitation behind it and the
+            % delay probe's record are always drawn the same way -- three
+            % traces read against each other, which they could not be if
+            % one were an envelope and another every sample.
+            arguments
+                obj
+                y
+                fs (1,1) double
+                t0Ms (1,1) double = 0
+            end
+            if obj.DecimateWaveforms
+                [t, v] = stimgen.calibration.LiveMonitor.envelope_decimate_( ...
+                    y, fs, obj.MaxPoints);
+            else
+                v = reshape(y, 1, []);
+                t = (0:numel(v)-1) ./ fs .* 1e3;
+            end
+            t = t + t0Ms;
+        end
 
         function h = gobj_(obj, key, ctor)
             % h = gobj_(obj, key, ctor)
@@ -269,6 +397,63 @@ classdef LiveMonitor < handle
         [t, y] = envelope_decimate_(y, fs, maxPoints)   % Min/max envelope for display.
         [f, vrms, noiseBw] = spectrum_vrms_(y, fs, nBins, spec)  % V rms spectrum on a log grid.
         [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)  % V rms to a display unit.
+
+        function keys = panel_keys_(panel)
+            % keys = panel_keys_(panel)
+            % Every cache key one view owns, weighting overlays included.
+            % Enumerating them is what makes a redraw of one view able to
+            % leave the others standing; a new graphics object in any render
+            % function belongs on this list or it will outlive its panel.
+            %
+            % "response" covers the waveform and spectrum panels together:
+            % they are always cleared as a pair, being two views of one
+            % record.
+            wt = arrayfun(@(t) char("wt_" + panel + "_" + t), ...
+                stimgen.calibration.LiveMonitor.WeightingTypes, ...
+                UniformOutput=false);
+
+            switch panel
+                case "response"
+                    keys = [{'sig_span', 'sig_exc', 'sig_exc_fill', 'sig_resp', ...
+                        'sig_clip', 'spec_ghost', 'spec_current', 'spec_floor', ...
+                        'spec_marks'}, ...
+                        arrayfun(@(k) sprintf('spec_txt%d', k), 1:8, ...
+                        UniformOutput=false)];
+                case "background"
+                    keys = [{'bg_spectrum', 'bg_bands', 'bg_bands_a', ...
+                        'bg_broadband', 'bg_peaks', 'bg_legend'}, ...
+                        arrayfun(@(k) sprintf('bg_pk%d', k), 1:8, ...
+                        UniformOutput=false), wt];
+                case "latency"
+                    keys = [{'lat_corr', 'lat_pick', 'lat_pick_txt', ...
+                        'lat_bound', 'lat_probe', 'lat_floor', 'lat_legend'}, wt];
+                otherwise   % "transfer": the live sweep and the committed LUTs
+                    keys = [{'xfer_meas', 'xfer_sd', 'xfer_pending', 'xfer_cur', ...
+                        'xfer_norm', 'xfer_volt', 'xfer_vmax', 'xfer_vover', ...
+                        'xfer_legend', 'static_tone', 'static_swept_sine', ...
+                        'static_click', 'static_tone_v', 'static_swept_sine_v', ...
+                        'static_click_v', 'static_vmax', 'static_legend'}, wt];
+            end
+        end
+
+        function caption_(ax, titleText, subtitleText, titleColor)
+            % caption_(ax, titleText, subtitleText, titleColor)
+            % Set a panel's title and subtitle together. The title names what
+            % is on screen and stays short enough to fit the panel; the
+            % measurements that used to run past the panel's edge live in the
+            % smaller subtitle, which may be a cell array for two lines. Both
+            % are always written: the panels swap views over shared axes, and
+            % a view that set only its title would inherit the last view's
+            % subtitle.
+            arguments
+                ax
+                titleText
+                subtitleText = ''
+                titleColor (1,3) double = [0 0 0]
+            end
+            title(ax, titleText, Color=titleColor);
+            subtitle(ax, subtitleText, FontSize=9);
+        end
 
         function label = frequency_ticks_(ax, labelText)
             % label = frequency_ticks_(ax, labelText)

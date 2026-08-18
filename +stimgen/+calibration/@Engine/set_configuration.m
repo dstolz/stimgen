@@ -16,6 +16,10 @@ function set_configuration(obj, options)
 %                        slow drift does not inflate levels or bias burst
 %                        alignment.
 %   AcCoupleFrequency  - (1,1) double, > 0. Corner of that high-pass, Hz.
+%   ToneRampDuration   - (1,1) double, > 0. Per-edge rise/fall time applied to
+%                        every tone burst calibrate_tones/test_tones play,
+%                        seconds. Doubled into the total onset+offset gate,
+%                        clamped to half the burst duration.
 %   AmbientTemperature - (1,1) double, > -273.15. Air temperature in the test
 %                        space, degrees Celsius. Sets the speed of sound every
 %                        distance derived from a time of flight is computed
@@ -45,6 +49,7 @@ arguments
     options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
     options.AcCoupleResponse   (1,1) logical = obj.AcCoupleResponse
     options.AcCoupleFrequency  (1,1) double {mustBePositive,mustBeFinite} = obj.AcCoupleFrequency
+    options.ToneRampDuration   (1,1) double {mustBePositive,mustBeFinite} = obj.ToneRampDuration
     options.AmbientTemperature (1,1) double {mustBeFinite, ...
         mustBeGreaterThan(options.AmbientTemperature, -273.15)} = obj.AmbientTemperature
     options.SpectralWindow     (1,1) string {mustBeMember(options.SpectralWindow, ...
@@ -63,6 +68,7 @@ obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.MaxOutputVoltage  = options.MaxOutputVoltage;
 obj.AcCoupleResponse  = options.AcCoupleResponse;
 obj.AcCoupleFrequency = options.AcCoupleFrequency;
+obj.ToneRampDuration  = options.ToneRampDuration;
 obj.AmbientTemperature = options.AmbientTemperature;
 obj.SpectralWindow    = options.SpectralWindow;
 obj.SpectralFftLength = options.SpectralFftLength;

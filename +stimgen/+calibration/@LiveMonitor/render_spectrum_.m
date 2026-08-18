@@ -36,7 +36,7 @@ end
 
 if isempty(y) || fs <= 0
     clear_spectrum_(obj);
-    title(ax, 'Spectrum  (no data)');
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Spectrum  (no data)');
     return
 end
 
@@ -48,7 +48,7 @@ end
     stimgen.calibration.SpectralOptions.fromStruct(d.Context));
 if isempty(f)
     clear_spectrum_(obj);
-    title(ax, 'Spectrum  (no data)');
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Spectrum  (no data)');
     return
 end
 
@@ -106,7 +106,8 @@ render_markers_(obj, ax, d, f, lvl, lo, hi, info);
 grid(ax, 'on');
 xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, 'frequency (Hz)'));
 ylabel(ax, info.Label);
-title(ax, spectrum_title_(d, floorVal, info));
+stimgen.calibration.LiveMonitor.caption_(ax, 'Spectrum', ...
+    spectrum_subtitle_(d, floorVal, info));
 end
 
 % ------------------------------------------------------------------------ %
@@ -219,11 +220,12 @@ v = lvl(i);
 end
 
 % ------------------------------------------------------------------------ %
-function s = spectrum_title_(d, floorVal, info)
-% Summarize the measurement in the title: the level the LUT will record, plus
-% whichever of SNR/THD the stage actually estimated. Those three are dB SPL and
-% dB ratios whatever the axis is showing; only the floor follows the units.
-parts = {'Spectrum'};
+function s = spectrum_subtitle_(d, floorVal, info)
+% Summarize the measurement in the subtitle: the level the LUT will record,
+% plus whichever of SNR/THD the stage actually estimated. Those three are dB
+% SPL and dB ratios whatever the axis is showing; only the floor follows the
+% units.
+parts = {};
 if isfinite(d.Metrics.spl_db)
     parts{end+1} = sprintf('%.1f dB SPL', d.Metrics.spl_db);
 end
@@ -234,5 +236,5 @@ if isfinite(d.Metrics.thd_db)
     parts{end+1} = sprintf('THD %.0f dB', d.Metrics.thd_db);
 end
 parts{end+1} = sprintf('floor %s %s', sprintf(info.Format, floorVal), info.Suffix);
-s = strjoin(parts, '  |  ');
+s = strjoin(parts, '  ·  ');
 end

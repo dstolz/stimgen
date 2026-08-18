@@ -13,7 +13,7 @@ function render_transfer_(obj, d)
 %     that line cannot be produced at the normative level, and finding that
 %     out during the sweep rather than during an experiment is the whole
 %     reason to watch a calibration run;
-%   - progress and a time estimate in the title.
+%   - progress in the title, with the timing and level span in the subtitle.
 
 ax = obj.AxTransfer;
 T  = d.Table;
@@ -55,9 +55,9 @@ end
 % The click sweep runs this same panel against duration, where a weighting
 % has nothing to say; the payload's own axis label is what distinguishes it.
 if contains(d.XLabel, 'frequency', IgnoreCase=true)
-    obj.render_weighting_(ax, xd(valid), T.spl_db(valid));
+    obj.render_weighting_("transfer", xd(valid), T.spl_db(valid));
 else
-    obj.render_weighting_(ax, [], []);
+    obj.render_weighting_("transfer", [], []);
 end
 
 if obj.ShowVoltage
@@ -67,7 +67,8 @@ end
 
 grid(ax, 'on');
 xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, char(d.XLabel)));
-title(ax, transfer_title_(d, T, valid));
+[head, sub] = transfer_caption_(d, T, valid);
+stimgen.calibration.LiveMonitor.caption_(ax, head, sub);
 
 hLeg = obj.gobj_('xfer_legend', @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
@@ -182,9 +183,10 @@ ax.YAxis(2).Color = [0.20 0.55 0.25];
 end
 
 % ------------------------------------------------------------------------ %
-function s = transfer_title_(d, T, valid)
-% Two lines: what is running and how far along, then the span the curve has
-% covered so far.
+function [head, sub] = transfer_caption_(d, T, valid)
+% Title: what is running and how far along. Subtitle: the timing and the span
+% the curve has covered so far -- the numbers, in the smaller type that keeps
+% them inside the panel.
 stage = stimgen.calibration.LiveMonitor.stage_name_(d.Stage);
 
 head = stage;
@@ -196,25 +198,25 @@ if d.RepeatTotal > 1
 end
 
 if d.Phase == "done"
-    head = sprintf('%s  ·  complete in %s', head, ...
+    timing = sprintf('complete in %s', ...
         stimgen.calibration.LiveMonitor.clock_(d.Elapsed));
 elseif isfinite(d.Progress) && d.Progress > 0.02
     remaining = d.Elapsed * (1 - d.Progress) / d.Progress;
-    head = sprintf('%s  ·  %s elapsed, ~%s left', head, ...
+    timing = sprintf('%s elapsed, ~%s left', ...
         stimgen.calibration.LiveMonitor.clock_(d.Elapsed), ...
         stimgen.calibration.LiveMonitor.clock_(remaining));
 else
-    head = sprintf('%s  ·  %s elapsed', head, ...
+    timing = sprintf('%s elapsed', ...
         stimgen.calibration.LiveMonitor.clock_(d.Elapsed));
 end
 
 if nnz(valid) >= 2
     lvl = T.spl_db(valid);
-    tail = sprintf('%.1f–%.1f dB SPL (%.1f dB span)', ...
+    span = sprintf('%.1f–%.1f dB SPL (%.1f dB span)', ...
         min(lvl), max(lvl), max(lvl) - min(lvl));
 else
-    tail = 'measuring...';
+    span = 'measuring...';
 end
 
-s = {head, tail};
+sub = sprintf('%s  ·  %s', timing, span);
 end

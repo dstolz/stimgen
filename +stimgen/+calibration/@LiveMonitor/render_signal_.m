@@ -31,7 +31,7 @@ if isempty(y) || fs <= 0
     obj.drop_('sig_resp');
     obj.drop_('sig_clip');
     hide_excitation_axis_(ax);
-    title(ax, 'Response  (no data)');
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Response  (no data)');
     return
 end
 
@@ -50,7 +50,7 @@ hSpan = obj.gobj_('sig_span', @() patch(ax, XData=NaN, YData=NaN, ...
     FaceColor=[0.85 0.90 0.99], FaceAlpha=1, EdgeColor='none', ...
     HandleVisibility='off'));
 
-[t, yv] = stimgen.calibration.LiveMonitor.envelope_decimate_(y, fs, obj.MaxPoints);
+[t, yv] = obj.waveform_xy_(y, fs);
 
 hResp = obj.gobj_('sig_resp', @() line(ax, NaN, NaN, ...
     Color=[0.10 0.25 0.60], Marker='none', LineWidth=0.75, DisplayName='response'));
@@ -77,7 +77,7 @@ end
 % right-hand ruler, which is only a second scale over the same span.
 x = d.Excitation;
 if numel(x) == numel(y) && any(x)
-    render_excitation_(obj, ax, x, fs, obj.MaxPoints, yl);
+    render_excitation_(obj, ax, x, fs, yl);
 else
     obj.drop_('sig_exc');
     obj.drop_('sig_exc_fill');
@@ -115,20 +115,24 @@ grid(ax, 'on');
 xlabel(ax, 'time (ms)');
 ylabel(ax, 'response (V)');
 
+% The title states only what the panel is (and the one red word that must
+% not be missed); the numbers live in the subtitle, whose smaller type is
+% what keeps a metrics-laden caption inside the panel.
 dcTxt = dc_text_(d.Metrics, peak);
 
 if d.Metrics.clipping
-    title(ax, sprintf('Response  \\bfCLIPPING\\rm  |  peak %.3f V, RMS %.3f V%s', ...
-        peak, rms_, dcTxt), Color=[0.75 0 0]);
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Response  \bfCLIPPING\rm', ...
+        sprintf('peak %.3f V  ·  RMS %.3f V%s', peak, rms_, dcTxt), [0.75 0 0]);
 else
     headroomDb = 20 * log10(max(fsv, eps) / max(peak, eps));
-    title(ax, sprintf('Response  |  peak %.3f V (%.1f dB headroom), RMS %.3f V%s', ...
-        peak, headroomDb, rms_, dcTxt), Color=[0 0 0]);
+    stimgen.calibration.LiveMonitor.caption_(ax, 'Response', ...
+        sprintf('peak %.3f V (%.1f dB headroom)  ·  RMS %.3f V%s', ...
+        peak, headroomDb, rms_, dcTxt));
 end
 end
 
 % ------------------------------------------------------------------------ %
-function render_excitation_(obj, ax, x, fs, maxPoints, yl)
+function render_excitation_(obj, ax, x, fs, yl)
 % What was played, as a shaded area under its own outline, read off a
 % right-hand ruler carrying the volts it was actually played at.
 %
@@ -149,7 +153,7 @@ function render_excitation_(obj, ax, x, fs, maxPoints, yl)
 % from the one that came back. The area also makes a gated burst's envelope
 % legible at a glance, which is what the eye checks the response's
 % segmentation against.
-[tx, xv] = stimgen.calibration.LiveMonitor.envelope_decimate_(x, fs, maxPoints);
+[tx, xv] = obj.waveform_xy_(x, fs);
 
 xPeak = max(abs(xv));
 xl    = max(xPeak * 1.15, eps);
@@ -195,7 +199,7 @@ end
 
 % ------------------------------------------------------------------------ %
 function s = dc_text_(m, peak)
-% Title clause for the record's baseline. Two different things are worth
+% Subtitle clause for the record's baseline. Two different things are worth
 % saying, and only one of them at a time:
 %
 %   coupled  - the AC coupling option acted on this record. Stated whenever
@@ -208,15 +212,15 @@ function s = dc_text_(m, peak)
 %              matter (1% of peak). This is the reading that tells you the
 %              option is worth turning on.
 if isfield(m, 'ac_coupled_hz') && isfinite(m.ac_coupled_hz)
-    s = sprintf(', AC coupled %s', hz_text_(m.ac_coupled_hz));
+    s = sprintf('  ·  AC coupled %s', hz_text_(m.ac_coupled_hz));
     if isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
         s = sprintf('%s (DC %s removed)', s, volt_text_(m.dc_removed_v));
     end
 elseif isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
-    s = sprintf(', DC removed %s (record too short to filter)', ...
+    s = sprintf('  ·  DC removed %s (record too short to filter)', ...
         volt_text_(m.dc_removed_v));
 elseif isfield(m, 'dc_v') && isfinite(m.dc_v) && abs(m.dc_v) > 0.01 * max(peak, eps)
-    s = sprintf(', DC %s', volt_text_(m.dc_v));
+    s = sprintf('  ·  DC %s', volt_text_(m.dc_v));
 else
     s = '';
 end

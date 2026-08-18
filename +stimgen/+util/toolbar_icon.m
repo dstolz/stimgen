@@ -9,7 +9,8 @@ function icon = toolbar_icon(name)
 % Parameters:
 %   name - one of "open", "save", "protocol", "calibration", "connect",
 %          "disconnect", "help", "add", "remove", "play", "inspect",
-%          "refresh", "transfer", "background", "ghost", "voltage", "logx"
+%          "refresh", "transfer", "background", "ghost", "voltage", "logx",
+%          "camera"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
@@ -17,7 +18,8 @@ function icon = toolbar_icon(name)
 arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
         "calibration","connect","disconnect","help","add","remove","play", ...
-        "inspect","refresh","transfer","background","ghost","voltage","logx"])}
+        "inspect","refresh","transfer","background","ghost","voltage","logx", ...
+        "camera"])}
 end
 
 N = 24;
@@ -144,6 +146,14 @@ switch name
         boltCol = [12 7 11  9 12 17 12 16];
         boltRow = [ 4 13 13 20 20 11 11  4];
         mask = inpolygon(col, row, boltCol, boltRow);
+
+    case "camera" % camera body with lens -- capture the window
+        bump = row>=5 & row<=8  & col>=8 & col<=15;
+        body = row>=8 & row<=20 & col>=3 & col<=22;
+        cx = 12.5; cy = 14;
+        d = sqrt((row-cy).^2 + (col-cx).^2);
+        ring = d>=2.4 & d<=4.4;   % transparent ring leaves a solid lens disc
+        mask = (bump | body) & ~ring;
 
     case "logx" % baseline under log-spaced frequency ticks
         mask = row>=16 & row<=17 & col>=3 & col<=22;

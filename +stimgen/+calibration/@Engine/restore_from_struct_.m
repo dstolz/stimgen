@@ -36,6 +36,12 @@ if isfield(s, 'AcCoupleFrequency')
     obj.AcCoupleFrequency = s.AcCoupleFrequency;
 end
 
+% Written since the tone burst ramp became configurable; an older file keeps
+% the fixed 5 ms edge it was actually measured with.
+if isfield(s, 'ToneRampDuration')
+    obj.ToneRampDuration = s.ToneRampDuration;
+end
+
 % Written since the speed of sound followed a measured temperature. A file
 % saved before that had its distances computed at 343 m/s, which is what the
 % 20 C default still means.
