@@ -6,7 +6,8 @@ function reset_calibration(obj)
 % calibrate_reference -- ReferenceLevel, ReferenceFrequency, NormativeValue,
 % ExcitationVoltage, MaxOutputVoltage, AcCoupleResponse, AcCoupleFrequency,
 % ShowLivePlots, ToneLutSource) are left
-% untouched.
+% untouched. Notes is kept for the same reason: it is text the operator typed,
+% and starting the measurements over does not make it wrong.
 %
 % Clears CalibrationData (tone/click/swept_sine tables, any designed filter,
 % and any background capture), the last excitation/response record, and

@@ -92,16 +92,38 @@ measurement**:
 
 | Tab | Drawn by | Holds |
 |---|---|---|
-| Transfer Curves | a live sweep, then `LiveMonitor.show_calibration` | every lookup table overlaid, with the drive voltage each point needs |
+| Tones | Calibrate Tones and Test Tones, then `LiveMonitor.show_calibration` | the tone table against frequency, with the drive voltage each point needs, and under it the distortion and SNR measured at each frequency |
+| Clicks | Calibrate Clicks and Test Clicks, then `show_calibration` | the same against click duration |
+| Swept Sine | Calibrate Swept Sine, then `show_calibration` | the swept sine table, and under it the deconvolved flatness and group delay beside the impulse response |
+| Filter Test | Test Filter, then `LiveMonitor.show_filter_test` | the response with and without the equalizer in dB SPL, and under it each one's deviation from flat against the ripple tolerance |
 | Background Noise | Measure Background, via `show_background` | band levels, the broadband and A-weighted level, tonal peaks |
 | Conduction Delay | Measure Conduction Delay, via `show_latency` | the click correlation the delay was chosen from, over the probe response |
 
-Each tab owns its own axes, which is the point: the three used to share one
-panel and take turns on it, so measuring a background threw away the sweep on
-screen and a delay probe threw away both. Now every panel keeps whatever was
-last drawn on it, switching tabs costs nothing and re-measures nothing, and a
-panel with no measurement yet says so (`(no data)`, `(not measured)`) rather
-than sitting blank.
+Each tab owns its own axes, which is the point: they used to share one panel
+and take turns on it, so measuring a background threw away the sweep on screen
+and a delay probe threw away both. Now every panel keeps whatever was last
+drawn on it, switching tabs costs nothing and re-measures nothing, and a panel
+with no measurement yet says so (`(no data)`, `(not measured)`, `(not run)`)
+rather than sitting blank.
+
+A stimulus tab is not one plot drawn three times: each carries its table on the
+abscissa that table is keyed on — frequency, or click duration, which cannot
+share one axis honestly — and under it what only that stimulus measures. A
+sweep and the test that verifies its table both draw on that stimulus's tab.
+
+**Filter Test** is the one tab that verifies no table, and the reason it is not
+on Tones. The test measures the rig twice — once as it is, once through the
+equalizer — so what it has to show is the *comparison*, and there is no room
+for a second measurement on a panel that already holds a lookup table. Drawn on
+the Tones tab it either painted over the tone table or was wiped by the next
+redraw of it, and the unfiltered curve was overwritten by the filtered one
+halfway through the run. The two curves sit at different absolute levels
+(the filtered chirp is renormalized to peak before it is played, as
+`apply_calibration` does), which is why the flatness each one is judged on is
+read off the deviation plot underneath rather than off the levels above. The
+verdict is in the panel title, coloured, with the ripple numbers under it; the
+tolerance is the shaded band on the lower plot. It is redrawn from
+`CalibrationData.filterTest`, so a test loaded from a `.esgc` is on screen too.
 
 The tab strip is the view selector *and* the readout of which view is up, in
 the place the plot is read. That made three controls redundant, and they were
@@ -112,9 +134,11 @@ Noise Analysis / Conduction Delay Probe** menu items. `TransferView_` now
 `on_plot_tab_changed_`, and the code's own switches go through
 `set_transfer_view_`, so the two can never disagree.
 
-Starting a sweep brings the Transfer Curves tab forward
-(`focus_sweep_panel_`), so a run is never watched off-screen; finishing a
-background capture or a delay probe brings that measurement's own tab forward.
+Starting a run brings its own tab forward (`focus_sweep_panel_`, which resolves
+the tab through the same `LiveMonitor.stage_panel` map the monitor routes the
+live updates with, so the two cannot disagree), so a run is never watched
+off-screen; finishing a background capture or a delay probe brings that
+measurement's own tab forward.
 Nothing else steals the tab — a load, a reset or a redraw leaves the operator
 where they were.
 
@@ -303,6 +327,7 @@ position in one long list:
 | Calibration | Normative Value — the level every sweep's table is anchored to — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
+| Notes | One free-text box, full width — see [Notes](#notes) |
 | Footer (pinned) | Stop beside Reset Calibration, then the Conduction Delay readout and the status line |
 
 The whole microphone end of the rig is in one section: what the calibrator
@@ -334,15 +359,30 @@ from **Options > Hardware and Analysis Settings...**:
 | Group | Contents |
 |---|---|
 | (top) | Sample Rate readout (read-only, reported by the adapter), Max Output Voltage, AC Couple Acquired Signal |
+| Hardware Gain (recorded, not applied) | ADC Gain (dB), DAC Attenuation (dB) — see [Recorded hardware gain](#recorded-hardware-gain) |
 | Spectral Analysis | Analysis Window, FFT Length (samples) — see [Spectral Analysis](#spectral-analysis) |
 
 They are set once per rig, not once per sweep, so they earn a window over a
 place in the per-sweep column. The measured conduction delay is not among them
 — it is re-measured for every acquisition, so it belongs with the run rather
-than with the rig, and its readout is in the footer. The window is non-modal
-and may stay open during a run. Its settings push to the engine the moment they
-change, rather than when the next run starts, since the window may be closed
-by then.
+than with the rig, and its readout is in the footer. The window is modal: it
+takes the rig's settings out of the main window's way while they are read and
+changed, and nothing on the main window is worth reaching from behind a handful
+of fields answered in a moment. Its settings push to the engine the moment they
+change, rather than when the next run starts, since the window is gone by then.
+
+Each of the three windows carries a **Close** button, and closes on Escape as
+well. It only dismisses. Nothing is waiting to be confirmed, because a field is
+applied as it is committed, and nothing is staged to be cancelled; modality is
+what makes the button matter, since dismissing the window is the way back to
+the rest of the GUI.
+
+Modality has one cost, and it is the reason the delay window's own instruction
+ends by saying to close it: a measurement cannot be started, or watched, from
+behind one of these windows. It also does not make the fields pending. They
+still apply as they are committed, because a sweep reads the engine and not the
+window, so a value has to be in the engine whether it was the operator or
+MATLAB that closed the window it was typed into.
 
 **Options > Conduction Delay Settings...** is the second window, on the same
 terms, and holds what the [delay probe](#measuring-it-on-its-own) is run with:
@@ -359,8 +399,8 @@ pressed — the probe is the measurement most often repeated back to back, and a
 prompt in front of it made one action into three.
 
 **Options > Excitation Settings...** is the third window, on the same terms —
-non-modal, and pushing each change to the engine immediately rather than at
-the next run:
+modal, and pushing each change to the engine immediately rather than at the
+next run:
 
 | Setting | Owner |
 |---|---|
@@ -372,14 +412,41 @@ next — which is why they live in a window rather than a row in the Calibration
 section, on the same reasoning as Max Output Voltage and Ambient Temperature
 above.
 
-Every field and toggle in this column, all three settings windows' fields,
-and the whole display state — spectrum unit, weighting overlays,
+Every field and toggle in this column **except Notes**, all three settings
+windows' fields, and the whole display state — spectrum unit, weighting overlays,
 ghost, drive-voltage axis, log frequency axis — are remembered across MATLAB sessions as
 `StimCalibrationGui` preferences. They are written when the window closes and
 after each successful measurement start, and reapplied the next time the
 window opens — per field, and only where the engine still holds its factory
 default, so settings carried by a supplied engine, or by a loaded or
 in-progress calibration, always win over remembered ones.
+
+## Notes
+
+The **Notes** section at the bottom of the controls column is a free-text box
+for the operator's own account of the calibration: which speaker and which
+microphone, where they stood, what was odd about the rig that day. It is
+never parsed, and nothing in the package reads it back into a calculation.
+
+It is the one control in this column that does **not** belong to the window.
+It is a view of `Engine.Notes`, written into the `.esgc` by `Engine.save` and
+restored by `Engine.load`, so a note comes back with the calibration it was
+written about. That is also why it is not a `StimCalibrationGui` preference:
+a note about Tuesday's rig must not turn up prefilled on Wednesday's, on a
+different bench.
+
+Three consequences follow from that ownership:
+
+- Editing the box writes the engine immediately, and **Save .esgc** commits
+  the box again first, so a note typed and then saved with the toolbar button
+  — without the box ever losing focus — still reaches the file.
+- **Reset Calibration** leaves it alone. It discards measurements; the words
+  the operator wrote about the rig are not made wrong by that.
+- Loading a calibration replaces it, like every other field the file carries.
+
+The notes are printed at the top of [Print Calibration
+Summary](#gui-menu-workflow-current), which is where they are read back most
+often.
 
 ## GUI Menu Workflow (Current)
 
@@ -392,21 +459,45 @@ File menu actions:
 5. Load .esgc
 6. Save .esgc
 7. Recent Calibrations (submenu)
-8. Save Screenshot... — the entire window, controls column included, to a
+8. Print Calibration Summary — `Engine.describe` on the command window: what
+   the tables were measured through, what each one covers, how each
+   verification came out, and the [Notes](#notes). Text rather than a dialog
+   because it is meant to be copied into a notebook entry, and the same
+   report `eng.describe` gives at the prompt. The command window is raised
+   after printing, since this window is usually in front of it. Notes are
+   committed first, so a note still being typed is in what gets printed. Also
+   on the toolbar, as the page-of-text button beside the camera
+9. Save Screenshot... — the entire window, controls column included, to a
    PNG/JPG/PDF via `exportapp` (the one capture that includes UI components;
    `copygraphics` and `print` render the axes alone). The folder is
    remembered as the `ScreenshotDir` preference, separately from the .esgc
    folders — screenshots go to notebooks and reports, not the data tree
-9. Copy Window to Clipboard — the same full-window capture, onto the system
-   clipboard as an image (through .NET, so the full-window form is
-   Windows-only; elsewhere the plot area alone is copied via `copygraphics`
-   and the status line says so). Also on the toolbar as the camera button
+10. Copy Window to Clipboard — the same full-window capture, onto the system
+    clipboard as an image (through .NET, so the full-window form is
+    Windows-only; elsewhere the plot area alone is copied via `copygraphics`
+    and the status line says so). Also on the toolbar as the camera button
 
-The toolbar's first group mirrors the five non-submenu File actions, plus the
-window copy (camera) and the Quick Start, as push buttons for one-click
-access; its second group is the overlay toggles (see [Choosing how the plots
-draw](#choosing-how-the-plots-draw)). Both are built by `build_toolbar_` and
-neither adds behavior the menus do not have.
+The toolbar's first group mirrors the five non-submenu File actions as push
+buttons for one-click access, then two ways of taking the session out of the
+window — the summary (a page of text) and the window copy (a camera) — then
+the two help links; its second group is the overlay toggles (see [Choosing how
+the plots draw](#choosing-how-the-plots-draw)). Both are built by
+`build_toolbar_` and neither adds behavior the menus do not have.
+
+The **Help** menu, and the last pair of first-group toolbar buttons, are two
+entry points into the one wiki page that documents this window:
+
+| Toolbar button | Also at | Opens |
+| --- | --- | --- |
+| Question mark | Help ▸ Calibration Quick Start (Wiki) | `QuickStartURL` — the walkthrough from the top: what calibration is and what a rig needs |
+| Open book | Help ▸ Guide to This Window (Wiki) | `GuiGuideURL` — the same page at its `#gui-walkthrough-recommended` anchor, the step-by-step tour that names every control |
+
+One page deliberately, because a control is only explicable by the step it
+belongs to; two addresses so that neither audience has to scroll past the
+other's half. Both go through `open_wiki_page_`, which states the address in a
+dialog if no browser could be opened — the address is what is needed either
+way. The workflow is maintained on the wiki rather than in a dialog here, so
+it cannot drift out of step with the window it describes.
 
 View menu items, all checkable:
 
@@ -596,6 +687,33 @@ in a saved analysis were computed with it — loading the file without it would
 restate them at whatever the loading rig happens to be set to. A file written
 before this setting existed loads at 20 °C (68 °F), which is what its distances
 were computed at.
+
+## Recorded hardware gain
+
+**ADC Gain (dB)** and **DAC Attenuation (dB)**, in the Hardware and Analysis
+Settings window, set `Engine.AdcGain` and `Engine.DacAttenuation`. They are the
+only fields in this GUI that change nothing. Type in what the rig's input stage
+and output attenuator are set to; the numbers travel into the `.esgc` file, the
+`toStruct`/`saveobj` of a `stimgen.StimCalibration`, and nowhere else.
+
+Nothing reads them back, and nothing should. A calibration measures the chain as
+it stands, so whatever gain the amplifier and attenuator were set to is already
+inside every voltage and level the sweep recorded. Applying either number again
+at lookup time would double-count it and put every stimulus off by that many dB.
+The group's heading says *recorded, not applied* for that reason: a gain field on
+a calibration window otherwise reads as one that is applied.
+
+What they buy is the one thing a finished table cannot be checked against
+afterwards — the knob positions it was made at. A table that comes back 6 dB low
+next month is a different question if the file says the input stage was at 20 dB
+and the amplifier is now at 26.
+
+Both default to **0 dB**, the neutral setting, and are remembered per rig in the
+GUI's preferences alongside Max Output Voltage, so they only have to be typed
+when the rig changes. A calibration saved before these fields existed loads at
+0 dB as well — that value means "no gain recorded" as much as it means unity, and
+the two cannot be told apart, which is the price of a neutral default over a
+blank one.
 
 ## AC Couple Acquired Signal
 

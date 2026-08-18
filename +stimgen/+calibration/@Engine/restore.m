@@ -35,6 +35,7 @@ cfg = {};
 scalarFields = ["MicSensitivity", "ReferenceLevel", "ReferenceFrequency", ...
                 "NormativeValue", "MaxOutputVoltage", "ShowLivePlots", ...
                 "ToneLutSource", "AcCoupleResponse", "AcCoupleFrequency", ...
+                "AdcGain", "DacAttenuation", ...
                 "SpectralWindow", "SpectralFftLength"];
 for k = 1:numel(scalarFields)
     f = scalarFields(k);
@@ -48,6 +49,12 @@ end
 % the current default corner rather than being dropped as unknown.
 if ~isfield(s, 'AcCoupleResponse') && isfield(s, 'DemeanResponse') && ~isempty(s.DemeanResponse)
     cfg = [cfg, {'AcCoupleResponse', logical(s.DemeanResponse)}];
+end
+
+% One string here, but one entry per line in a struct a text area filled in,
+% so it is joined rather than assigned straight through.
+if isfield(s, 'Notes') && ~isempty(s.Notes)
+    cfg = [cfg, {'Notes', join(string(s.Notes(:)), newline)}];
 end
 
 if isfield(s, 'ExcitationVoltage') && ~isempty(s.ExcitationVoltage)

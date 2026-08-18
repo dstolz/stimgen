@@ -1,6 +1,13 @@
-function render_transfer_(obj, d)
-% render_transfer_(obj, d)
-% Transfer panel: the calibration curve as it fills in.
+function render_transfer_(obj, d, panel)
+% render_transfer_(obj, d, panel)
+% One stimulus panel, filling in as its sweep runs.
+%
+% Every stimulus's sweep is measured the same way -- a level per abscissa,
+% averaged over repeats -- so one renderer draws all three, and the panel it
+% is asked for decides only which axes and which cached objects it owns
+% (LiveMonitor.stage_panel maps a run stage to that panel). What separates
+% the stimuli is what is worth showing ONCE the table is committed, and that
+% belongs to show_lut_ and the detail renderers under it, not here.
 %
 % What it adds over a bare line through the measured points:
 %   - a rug of ticks at every x still to be measured, so the shape of the
@@ -14,9 +21,22 @@ function render_transfer_(obj, d)
 %     out during the sweep rather than during an experiment is the whole
 %     reason to watch a calibration run;
 %   - progress in the title, with the timing and level span in the subtitle.
+%
+% Parameters:
+%   d     - stimgen.calibration.LiveUpdate payload
+%   panel - the stimulus panel to draw on; see LiveMonitor.TransferPanels
+arguments
+    obj
+    d (1,1) stimgen.calibration.LiveUpdate
+    panel (1,1) string = "transfer"
+end
 
-ax = obj.AxTransfer;
-T  = d.Table;
+ax = obj.panel_axes_(panel);
+if ~isgraphics(ax)
+    return
+end
+k = @(name) char(panel + "_" + name);
+T = d.Table;
 
 xd    = T.x .* d.XFactor;
 valid = isfinite(T.spl_db) & isfinite(xd);
@@ -32,15 +52,15 @@ end
 % clipping against whatever was shown here last.
 ax.YLimMode = 'auto';
 
-render_ribbon_(obj, ax, xd, T, valid);
+render_ribbon_(obj, ax, k, xd, T, valid);
 
-hMeas = obj.gobj_('xfer_meas', @() line(ax, NaN, NaN, LineStyle='-', ...
+hMeas = obj.gobj_(k('meas'), @() line(ax, NaN, NaN, LineStyle='-', ...
     Color=[0.10 0.25 0.60], LineWidth=1, DisplayName='measured'));
 set(hMeas, XData=xd(valid), YData=T.spl_db(valid));
 
-render_pending_rug_(obj, ax, xd, valid, T);
-render_current_(obj, ax, xd, T, d);
-render_normative_(obj, ax, xd, d);
+render_pending_rug_(obj, ax, k, xd, valid, T);
+render_current_(obj, ax, k, xd, T, d);
+render_normative_(obj, ax, k, xd, d);
 
 ylabel(ax, 'level (dB SPL)');
 if obj.LogX
@@ -52,16 +72,17 @@ if numel(xd) > 1 && all(isfinite(xd([1 end])))
     xlim(ax, [min(xd) * 0.93, max(xd) * 1.07]);
 end
 
-% The click sweep runs this same panel against duration, where a weighting
-% has nothing to say; the payload's own axis label is what distinguishes it.
+% The click sweep runs against duration, where a weighting has nothing to
+% say; the payload's own axis label is what distinguishes it, since this
+% renderer also draws the filter test, whose x is frequency.
 if contains(d.XLabel, 'frequency', IgnoreCase=true)
-    obj.render_weighting_("transfer", xd(valid), T.spl_db(valid));
+    obj.render_weighting_(panel, xd(valid), T.spl_db(valid));
 else
-    obj.render_weighting_("transfer", [], []);
+    obj.render_weighting_(panel, [], []);
 end
 
 if obj.ShowVoltage
-    render_voltage_(obj, ax, xd, T, valid, d);
+    render_voltage_(obj, ax, k, xd, T, valid, d);
     yyaxis(ax, 'left');
 end
 
@@ -70,13 +91,13 @@ xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, char(d.XLabel)))
 [head, sub] = transfer_caption_(d, T, valid);
 stimgen.calibration.LiveMonitor.caption_(ax, head, sub);
 
-hLeg = obj.gobj_('xfer_legend', @() legend(ax, Location='southwest', ...
+hLeg = obj.gobj_(k('legend'), @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
 end
 
 % ------------------------------------------------------------------------ %
-function render_ribbon_(obj, ax, xd, T, valid)
+function render_ribbon_(obj, ax, k, xd, T, valid)
 % +/-1 SD across repeats, as a filled band. Drawn first so it sits under the
 % curve; dropped entirely on a single-pass run, where it would be a flat zero
 % band implying a precision that was never measured.
@@ -86,62 +107,62 @@ if isfield(T, 'sd_db')
 end
 band = valid & isfinite(sd) & sd > 0;
 if nnz(band) < 2
-    obj.drop_('xfer_sd');
+    obj.drop_(k('sd'));
     return
 end
 
 xb = xd(band);
 hi = T.spl_db(band) + sd(band);
 lo = T.spl_db(band) - sd(band);
-h = obj.gobj_('xfer_sd', @() patch(ax, XData=NaN, YData=NaN, ...
+h = obj.gobj_(k('sd'), @() patch(ax, XData=NaN, YData=NaN, ...
     FaceColor=[0.10 0.25 0.60], FaceAlpha=0.15, EdgeColor='none', ...
     HandleVisibility='off'));
 set(h, XData=[xb, fliplr(xb)], YData=[hi, fliplr(lo)]);
 end
 
 % ------------------------------------------------------------------------ %
-function render_pending_rug_(obj, ax, xd, valid, T)
+function render_pending_rug_(obj, ax, k, xd, valid, T)
 % Tick marks along the bottom at every x not yet measured.
 pending = ~valid & isfinite(xd);
 if ~any(pending) || ~any(valid)
-    obj.drop_('xfer_pending');
+    obj.drop_(k('pending'));
     return
 end
 base = min(T.spl_db(valid)) - 3;
-h = obj.gobj_('xfer_pending', @() line(ax, NaN, NaN, LineStyle='none', ...
+h = obj.gobj_(k('pending'), @() line(ax, NaN, NaN, LineStyle='none', ...
     Marker='|', MarkerSize=4, Color=[0.65 0.65 0.68], DisplayName='pending'));
 set(h, XData=xd(pending), YData=repmat(base, 1, nnz(pending)));
 end
 
 % ------------------------------------------------------------------------ %
-function render_current_(obj, ax, xd, T, d)
+function render_current_(obj, ax, k, xd, T, d)
 % Ring the point currently being measured.
 i = d.Index;
 if i < 1 || i > numel(xd) || ~isfinite(T.spl_db(i))
-    obj.drop_('xfer_cur');
+    obj.drop_(k('cur'));
     return
 end
-h = obj.gobj_('xfer_cur', @() line(ax, NaN, NaN, LineStyle='none', ...
+h = obj.gobj_(k('cur'), @() line(ax, NaN, NaN, LineStyle='none', ...
     Marker='o', MarkerSize=10, Color=[0.85 0.35 0.05], LineWidth=1.5, ...
     HandleVisibility='off'));
 set(h, XData=xd(i), YData=T.spl_db(i));
 end
 
 % ------------------------------------------------------------------------ %
-function render_normative_(obj, ax, xd, d)
+function render_normative_(obj, ax, k, xd, d)
 % The target level the voltage LUT is solved for.
 v = d.Context.NormativeValue;
 if ~isfinite(v) || ~any(isfinite(xd))
-    obj.drop_('xfer_norm');
+    obj.drop_(k('norm'));
     return
 end
-h = obj.gobj_('xfer_norm', @() line(ax, NaN, NaN, LineStyle=':', ...
+h = obj.gobj_(k('norm'), @() line(ax, NaN, NaN, LineStyle=':', ...
     Color=[0.35 0.35 0.35], LineWidth=0.75, DisplayName='normative level'));
 set(h, XData=[min(xd) * 0.9, max(xd) * 1.1], YData=[v v]);
 end
 
 % ------------------------------------------------------------------------ %
-function render_voltage_(obj, ax, xd, T, valid, d)
+function render_voltage_(obj, ax, k, xd, T, valid, d)
 % Right axis: drive voltage needed for NormativeValue, against the output
 % ceiling. Log-scaled because the requirement spans decades across a speaker's
 % roll-off, which is exactly where it matters.
@@ -150,25 +171,25 @@ ax.YAxis(2).Visible = 'on';   % show_background hides it; a run owns it again
 
 vAll = T.voltage;
 show = valid & isfinite(vAll) & vAll > 0;
-h = obj.gobj_('xfer_volt', @() line(ax, NaN, NaN, LineStyle='-', ...
+h = obj.gobj_(k('volt'), @() line(ax, NaN, NaN, LineStyle='-', ...
     Color=[0.20 0.55 0.25], LineWidth=0.75, ...
     DisplayName='drive V for normative'));
 set(h, XData=xd(show), YData=vAll(show));
 
 maxV = d.Context.MaxOutputV;
 if isfinite(maxV) && maxV > 0 && any(isfinite(xd))
-    hMax = obj.gobj_('xfer_vmax', @() line(ax, NaN, NaN, LineStyle='--', ...
+    hMax = obj.gobj_(k('vmax'), @() line(ax, NaN, NaN, LineStyle='--', ...
         Color=[0.80 0.10 0.10], LineWidth=0.75, HandleVisibility='off'));
     set(hMax, XData=[min(xd) * 0.9, max(xd) * 1.1], YData=[maxV maxV]);
 
     over = show & vAll > maxV;
-    hOver = obj.gobj_('xfer_vover', @() line(ax, NaN, NaN, LineStyle='none', ...
+    hOver = obj.gobj_(k('vover'), @() line(ax, NaN, NaN, LineStyle='none', ...
         Marker='x', MarkerSize=8, Color=[0.80 0.10 0.10], LineWidth=1.25, ...
         DisplayName='unreachable'));
     set(hOver, XData=xd(over), YData=vAll(over));
 else
-    obj.drop_('xfer_vmax');
-    obj.drop_('xfer_vover');
+    obj.drop_(k('vmax'));
+    obj.drop_(k('vover'));
 end
 
 if any(show)

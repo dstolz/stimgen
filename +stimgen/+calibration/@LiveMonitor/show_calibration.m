@@ -1,22 +1,38 @@
 function show_calibration(obj, eng)
 % show_calibration(obj, eng)
-% Draw an engine's committed lookup tables on the transfer panel: every LUT it
-% holds, overlaid, with the drive voltage each one needs for NormativeValue on
-% the right-hand axis and the output ceiling across it.
+% Draw an engine's committed lookup tables: one panel per stimulus where the
+% host gave each its own, otherwise every table overlaid on the one panel it
+% gave. Either way this is the off-run counterpart to render_transfer_ and
+% shares its conventions, so what a completed run leaves on screen looks like
+% what the run was drawing a moment earlier.
 %
-% This is the off-run counterpart to render_transfer_ and shares its axes and
-% its conventions, so what a completed run leaves on screen looks like what the
-% run was drawing a moment earlier.
+% A panel per stimulus is the better view and the reason the split exists: a
+% tone table and a click table have nothing in common but a level axis, and
+% overlaying them means plotting hertz and microseconds against one x that is
+% neither. It also frees each panel to carry what only its own stimulus
+% measures -- the detail axes drawn by show_tone_detail_, show_click_detail_
+% and show_swept_detail_ under it.
 %
-% Click durations are plotted in microseconds on the same axis as frequency in
-% hertz. The two are not commensurable and the legend says so; sharing one axis
-% is what lets a single panel serve all three LUTs.
+% The overlaid form is kept for a host with one sweep panel, which is the
+% monitor's own window and the three-axes host form. There, click durations
+% are plotted in microseconds on the same axis as frequency in hertz; the two
+% are not commensurable and the legend says so.
 %
 % Parameters:
 %   eng - stimgen.calibration.Engine
 arguments
     obj
     eng (1,1) stimgen.calibration.Engine
+end
+
+if ~obj.sweeps_share_panel_()
+    for p = stimgen.calibration.LiveMonitor.SweepPanels
+        obj.show_lut_(eng, p);
+    end
+    obj.show_tone_detail_(eng);
+    obj.show_click_detail_(eng);
+    obj.show_swept_detail_(eng);
+    return
 end
 
 ax = obj.AxTransfer;
@@ -64,7 +80,7 @@ freqX = [];   % the frequency-keyed LUTs only, for the weighting overlay
 freqY = [];
 for k = 1:size(specs, 1)
     key = specs{k, 1};
-    lineKey = ['static_' key];
+    lineKey = ['transfer_lut_' key];
     if ~isfield(C, key) || isempty(C.(key))
         obj.drop_(lineKey);
         obj.drop_([lineKey '_v']);
@@ -110,8 +126,9 @@ end
 
 grid(ax, 'on');
 stimgen.calibration.LiveMonitor.caption_(ax, ...
-    'Calibration transfer curves', stamp_(eng));
-hLeg = obj.gobj_('static_legend', @() legend(ax, Location='southwest', ...
+    'Calibration transfer curves', ...
+    stimgen.calibration.LiveMonitor.calibration_stamp_(eng));
+hLeg = obj.gobj_('transfer_lut_legend', @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
 end
@@ -131,15 +148,16 @@ for k = 1:size(specs, 1)
     x = S.(specs{k, 2})(:).' .* specs{k, 3};
     v = S.voltage(:).';
     ok = isfinite(v) & v > 0;
-    h = obj.gobj_(['static_' key '_v'], @() line(ax, NaN, NaN, LineStyle=':', ...
-        Color=specs{k,5} * 0.6 + 0.4, LineWidth=0.75, HandleVisibility='off'));
+    h = obj.gobj_(['transfer_lut_' key '_v'], @() line(ax, NaN, NaN, ...
+        LineStyle=':', Color=specs{k,5} * 0.6 + 0.4, LineWidth=0.75, ...
+        HandleVisibility='off'));
     set(h, XData=x(ok), YData=v(ok));
     vals = [vals, v(ok)];
 end
 
 maxV = eng.MaxOutputVoltage;
 if ~isempty(vals)
-    hMax = obj.gobj_('static_vmax', @() line(ax, NaN, NaN, LineStyle='--', ...
+    hMax = obj.gobj_('transfer_lut_vmax', @() line(ax, NaN, NaN, LineStyle='--', ...
         Color=[0.80 0.10 0.10], LineWidth=0.75, HandleVisibility='off'));
     set(hMax, XData=[min(allX) * 0.9, max(allX) * 1.1], YData=[maxV maxV]);
 
@@ -150,15 +168,4 @@ if ~isempty(vals)
 end
 ylabel(ax, 'drive (V)');
 ax.YAxis(2).Color = [0.45 0.45 0.45];
-end
-
-% ------------------------------------------------------------------------ %
-function s = stamp_(eng)
-% Age of the calibration, so a stale file is obvious on screen.
-t = eng.CalibrationTimestamp;
-if isnat(t)
-    s = 'measurement date unknown';
-    return
-end
-s = sprintf('measured %s', char(datetime(t, Format='dd-MMM-yyyy HH:mm')));
 end

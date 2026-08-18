@@ -15,8 +15,21 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     %
     % Properties (delegated from Engine):
     %   CalibrationData, MicSensitivity, ReferenceLevel, ReferenceFrequency,
-    %   NormativeValue, ExcitationSignalVoltage, ToneLutSource,
+    %   NormativeValue, ExcitationSignalVoltage, ToneLutSource, Notes,
     %   CalibrationTimestamp, Fs
+    %
+    % Notes is the operator's free text about the calibration -- the speaker,
+    % the microphone, the placement. It is proxied here for the same reason
+    % it is saved in the .esgc: a calibration carried into a .spl bank or a
+    % protocol file should carry what it was measured on with it.
+    %
+    % AdcGain and DacAttenuation are recorded for the log only. Nothing in
+    % stimgen reads them: a calibration measures the chain as it stands, so
+    % the hardware gain is already inside every voltage the tables hold, and
+    % applying it a second time would double-count it. They are here so a
+    % saved calibration states the rig settings it was taken at. Both are dB
+    % and default to 0, the neutral setting, which is also how a calibration
+    % saved before these fields existed restores.
     %
     % Methods:
     %   compute_adjusted_voltage - Proxy to Engine; used by StimType.
@@ -47,6 +60,9 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         NormativeValue
         ExcitationSignalVoltage
         ToneLutSource
+        AdcGain
+        DacAttenuation
+        Notes
         CalibrationTimestamp
         Fs
     end
@@ -85,6 +101,9 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             S.ReferenceFrequency      = obj.ReferenceFrequency;
             S.ExcitationSignalVoltage = obj.ExcitationSignalVoltage;
             S.ToneLutSource           = obj.ToneLutSource;
+        S.AdcGain                 = obj.AdcGain;
+        S.DacAttenuation          = obj.DacAttenuation;
+            S.Notes                   = obj.Notes;
             S.CalibrationTimestamp    = obj.CalibrationTimestamp;
             S.Fs                      = obj.Fs;
         end
@@ -136,6 +155,30 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         end
         function set.ToneLutSource(obj, r)
             obj.Engine.set_configuration(ToneLutSource=r);
+        end
+
+        % Logged only; see the class help.
+        function v = get.AdcGain(obj)
+            v = obj.Engine.AdcGain;
+        end
+        function set.AdcGain(obj, r)
+            obj.Engine.set_configuration(AdcGain=r);
+        end
+
+        function v = get.DacAttenuation(obj)
+            v = obj.Engine.DacAttenuation;
+        end
+        function set.DacAttenuation(obj, r)
+            obj.Engine.set_configuration(DacAttenuation=r);
+        end
+
+        % Recorded and carried, never read into a calculation; see the class
+        % help.
+        function v = get.Notes(obj)
+            v = obj.Engine.Notes;
+        end
+        function set.Notes(obj, r)
+            obj.Engine.set_configuration(Notes=r);
         end
 
         function v = get.CalibrationTimestamp(obj)
@@ -237,6 +280,9 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             s.ReferenceLevel         = obj.Engine.ReferenceLevel;
             s.ReferenceFrequency     = obj.Engine.ReferenceFrequency;
             s.ExcitationSignalVoltage = obj.Engine.ExcitationVoltage;
+            s.AdcGain                = obj.Engine.AdcGain;
+            s.DacAttenuation         = obj.Engine.DacAttenuation;
+            s.Notes                  = obj.Engine.Notes;
             s.CalibrationTimestamp   = obj.Engine.CalibrationTimestamp;
         end
     end

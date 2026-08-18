@@ -11,6 +11,11 @@ function set_configuration(obj, options)
 %   NormativeValue     - (1,1) double, > 0
 %   ExcitationVoltage  - (1,1) double, > 0
 %   MaxOutputVoltage   - (1,1) double, > 0 (rig output ceiling, V)
+%   AdcGain            - (1,1) double, dB. Input-stage gain the rig was set
+%                        to. Recorded only; nothing here reads it, since the
+%                        measurement it labels already includes it.
+%   DacAttenuation     - (1,1) double, dB. Output-stage attenuation, recorded
+%                        on the same terms. Both default to 0 dB.
 %   AcCoupleResponse   - (1,1) logical. Zero-phase high-pass each acquired
 %                        record before analyzing it, so an input DC offset or
 %                        slow drift does not inflate levels or bias burst
@@ -35,6 +40,11 @@ function set_configuration(obj, options)
 %                        run over. 0 leaves each with the next power of two at
 %                        or above its record; a nonzero value raises that and
 %                        never lowers it, so it can only zero-pad.
+%   Notes              - (1,1) string. Free text about this calibration, in
+%                        the operator's own words -- the rig, the placement,
+%                        anything the tables cannot state for themselves.
+%                        Never parsed; saved into the .esgc and printed by
+%                        describe().
 %   ShowLivePlots      - (1,1) logical
 %   ToneLutSource      - (1,1) string, "tone" or "swept_sine". Which LUT serves
 %                        tone lookups; "swept_sine" overrides any direct tone
@@ -47,6 +57,8 @@ arguments
     options.NormativeValue     (1,1) double {mustBePositive,mustBeFinite} = obj.NormativeValue
     options.ExcitationVoltage  (1,1) double {mustBePositive} = obj.ExcitationVoltage
     options.MaxOutputVoltage   (1,1) double {mustBePositive,mustBeFinite} = obj.MaxOutputVoltage
+    options.AdcGain            (1,1) double {mustBeReal,mustBeFinite} = obj.AdcGain
+    options.DacAttenuation     (1,1) double {mustBeReal,mustBeFinite} = obj.DacAttenuation
     options.AcCoupleResponse   (1,1) logical = obj.AcCoupleResponse
     options.AcCoupleFrequency  (1,1) double {mustBePositive,mustBeFinite} = obj.AcCoupleFrequency
     options.ToneRampDuration   (1,1) double {mustBePositive,mustBeFinite} = obj.ToneRampDuration
@@ -56,6 +68,7 @@ arguments
         ["auto", "flattop", "hann", "hamming", "blackman", ...
          "blackmanharris", "rectangular"])} = obj.SpectralWindow
     options.SpectralFftLength  (1,1) double {mustBeNonnegative,mustBeInteger,mustBeFinite} = obj.SpectralFftLength
+    options.Notes              (1,1) string {mustBeNonmissing} = obj.Notes
     options.ShowLivePlots      (1,1) logical = obj.ShowLivePlots
     options.ToneLutSource      (1,1) string {mustBeMember(options.ToneLutSource, ["tone", "swept_sine"])} = obj.ToneLutSource
 end
@@ -66,12 +79,15 @@ obj.ReferenceFrequency = options.ReferenceFrequency;
 obj.NormativeValue    = options.NormativeValue;
 obj.ExcitationVoltage = options.ExcitationVoltage;
 obj.MaxOutputVoltage  = options.MaxOutputVoltage;
+obj.AdcGain           = options.AdcGain;
+obj.DacAttenuation    = options.DacAttenuation;
 obj.AcCoupleResponse  = options.AcCoupleResponse;
 obj.AcCoupleFrequency = options.AcCoupleFrequency;
 obj.ToneRampDuration  = options.ToneRampDuration;
 obj.AmbientTemperature = options.AmbientTemperature;
 obj.SpectralWindow    = options.SpectralWindow;
 obj.SpectralFftLength = options.SpectralFftLength;
+obj.Notes             = options.Notes;
 obj.ShowLivePlots     = options.ShowLivePlots;
 obj.ToneLutSource     = options.ToneLutSource;
 end

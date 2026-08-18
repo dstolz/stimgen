@@ -140,6 +140,8 @@
 
   "CalibrationGui": {
     "MaxOutputVoltage": "Output ceiling in volts. Sets clipping limits on waveform display and marks unreachable voltages.",
+    "AdcGain": "Input-stage gain of the rig, in dB. Recorded in the calibration file only -- nothing reads it back. The sweep was measured through this gain, so it is already inside every voltage and level in the tables; applying it again would double-count it. 0 dB = no gain.",
+    "DacAttenuation": "Output-stage attenuation of the rig, in dB. Recorded in the calibration file only, on the same terms as ADC Gain: never applied to a level or a voltage. It is here so the file states the knob positions it was made at. 0 dB = no attenuation.",
     "ConductionDelay": "Speaker-to-microphone round-trip latency per acquisition, measured from embedded click. Includes converter latency. Red = unreliable (cross-correlation fallback). Distance is delay at speed of sound for Ambient Temperature.",
     "AmbientTemperature": "Air temperature (°F) for speed-of-sound calculations in impulse response distances. ±10° gives ~1% error. Saved in Celsius. Affects only distance display, not measured levels.",
     "DelayMaxDelay": "Max search range in ms for conduction delay probe. Raise if rig delay exceeds this (correlation peaks on bound, marked unreliable). 50 ms covers typical path + latency.",
@@ -149,6 +151,7 @@
     "ToneRampDuration": "Per-edge rise/fall time for every tone burst played by Calibrate Tones, Test Tones, and refinement. Raised-cosine (cos^2) shape; clamped to a quarter of burst duration so onset/offset ramps never overlap. Longer suppresses click transients at burst edges; shorter leaves more steady-state signal on short bursts. Default 5 ms matches the fixed edge used before this was settable. Applies to the next tone measurement, and travels with the .esgc.",
     "SpectralWindow": "Auto: optimal window per use (flatTop for level, Hann for floor). Or choose fixed: flatTop accurate (~0.01 dB), Hann/Hamming/Blackman less leakage, Rectangular sharp but worst leakage. Applies to next measurement.",
     "SpectralFftLength": "Transform size. Auto: next power of 2 ≥record length. Manual only zero-pads (finer bins, better peak placement) never truncates. Costs time/memory on long records.",
+    "SettingsClose": "Close this window. Nothing here waits to be confirmed -- every setting is applied to the calibration engine as soon as it is entered, so it takes effect whether or not this window is open.",
     "ShowLivePlots": "Update panels per measurement instead of only at end.",
     "SpectrumUnits": "dB SPL (calibration scale), V rms / dB re 1 V (mic input stage), density (per-Hz noise floor), or dB re peak (shape only). Applies immediately.",
     "InitializeRuntimeTool": "Initialize Runtime From Protocol...",
@@ -156,9 +159,14 @@
     "DisconnectTool": "Disconnect Runtime/Adapter",
     "LoadTool": "Load .esgc",
     "SaveTool": "Save .esgc",
+    "PrintSummary": "Print a description of this calibration to the command window: the settings it was measured through, what each table covers, how each verification came out, and the notes. Same as Engine.describe at the prompt. Text, so it can be copied into a notebook entry.",
     "CopyWindowTool": "Copy the entire window (controls and plots) to the clipboard as an image. File > Save Screenshot... writes the same capture to a file.",
     "QuickStartTool": "Open calibration walkthrough on stimgen wiki.",
-    "TabTransfer": "All lookup tables overlaid, with drive voltage per point. Fills in live during a sweep.",
+    "GuiGuideTool": "Open the guide to this window on the stimgen wiki: what each control does, in the order a calibration session uses them.",
+    "TabTones": "Tone lookup table against frequency, with drive voltage per point, and the distortion and SNR measured at each frequency below it. Fills in live during a tone sweep or a tone LUT test.",
+    "TabClicks": "Click lookup table against duration, with drive voltage per point, and the distortion and SNR measured at each duration below it. Fills in live during a click sweep or a click LUT test.",
+    "TabSweptSine": "Swept sine lookup table, with the deconvolved response below it: magnitude flatness and group delay against frequency, and the impulse response with its arrival and first reflection.",
+    "TabFilterTest": "Equalization filter verification: the response with and without the filter in dB SPL, and below it each one's deviation from flat against the ripple tolerance. Fills in live during Test Filter; the comparison is drawn when the run ends.",
     "TabBackground": "Background noise: band levels, broadband/A-weighted level, tonal peaks. Drawn by Measure Background.",
     "TabLatency": "Conduction delay probe: the click correlation the delay was chosen from, over the probe response. Drawn by Measure Conduction Delay.",
     "SpectrumGhost": "Overlay previous measurement in grey. Shows run-to-run drift and flaky connections.",
@@ -177,10 +185,11 @@
     "BtnFilter": "Step 4 (optional): Design equalization filter. Opens in fvtool.",
     "BtnTestFilter": "Step 5 (optional): Empirically verify designed filter. Tone design tested with discrete tones; swept sine tested with sweep + filtered sweep.",
     "BtnCopyFilter": "Copy FIR coefficients to clipboard (one per line, full precision) for RPvds, spreadsheet, or other use. Realization rate in status bar.",
-    "FilterLevelReference": "Output level for 1 V RMS white-noise input at unity gain after filter. Scale factor (x) for Normative Value. Hardware gain = 10^((level−Normative Value)/20) × scale. Recomputed per filter design.",
+    "FilterLevelReference": "Output level for 1 V RMS white-noise input at unity gain after filter. Scale factor (x) for Normative Value. Hardware gain = 10^((level−Normative Value)/20) × scale. Recomputed per filter design. Anchor hardware to scale OR to this level, never both — the two are one correction.",
     "BtnDelay": "Measure conduction delay standalone via embedded click. Reports air path at 343 m/s. No reference or calibration table needed. Not consumed by subsequent measurements.",
     "BtnStop": "Interrupt running measurement (takes effect at next acquisition). Discards partial data. Refinement restores unrefined table.",
-    "BtnReset": "Discard all tone/click/swept-sine data and designed filter. Keeps adapter, protocol, mic sensitivity, other settings."
+    "BtnReset": "Discard all tone/click/swept-sine data and designed filter. Keeps adapter, protocol, mic sensitivity, other settings.",
+    "Notes": "Free text about this calibration: speaker, microphone, placement, anything the tables cannot say for themselves. Saved into the .esgc and restored with it, and printed by File > Print Calibration Summary. Not a preference -- it belongs to this calibration, not to the rig, and a reset leaves it alone."
   },
 
   "StimInspector": {

@@ -123,7 +123,17 @@ These are not required for basic tone delivery but improve accuracy for speciali
 
 ### Step 8 — Save
 
-**File > Save .esgc** — save the calibration to disk. Use a descriptive filename that identifies the rig and date, e.g. `Rig3_earphone_2026-05-08.esgc`.
+Write what the tables cannot say into the **Notes** box at the bottom of the
+controls column first — the speaker, the microphone, where they stood — then
+**File > Save .esgc** to save the calibration to disk. Use a descriptive
+filename that identifies the rig and date, e.g.
+`Rig3_earphone_2026-05-08.esgc`. The notes go into the file and come back with
+it.
+
+**File > Print Calibration Summary** writes the whole calibration to the
+command window as text — settings, table spans, verification verdicts and the
+notes — for pasting into a lab notebook. It is the same report `eng.describe`
+gives at the prompt (see [Step 9](#step-9--read-it-back-in-words)).
 
 ---
 
@@ -171,12 +181,15 @@ eng.set_configuration( ...
     NormativeValue=80, ...      % target SPL for the experiment (default 80)
     ExcitationVoltage=1, ...    % volts; reduce if clipping warnings appear (default 1)
     MaxOutputVoltage=10, ...    % volts the rig can actually produce (default 10)
+    AdcGain=20, ...             % dB of input-stage gain, recorded only (default 0)
+    DacAttenuation=0, ...       % dB of output-stage attenuation, recorded only (default 0)
     AcCoupleResponse=true, ...  % high-pass the acquired record before analysis (default false)
     AcCoupleFrequency=20, ...   % Hz corner of that high-pass (default 20)
     AmbientTemperature=20, ...  % deg C of the test space; sets the speed of
                             ... % sound distances are derived at (default 20)
     SpectralWindow="auto", ...  % taper every spectral estimator applies (default "auto")
     SpectralFftLength=0, ...    % transform-length floor; 0 = automatic (default 0)
+    Notes="Rig 3, ES1 at 10 cm on axis", ...  % free text saved with the tables
     ShowLivePlots=true);        % broadcast progress during sweeps (default false)
 ```
 
@@ -532,7 +545,9 @@ actually passes through. Options: `Duration`, `RepeatCount`, `TailDuration`, `Nu
 and `RippleToleranceDb` (default 6), the peak-to-peak ripple of the equalized response at
 or below which the test is reported passed. In `CalibrationGui` this runs from the
 **Test Filter** button regardless of whether the filter was designed from the tone
-table or the swept sine.
+table or the swept sine, and draws on the **Filter Test** tab — its own, because
+the two conditions have to be on screen together for the result to mean
+anything (`LiveMonitor.show_filter_test`).
 
 ### Running the filter in hardware — `filter_level_reference`
 
@@ -573,11 +588,40 @@ on the status line after each design. Raises
 `stimgen:calibration:Engine:noFilter` when no filter has been designed, and the usual
 LUT errors when no tone or swept sine calibration exists to anchor to.
 
+> ⚠️ **`scale` and `unityGainSpl` are the same correction — apply one, never both.**
+> `unityGainSpl = NormativeValue − 20·log10(scale)`, so a hardware chain can anchor
+> its gain stage either way: keep `NormativeValue` as the reference and multiply by
+> `scale`, **or** use `unityGainSpl` as the reference and leave the gain at unity.
+> Doing both applies the filter's insertion gain twice and plays everything
+> `20·log10(scale)` dB off — see
+> [Equalizer level applied twice in hardware](calibration_notes/equalizer_hardware_level_double_correction.md).
+
 ### Step 8 — Save
 
 ```matlab
 eng.save('Rig3_earphone_2026-05-08.esgc');
 ```
+
+### Step 9 — Read it back in words
+
+`describe` states what a set of tables cannot: the settings they were measured
+through, what each one covers, how each verification came out, and the `Notes`
+written about the rig. With no output it prints to the command window; with one
+it returns the same text as a string, for a log entry or a report.
+
+```matlab
+eng.describe                       % print it
+txt = eng.describe();              % or take the text
+
+% offline, on a file that came from another rig
+stimgen.calibration.Engine.load('Rig3_earphone_2026-05-08.esgc').describe
+```
+
+It works on an engine with nothing measured yet — it then reports the settings
+and says so — and a table, verification, filter or background that is missing
+is named as missing rather than left out, so the report is the same shape
+every time. `CalibrationGui` runs it from **File > Print Calibration
+Summary**.
 
 ---
 
@@ -623,19 +667,43 @@ shows a run beside the controls driving it:
 mon = stimgen.calibration.LiveMonitor(eng, Axes=[axSignal axSpectrum axTransfer]);
 ```
 
-The transfer curve, the background analysis and the delay probe are one family
+The lookup tables, the background analysis and the delay probe are one family
 of views. With three axes they share the third one and each clears the last on
-its way in — one panel, one measurement at a time. Pass **five** to give each
-its own, and a redraw of one leaves the other two standing:
+its way in — one panel, one measurement at a time. Pass **five** to give the
+background and the delay probe their own, and a redraw of the sweep leaves
+those two standing:
 
 ```matlab
 mon = stimgen.calibration.LiveMonitor(eng, ...
     Axes=[axSignal axSpectrum axTransfer axBackground axLatency]);
 ```
 
-That is what lets a host keep three measurements on screen at once;
-`CalibrationGui` puts each on a tab. Either way each view clears only what it
-must: with separate axes, only its own objects.
+Pass a **struct** to give each stimulus a panel as well, and optionally the
+detail axes drawn under it:
+
+```matlab
+mon = stimgen.calibration.LiveMonitor(eng, Axes=struct( ...
+    signal=axSignal, spectrum=axSpectrum, ...
+    tone=axTone,   tone_detail=axToneSnr, ...
+    click=axClick, click_detail=axClickSnr, ...
+    swept_sine=axSwept, swept_detail=axFlatness, swept_impulse=axImpulse, ...
+    filter_test=axFilter, filter_detail=axFilterDev, ...
+    background=axBackground, latency=axLatency));
+```
+
+That is what lets a host keep every measurement on screen at once;
+`CalibrationGui` puts each on a tab. A field left out is treated as absent
+rather than as an error, so a host may take a stimulus panel without its
+detail axes. Whichever form is used, each view clears only what it must: with
+separate axes, only its own objects.
+
+Which panel a run draws on comes from `LiveMonitor.stage_panel(stage)`, which
+is public so a host can agree with it — a GUI that raises a tab before starting
+a run picks it from there rather than from a list of its own. A lookup-table
+test lands on the panel of the table it verifies. The filter test verifies no
+table and draws two curves of one quantity, so it has a panel of its own
+(`filter_test`); a host that names none for it gets the tone panel, as it did
+before the panel existed.
 
 Outside a run, `mon.show_engine_state(eng)` redraws the response panels,
 `mon.show_calibration(eng)` draws the committed lookup tables,
@@ -643,6 +711,25 @@ Outside a run, `mon.show_engine_state(eng)` redraws the response panels,
 a delay probe's diagnostics (`mon.show_latency()` draws its not-measured
 placeholder). They may be called in any order — each clears only its own
 panel, so none of them can undo another.
+
+`show_calibration` follows the axes it was given. Where the stimuli share one
+panel it overlays all three tables on it, as it always has; where each has its
+own it draws one plot per stimulus and fills the detail axes under them from
+the committed tables — per-frequency distortion and SNR for tones, the same
+against duration for clicks, and for a swept sine the deconvolved magnitude
+deviation, the group delay and the impulse response with its arrival and first
+reflection marked.
+
+`mon.show_filter_test(eng)` is the same idea for the equalizer's verification,
+and the reason that panel exists: a filter test measures one quantity twice —
+the rig, and the rig through the filter — so what the run leaves on screen is
+the second of two measurements whose *difference* was the point. It draws both
+conditions in dB SPL, and, given a `filter_detail` axes, each one's deviation
+from its own band mean under them with the ripple tolerance shaded across it.
+The verdict is the panel title. On a host that gave the filter test no panel of
+its own it shares a stimulus panel, and there it declines to draw its
+not-run placeholder rather than blanking a lookup table to report a test nobody
+has run.
 
 ### Waveform resolution
 
@@ -735,11 +822,14 @@ prefer a `LiveMonitor`.
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
+| `AdcGain` | 0 dB | dB of gain on the input stage, **recorded only**. Nothing reads it: the measurement was taken through that gain, so it is already inside every voltage and level in the tables, and applying it again would double-count it. It is here so a saved calibration states the rig settings it was made at, which is the one thing the tables cannot be checked against afterwards. Entered in the GUI under Options > Hardware and Analysis Settings. Saved in the `.esgc` file |
+| `DacAttenuation` | 0 dB | dB of attenuation on the output stage, on exactly the same terms as `AdcGain`: recorded, never applied. Saved in the `.esgc` file |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
 | `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere the package computes; `CalibrationGui` is the one place it is entered and shown in Fahrenheit |
 | `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
+| `Notes` | `""` | Free text about this calibration in the operator's own words — the speaker, the microphone, the placement, whatever the tables cannot state for themselves. Never parsed and never read into a calculation. Saved in the `.esgc` file, restored with it, kept by `reset_calibration`, and printed at the top of `describe`. Entered in the GUI's Notes box |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
 | `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
 
@@ -850,12 +940,12 @@ Three notes on behaviour:
 
 Source: `+stimgen/+calibration/`
 
-- `Engine.m` — calibration orchestration, result storage, save/load, and voltage lookup.
+- `Engine.m` — calibration orchestration, result storage, save/load, voltage lookup, and the `describe` report (see [Step 9](#step-9--read-it-back-in-words)).
 - `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).
-- `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes. Also draws the two off-run views of the transfer axes: `show_calibration` (the lookup tables) and `show_background` (a background capture).
+- `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes, one panel per stimulus where the host supplies them. Also draws the off-run views: `show_calibration` (the lookup tables and, given detail axes, the per-stimulus quality plots under them), `show_filter_test` (the equalizer verification, both conditions at once) and `show_background` (a background capture).
 - `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
 
 From `+stimgen/+util/`:

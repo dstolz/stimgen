@@ -40,10 +40,23 @@ These proxy directly to the underlying `Engine`:
 - `NormativeValue`
 - `ExcitationSignalVoltage`
 - `ToneLutSource`
+- `AdcGain`
+- `DacAttenuation`
+- `Notes`
 - `CalibrationTimestamp`
 - `Fs`
 
 The `Engine`'s parameters are `SetAccess = protected`, so every setter here routes through `Engine.set_configuration`, which is also what runs the property validators. A rejected value therefore raises rather than being silently stored.
+
+### Recorded, not applied
+
+`AdcGain` (dB on the input stage) and `DacAttenuation` (dB on the output stage) are there for the record only. Nothing in stimgen reads either one, and adding one would be a bug: a calibration measures the chain as it stands, so whatever gain the hardware was set to is already inside every voltage and level in the tables. Applying it a second time at lookup would double-count it.
+
+What they buy is the one fact a table cannot be checked against later — the knob positions it was taken at. Both default to `0` dB — the neutral setting — and are entered in `stimgen.calibration.CalibrationGui` under Options > Hardware and Analysis Settings, in a group headed *recorded, not applied*. Both travel in `toStruct`/`saveobj` and in the `.esgc` file; a struct or file that predates them restores at 0 dB, so "no gain recorded" and "unity gain recorded" are not distinguishable — the price of a neutral default over a blank one.
+
+### Notes
+
+`Notes` is the operator's free text about the calibration — the speaker, the microphone, where they stood, whatever the tables cannot state for themselves. It is never parsed and never enters a calculation, and it is proxied here for the same reason it is written into the `.esgc`: a calibration carried into a `.spl` bank or a host protocol file should carry what it was measured on with it. It travels in `toStruct`/`saveobj` and comes back through `Engine.restore`; a struct that predates it restores as `""`. `Engine.describe` prints it at the top of its report, and `stimgen.calibration.CalibrationGui` edits it in the Notes box at the bottom of its controls column.
 
 ## Key methods
 

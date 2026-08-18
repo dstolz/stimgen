@@ -40,6 +40,12 @@ function r = filter_level_reference(obj, x)
 % stimulus, so no new acoustic assumption is introduced. Recompute after
 % every design_filter: the taps' norm changes with each design.
 %
+% scale and unityGainSpl are the SAME correction stated two ways --
+% unityGainSpl = NormativeValue - 20*log10(scale) -- so a hardware chain uses
+% one or the other, never both: either scale the taps and drive the gain from
+% NormativeValue, or leave the taps alone and drive it from unityGainSpl.
+% Applying both puts the filter's insertion gain on the output twice.
+%
 % Example — RPvds chain  noise -> FIR -> ScaleAdd, with the ScaleAdd's SF
 % driven by dBToLin(level - NormativeValue):
 %   r = eng.filter_level_reference(1);                 % 1 V RMS white noise

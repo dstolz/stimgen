@@ -23,29 +23,51 @@ classdef CalibrationGui < handle
     %
     % The Options menu holds three settings windows. Hardware and Analysis
     % Settings is what is set once per rig rather than once per sweep: the
-    % output ceiling, AC coupling of the acquired record, and the analysis
-    % window and FFT length every spectral measurement is made with. The last
-    % two also govern the spectrum panel, so the peak on screen is computed the
-    % same way as the number written into the lookup table. Conduction Delay
-    % Settings holds what the delay probe searches with and the room's Ambient
-    % Temperature its result is read as a distance through -- the probe runs
-    % straight from its button, asking nothing. Temperature is entered and
-    % displayed in degrees Fahrenheit throughout this window; the Engine holds
-    % it -- and an .esgc file records it -- in Celsius. Excitation Settings
-    % holds the drive voltage every sweep plays at and the per-edge rise/fall
-    % time every tone burst is gated with -- both apply to whichever sweep
-    % runs next, like the two windows above, rather than to a step of their
-    % own.
+    % output ceiling, AC coupling of the acquired record, the ADC gain and
+    % DAC attenuation the rig is set to, and the analysis window and FFT
+    % length every spectral measurement is made with. The last two also
+    % govern the spectrum panel, so the peak on screen is computed the same
+    % way as the number written into the lookup table. The two gains are the
+    % odd pair out: nothing reads them, since a sweep is measured through
+    % whatever gain the rig is set to and applying it again would
+    % double-count it. They are typed here so the .esgc records the knob
+    % positions it was made at, which is the one thing a finished table
+    % cannot be checked against.
+    %
+    % Conduction Delay Settings holds what the delay probe searches with and
+    % the room's Ambient Temperature its result is read as a distance
+    % through -- the probe runs straight from its button, asking nothing.
+    % Temperature is entered and displayed in degrees Fahrenheit throughout
+    % this window; the Engine holds it -- and an .esgc file records it -- in
+    % Celsius. Excitation Settings holds the drive voltage every sweep plays
+    % at and the per-edge rise/fall time every tone burst is gated with --
+    % both apply to whichever sweep runs next, like the two windows above,
+    % rather than to a step of their own.
+    %
+    % The Notes box at the bottom of the controls column is the operator's
+    % own account of the calibration -- the speaker and microphone, where
+    % they stood, whatever the tables cannot state for themselves. It is
+    % kept on the Engine and written into the .esgc, so it comes back with
+    % the calibration it describes; it is not a preference and does not
+    % follow the window to the next file.
     %
     % The window itself can be captured as a record of the session: File >
     % Save Screenshot... writes the entire window -- controls column
     % included -- to an image file, and File > Copy Window to Clipboard
     % (also the toolbar's camera button) puts the same capture on the
     % system clipboard. The full-window clipboard copy is Windows-only;
-    % elsewhere the plot area alone is copied.
+    % elsewhere the plot area alone is copied. File > Print Calibration
+    % Summary (also the toolbar's page-of-text button, beside the camera)
+    % writes the same session as text instead: Engine.describe on the
+    % command window, where it can be copied into a notebook.
+    %
+    % The Help menu, and the last two buttons of the toolbar's first group,
+    % open the wiki page that documents this window: the question mark at
+    % the top of the walkthrough, the open book at its tour of this GUI.
     %
     % Settings are remembered across MATLAB sessions as StimCalibrationGui
-    % preferences: the controls-column fields and toggles, both settings
+    % preferences (Notes excepted -- it belongs to the calibration, not to
+    % this window): the controls-column fields and toggles, both settings
     % windows' fields, the display state (spectrum unit, weighting overlays,
     % ghost, drive-voltage axis, log frequency axis), and the per-dialog
     % measurement parameters. Values carried by a supplied engine, or by a
@@ -58,10 +80,29 @@ classdef CalibrationGui < handle
     % renderer draws the committed calibration and the last response.
     %
     % The waveform and the spectrum are always on screen -- they are the record
-    % being acquired -- and under them a tab per measurement: the transfer
-    % curves, the background noise analysis, and the conduction delay probe.
-    % Each has its own axes, so all three keep what was last drawn on them and
-    % switching between them costs nothing and loses nothing.
+    % being acquired -- and under them a tab per measurement: one for each
+    % stimulus that can be calibrated (Tones, Clicks, Swept Sine), then the
+    % equalization filter test, the background noise analysis and the
+    % conduction delay probe. Each has its own axes, so every one keeps what
+    % was last drawn on it and switching between them costs nothing and loses
+    % nothing.
+    %
+    % The stimulus tabs are not one plot drawn three times. Each carries its
+    % lookup table on the abscissa that table is keyed on -- frequency, or
+    % click duration, which cannot share one axis honestly -- and under it
+    % what only that stimulus measures: the per-frequency distortion and SNR
+    % a tone sweep records, the same against duration for clicks, and for a
+    % swept sine the deconvolved flatness, the group delay and the impulse
+    % response, none of which a level-versus-x curve can show. A sweep and
+    % the test that verifies its table both draw on that stimulus's tab, and
+    % starting either brings it up.
+    %
+    % The Filter Test tab is the one that verifies no table. It measures the
+    % rig twice -- once as it is and once through the equalizer -- so what it
+    % has to show is a comparison: the two responses, and under them each
+    % one's deviation from flat against the ripple tolerance it passes or
+    % fails on. That is why it is not on the Tones tab, where one of the two
+    % curves was always about to be overwritten by the other.
     %
     % How those panels draw -- the overlays -- is chosen from the toolbar's
     % second group, mirrored by the View menu and the Display section, since a
@@ -107,6 +148,15 @@ classdef CalibrationGui < handle
     properties (Constant)
         % Help > Calibration Quick Start opens this page.
         QuickStartURL = 'https://github.com/dstolz/stimgen/wiki/Calibrating-Your-Rig'
+
+        % Help > Guide to This Window opens the same page at its step-by-step
+        % tour of this GUI. The same page deliberately: the workflow and
+        % the window are documented together, because a control is only
+        % explicable by the step it belongs to. The two entry points differ
+        % in where they land -- the top for what calibration is, this anchor
+        % for what to press -- so neither audience scrolls past the other's
+        % half.
+        GuiGuideURL = 'https://github.com/dstolz/stimgen/wiki/Calibrating-Your-Rig#gui-walkthrough-recommended'
     end
 
     properties (Constant, Access = private)
@@ -140,8 +190,11 @@ classdef CalibrationGui < handle
 
         % Which measurement the lower plots area is showing. Follows the tab
         % strip rather than driving it -- the tabs are the selector, this is
-        % the name the rest of the object and the saved preference use.
-        TransferView_ (1,1) string = "calibration"
+        % the name the rest of the object and the saved preference use. The
+        % three sweep names are also LiveMonitor's panel names and the
+        % Engine's CalibrationData fields, which is what lets one string
+        % carry a view from a tab callback through to the renderer.
+        TransferView_ (1,1) string = "tone"
 
         % Diagnostics of the last conduction delay probe, kept so the panel
         % can be drawn again after another view has taken it. Session state,
@@ -170,6 +223,12 @@ classdef CalibrationGui < handle
         TransferLogXCheck
         ToneSweptSineCheck
         IterativeCheck
+        % Free text about this calibration, at the bottom of the controls
+        % column. It belongs to the Engine and travels in the .esgc, unlike
+        % every other control here, which is why it is neither remembered as
+        % a preference nor cleared by a reset: it describes one calibration,
+        % not this rig or this window.
+        NotesArea
         StatusLabel
         LevelRefLabel
         ConductionDelayLabel
@@ -182,6 +241,8 @@ classdef CalibrationGui < handle
         HardwareDialog_
         MaxOutputField
         AcCoupleCheck
+        AdcGainField
+        DacAttenField
         SpectralWindowDrop
         SpectralFftDrop
         SampleRateLabel
@@ -229,10 +290,20 @@ classdef CalibrationGui < handle
         BtnStop
         BtnReset
 
-        % Axes. The first two are always on screen; the rest are one per tab.
+        % Axes. The first two are always on screen; the rest belong to tabs.
+        % A stimulus tab carries more than one: the lookup table on top and,
+        % under it, what only that stimulus measures.
         AxTime
         AxSpectrum
-        AxTransfer
+        AxTone
+        AxToneDetail
+        AxClick
+        AxClickDetail
+        AxSwept
+        AxSweptDetail
+        AxSweptImpulse
+        AxFilterTest
+        AxFilterDetail
         AxBackground
         AxLatency
 
@@ -240,7 +311,10 @@ classdef CalibrationGui < handle
         % measurement, so switching between them costs nothing and loses
         % nothing -- every panel keeps whatever was last drawn on it.
         PlotTabs
-        TransferTab
+        ToneTab
+        ClickTab
+        SweptTab
+        FilterTestTab
         BackgroundTab
         LatencyTab
     end
@@ -368,16 +442,30 @@ classdef CalibrationGui < handle
                 Icon=stimgen.util.toolbar_icon('save'), ...
                 ClickedCallback=@(~,~) obj.on_save_());
 
+            % Two ways of taking the session out of the window, grouped
+            % together: as words, and as a picture. Both mirror a File menu
+            % item, the way every other tool here does.
+            uipushtool(tb, Tooltip=tip('PrintSummary'), Separator='on', ...
+                Icon=stimgen.util.toolbar_icon('summary'), ...
+                ClickedCallback=@(~,~) obj.on_print_summary_());
+
             % The whole window -- controls column included -- onto the
-            % clipboard in one press. Mirrors File > Copy Window to
-            % Clipboard, the way every other tool here mirrors a menu item.
-            uipushtool(tb, Tooltip=tip('CopyWindowTool'), Separator='on', ...
+            % clipboard in one press.
+            uipushtool(tb, Tooltip=tip('CopyWindowTool'), ...
                 Icon=stimgen.util.toolbar_icon('camera'), ...
                 ClickedCallback=@(~,~) obj.on_copy_window_());
 
             uipushtool(tb, Tooltip=tip('QuickStartTool'), Separator='on', ...
                 Icon=stimgen.util.toolbar_icon('help'), ...
                 ClickedCallback=@(~,~) obj.on_show_quick_start_());
+
+            % The same wiki page, entered at the tour of this window. A book
+            % rather than a second question mark: the two tools answer
+            % different questions -- what calibration is, and what this
+            % control does -- and only the icons say which is which.
+            uipushtool(tb, Tooltip=tip('GuiGuideTool'), ...
+                Icon=stimgen.util.toolbar_icon('wiki'), ...
+                ClickedCallback=@(~,~) obj.on_show_gui_guide_());
 
             obj.build_display_tools_(tb, tip);
         end
@@ -425,12 +513,22 @@ classdef CalibrationGui < handle
             obj.RecentCalibrationsMenu = uimenu(fileMenu, Text='Recent Calibrations');
             obj.refresh_recent_calibrations_menu_();
 
+            % The calibration in words, on the command window: what it was
+            % measured through, what each table covers, how each verification
+            % came out, and the operator's notes. Text rather than a dialog
+            % because it is meant to be copied -- into a notebook entry, a
+            % message, a commit -- and because it is as useful typed at the
+            % prompt (Engine.describe) as chosen from here.
+            uimenu(fileMenu, Text='Print Calibration Summary', Separator='on', ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'PrintSummary'), ...
+                MenuSelectedFcn=@(~,~) obj.on_print_summary_());
+
             % The window itself as a record: a calibration ends up in a lab
             % notebook or an e-mail, and the whole window -- settings and
             % plots together -- is the state worth reporting. exportapp is
             % the one capture that includes the UI components; copygraphics
             % and print skip them.
-            uimenu(fileMenu, Text='Save Screenshot...', Separator='on', ...
+            uimenu(fileMenu, Text='Save Screenshot...', ...
                 MenuSelectedFcn=@(~,~) obj.on_save_screenshot_());
             uimenu(fileMenu, Text='Copy Window to Clipboard', ...
                 MenuSelectedFcn=@(~,~) obj.on_copy_window_());
@@ -519,6 +617,8 @@ classdef CalibrationGui < handle
             helpMenu = uimenu(obj.Figure, Text='Help');
             uimenu(helpMenu, Text='Calibration Quick Start (Wiki)', ...
                 MenuSelectedFcn=@(~,~) obj.on_show_quick_start_());
+            uimenu(helpMenu, Text='Guide to This Window (Wiki)', ...
+                MenuSelectedFcn=@(~,~) obj.on_show_gui_guide_());
         end
 
         function build_controls_panel_(obj)
@@ -542,7 +642,7 @@ classdef CalibrationGui < handle
             col.Padding = [0 0 0 0];
             col.RowSpacing = 6;
 
-            stack = uigridlayout(col, [4 1]);
+            stack = uigridlayout(col, [5 1]);
             stack.Layout.Row = 1;
             stack.Layout.Column = 1;
             stack.ColumnWidth = {'1x'};
@@ -550,7 +650,7 @@ classdef CalibrationGui < handle
             stack.RowSpacing = 6;
             stack.Scrollable = 'on';
 
-            h = zeros(1, 4);
+            h = zeros(1, 5);
 
             [g, h(1)] = obj.add_section_(stack, 1, 'Microphone', [24 24 24 30 30]);
             obj.build_reference_section_(g);
@@ -563,6 +663,9 @@ classdef CalibrationGui < handle
 
             [g, h(4)] = obj.add_section_(stack, 4, 'Display', [24 24]);
             obj.build_display_section_(g);
+
+            [g, h(5)] = obj.add_section_(stack, 5, 'Notes', 96);
+            obj.build_notes_section_(g);
 
             stack.RowHeight = num2cell(h);
 
@@ -623,23 +726,23 @@ classdef CalibrationGui < handle
             % Open (or refocus) the Hardware and Analysis Settings window: the
             % facts the adapter reports, the settings that describe the signal
             % path it acquires through, and how the acquired record is
-            % transformed to a spectrum. Non-modal, so it can stay up during a
-            % run. The conduction delay is not here: it is measured per
-            % acquisition rather than set once per rig, so it lives in the
-            % column footer where it stays visible while a sweep runs.
+            % transformed to a spectrum. Modal, like the other two settings
+            % windows -- see modal_settings_figure_. The conduction delay is
+            % not here: it is measured per acquisition rather than set once
+            % per rig, so it lives in the column footer where it stays visible
+            % while a sweep runs.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
                 figure(obj.HardwareDialog_);
                 return
             end
 
             pos = obj.Figure.Position;
-            obj.HardwareDialog_ = uifigure( ...
-                Name='Hardware and Analysis Settings', ...
-                Position=[pos(1)+40 pos(2)+pos(4)-300 400 208], ...
-                Resize='off');
+            obj.HardwareDialog_ = modal_settings_figure_( ...
+                'Hardware and Analysis Settings', ...
+                [pos(1)+40 pos(2)+pos(4)-426 400 334]);
 
-            g = uigridlayout(obj.HardwareDialog_, [7 2]);
-            g.RowHeight = {24 24 24 12 20 24 24};
+            g = uigridlayout(obj.HardwareDialog_, [12 2]);
+            g.RowHeight = {24 24 24 12 20 24 24 12 20 24 24 26};
             % Same split as the controls column's sections: captions carry
             % the units, the fields hold a few digits.
             g.ColumnWidth = {'1.3x', '1x'};
@@ -659,21 +762,37 @@ classdef CalibrationGui < handle
             obj.AcCoupleCheck = check_row_(g, 3, 'AC Couple Acquired Signal', ...
                 stimgen.util.tooltip('CalibrationGui', 'AcCoupleResponse'));
 
+            % Neither of the two below is read by anything: the sweep was
+            % measured through whatever gain the rig was set to, so both are
+            % already inside every voltage in the tables, and applying one
+            % again would double-count it. They are here so the file records
+            % the knob positions it was made at -- the one fact a table
+            % cannot be checked against later. The heading says so, because
+            % a gain field on a calibration window otherwise reads as one
+            % that is applied.
+            heading_row_(g, 5, 'Hardware Gain (recorded, not applied)');
+
+            obj.AdcGainField = numeric_row_(g, 6, 'ADC Gain (dB)', ...
+                [-200, 200], '%.1f', stimgen.util.tooltip('CalibrationGui', 'AdcGain'));
+
+            obj.DacAttenField = numeric_row_(g, 7, 'DAC Attenuation (dB)', ...
+                [-200, 200], '%.1f', stimgen.util.tooltip('CalibrationGui', 'DacAttenuation'));
+
             % The two below are analysis rather than acquisition: they change
             % how an already-acquired record is turned into a spectrum, and so
             % what every level read off one becomes. They share this window
             % with AC coupling because they share its consequence -- the
             % numbers in the table move -- and are separated by a heading
             % because the reason they move is a different one.
-            heading_row_(g, 5, 'Spectral Analysis');
+            heading_row_(g, 9, 'Spectral Analysis');
 
-            obj.SpectralWindowDrop = dropdown_row_(g, 6, 'Analysis Window', ...
+            obj.SpectralWindowDrop = dropdown_row_(g, 10, 'Analysis Window', ...
                 arrayfun(@stimgen.calibration.SpectralOptions.windowLabel, ...
                     stimgen.calibration.SpectralOptions.WindowList), ...
                 stimgen.calibration.SpectralOptions.WindowList, ...
                 stimgen.util.tooltip('CalibrationGui', 'SpectralWindow'));
 
-            obj.SpectralFftDrop = dropdown_row_(g, 7, 'FFT Length (samples)', ...
+            obj.SpectralFftDrop = dropdown_row_(g, 11, 'FFT Length (samples)', ...
                 arrayfun(@stimgen.calibration.SpectralOptions.fftLengthLabel, ...
                     stimgen.calibration.SpectralOptions.FftLengthList), ...
                 stimgen.calibration.SpectralOptions.FftLengthList, ...
@@ -684,8 +803,12 @@ classdef CalibrationGui < handle
             % on whether it happened to be open then.
             obj.MaxOutputField.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
             obj.AcCoupleCheck.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
+            obj.AdcGainField.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
+            obj.DacAttenField.ValueChangedFcn = @(~,~) obj.on_hardware_setting_changed_();
             obj.SpectralWindowDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
             obj.SpectralFftDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
+
+            close_row_(obj.HardwareDialog_, g, 12);
 
             obj.sync_hardware_dialog_();
             obj.refresh_sample_rate_label_();
@@ -695,7 +818,9 @@ classdef CalibrationGui < handle
             try
                 obj.Engine.set_configuration( ...
                     MaxOutputVoltage=obj.MaxOutputField.Value, ...
-                    AcCoupleResponse=obj.AcCoupleCheck.Value);
+                    AcCoupleResponse=obj.AcCoupleCheck.Value, ...
+                    AdcGain=obj.AdcGainField.Value, ...
+                    DacAttenuation=obj.DacAttenField.Value);
                 obj.set_status_('Hardware settings applied.', false);
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
@@ -737,6 +862,8 @@ classdef CalibrationGui < handle
             end
             obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
             obj.AcCoupleCheck.Value = obj.Engine.AcCoupleResponse;
+            obj.AdcGainField.Value = obj.Engine.AdcGain;
+            obj.DacAttenField.Value = obj.Engine.DacAttenuation;
             obj.SpectralWindowDrop.Value = obj.Engine.SpectralWindow;
             % A loaded calibration may name a length this list does not offer,
             % having been saved from a hand-configured engine. Show it rather
@@ -760,16 +887,15 @@ classdef CalibrationGui < handle
             end
 
             pos = obj.Figure.Position;
-            obj.DelayDialog_ = uifigure( ...
-                Name='Conduction Delay Settings', ...
-                Position=[pos(1)+70 pos(2)+pos(4)-330 420 212], ...
-                Resize='off');
+            obj.DelayDialog_ = modal_settings_figure_( ...
+                'Conduction Delay Settings', ...
+                [pos(1)+70 pos(2)+pos(4)-360 420 242]);
 
-            g = uigridlayout(obj.DelayDialog_, [5 2]);
+            g = uigridlayout(obj.DelayDialog_, [6 2]);
             % The last row is the wrapped hint; it gets a line's slack over
             % what the text needs at the default font, since a rig running a
             % larger system font wraps it further.
-            g.RowHeight = {24 24 8 24 76};
+            g.RowHeight = {24 24 8 24 76 26};
             g.ColumnWidth = {'1.3x', '1x'};
             g.Padding = [8 8 8 8];
             g.RowSpacing = 4;
@@ -801,13 +927,15 @@ classdef CalibrationGui < handle
                 Text=['A brief click is played and the delay of its response ' ...
                 'measured. Leave the speaker and microphone where an experiment ' ...
                 'has them, and take the acoustic calibrator off the microphone, ' ...
-                'before pressing Measure Conduction Delay.']);
+                'then close this window and press Measure Conduction Delay.']);
             hint.Layout.Row = 5;
             hint.Layout.Column = [1 2];
 
             obj.DelayMaxField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
             obj.DelayClicksField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
             obj.AmbientTempField.ValueChangedFcn = @(~,~) obj.on_ambient_temp_changed_();
+
+            close_row_(obj.DelayDialog_, g, 6);
 
             obj.sync_delay_dialog_();
         end
@@ -853,22 +981,22 @@ classdef CalibrationGui < handle
         function on_excitation_settings_(obj)
             % Open (or refocus) the Excitation Settings window: the drive
             % voltage every sweep plays at, and the per-edge rise/fall time
-            % every tone burst is gated with. Non-modal, so it can stay up
-            % during a run, and pushes to the engine the moment either field
-            % changes -- the window may be closed by the time a sweep starts.
+            % every tone burst is gated with. Modal, like the other two
+            % settings windows (see modal_settings_figure_), and pushes to the
+            % engine the moment either field changes -- the window is gone by
+            % the time a sweep can be started.
             if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
                 figure(obj.ExcitationDialog_);
                 return
             end
 
             pos = obj.Figure.Position;
-            obj.ExcitationDialog_ = uifigure( ...
-                Name='Excitation Settings', ...
-                Position=[pos(1)+55 pos(2)+pos(4)-190 380 108], ...
-                Resize='off');
+            obj.ExcitationDialog_ = modal_settings_figure_( ...
+                'Excitation Settings', ...
+                [pos(1)+55 pos(2)+pos(4)-184 380 102]);
 
-            g = uigridlayout(obj.ExcitationDialog_, [2 2]);
-            g.RowHeight = {24 24};
+            g = uigridlayout(obj.ExcitationDialog_, [3 2]);
+            g.RowHeight = {24 24 26};
             g.ColumnWidth = {'1.3x', '1x'};
             g.Padding = [8 8 8 8];
             g.RowSpacing = 4;
@@ -882,6 +1010,8 @@ classdef CalibrationGui < handle
 
             obj.ExcitationField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
             obj.ToneRampField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
+
+            close_row_(obj.ExcitationDialog_, g, 3);
 
             obj.sync_excitation_dialog_();
         end
@@ -997,6 +1127,62 @@ classdef CalibrationGui < handle
             obj.TransferLogXCheck.Value = true;
         end
 
+        function build_notes_section_(obj, g)
+            % Free text about this calibration, in the operator's own words:
+            % which speaker and microphone, where they stood, what was odd
+            % about the rig that day. Last in the column because it is
+            % written once at the end rather than consulted during a step,
+            % and full width because prose does not belong in the caption/
+            % field pair every other row uses.
+            %
+            % It is the one control here that travels in the .esgc rather
+            % than in this window's preferences -- a note about Tuesday's
+            % calibration must not turn up on Wednesday's.
+            % No Placeholder property: it arrived after this package's
+            % R2021a baseline, and the section title and tooltip already say
+            % what the box is for.
+            obj.NotesArea = uitextarea(g, ...
+                Tooltip=stimgen.util.tooltip('CalibrationGui', 'Notes'), ...
+                ValueChangedFcn=@(~,~) obj.commit_notes_());
+            obj.NotesArea.Layout.Row = 1;
+            obj.NotesArea.Layout.Column = [1 2];
+        end
+
+        function commit_notes_(obj)
+            % Push the notes text onto the engine, where save() will find it.
+            % Called on every edit and again before a save, because a click
+            % straight from the text area to a toolbar button need not have
+            % fired the edit callback first, and the note would then be left
+            % out of the file it was written for.
+            if isempty(obj.NotesArea) || ~isvalid(obj.NotesArea)
+                return
+            end
+            v = obj.NotesArea.Value;
+            if isempty(v)
+                txt = "";
+            else
+                txt = join(string(v(:)), newline);
+            end
+            obj.Engine.set_configuration(Notes=txt);
+        end
+
+        function on_print_summary_(obj)
+            % Print the calibration's own description to the command window.
+            % Notes are committed first so what is printed includes a note
+            % still being typed, and the command window is raised because
+            % this window is usually covering it.
+            obj.commit_notes_();
+            obj.Engine.describe();
+            try
+                commandwindow;
+            catch ME
+                % No desktop (-nodesktop, or a headless run). The text was
+                % printed either way, which is the part that matters.
+                stimgen.util.vprintf(2, ME);
+            end
+            obj.set_status_('Calibration summary printed to the command window.', false);
+        end
+
         function build_footer_(obj, col)
             % Pinned below the scrolling stack: during a run these are the only
             % controls and readouts that matter, and none may scroll out of
@@ -1034,25 +1220,40 @@ classdef CalibrationGui < handle
         end
 
         function build_plots_panel_(obj)
-            % Create the five axes and hand them to a LiveMonitor, which does
+            % Create every axes and hand them to a LiveMonitor, which does
             % all the drawing -- live during a run, static between runs.
             %
             % The waveform and the spectrum are always on screen: they are the
             % record being acquired right now, and watching a run means
-            % watching them. Below them, a tab per measurement -- the transfer
-            % curves, the background noise analysis, the conduction delay
-            % probe. Those three used to be one panel three views took turns
-            % on, which meant measuring a background threw away the sweep that
-            % was on screen and a delay probe threw away both. A panel each
-            % keeps all three, and the tab strip both selects a view and says
-            % which one is up, which is what makes the two toolbar buttons and
-            % the three View-menu items that used to do that redundant.
+            % watching them. Below them, a tab per measurement -- one for each
+            % stimulus that can be calibrated, then the background noise
+            % analysis and the conduction delay probe. These used to be one
+            % panel every view took turns on, which meant measuring a
+            % background threw away the sweep that was on screen and a delay
+            % probe threw away both. A panel each keeps them all, and the tab
+            % strip both selects a view and says which one is up, which is
+            % what made the toolbar buttons and View-menu items that used to
+            % do that redundant.
+            %
+            % A tab per STIMULUS rather than one holding the tables together,
+            % because the three are not one measurement drawn three times. A
+            % tone table is levels against frequency, a click table levels
+            % against duration -- an axis the other cannot be read on -- and
+            % a swept sine measures a continuous transfer function of which
+            % its table is only a summary. So each stimulus gets a plot of
+            % its own kind and, underneath, what only that stimulus produces:
+            % per-point distortion and SNR for the two point-by-point sweeps,
+            % and for the swept sine the deconvolved flatness, group delay
+            % and impulse response.
             panel = uipanel(obj.Grid, Title='Visualization');
             panel.Layout.Row = 1;
             panel.Layout.Column = 2;
 
             g = uigridlayout(panel, [2 2]);
-            g.RowHeight = {'1x', '1x'};
+            % The tabs take the larger share: two of the stimulus panels
+            % stack two plots and the third stacks three, against one plot
+            % each in the row above.
+            g.RowHeight = {'1x', '1.4x'};
             g.ColumnWidth = {'1x', '1x'};
 
             obj.AxTime = uiaxes(g);
@@ -1070,42 +1271,147 @@ classdef CalibrationGui < handle
             obj.PlotTabs.Layout.Row = 2;
             obj.PlotTabs.Layout.Column = [1 2];
 
-            [obj.TransferTab, obj.AxTransfer] = obj.add_plot_tab_('Transfer Curves', ...
-                'TabTransfer');
+            obj.build_tone_tab_();
+            obj.build_click_tab_();
+            obj.build_swept_tab_();
+            obj.build_filter_test_tab_();
+
             [obj.BackgroundTab, obj.AxBackground] = obj.add_plot_tab_('Background Noise', ...
                 'TabBackground');
             [obj.LatencyTab, obj.AxLatency] = obj.add_plot_tab_('Conduction Delay', ...
                 'TabLatency');
 
+            % The struct form: a panel per stimulus, with the detail axes
+            % under each. By name rather than as an array, because which
+            % handle is which stops being obvious past about five of them.
             obj.Monitor = stimgen.calibration.LiveMonitor(obj.Engine, ...
-                Axes=[obj.AxTime obj.AxSpectrum obj.AxTransfer ...
-                      obj.AxBackground obj.AxLatency]);
+                Axes=struct( ...
+                    'signal',        obj.AxTime, ...
+                    'spectrum',      obj.AxSpectrum, ...
+                    'tone',          obj.AxTone, ...
+                    'tone_detail',   obj.AxToneDetail, ...
+                    'click',         obj.AxClick, ...
+                    'click_detail',  obj.AxClickDetail, ...
+                    'swept_sine',    obj.AxSwept, ...
+                    'swept_detail',  obj.AxSweptDetail, ...
+                    'swept_impulse', obj.AxSweptImpulse, ...
+                    'filter_test',   obj.AxFilterTest, ...
+                    'filter_detail', obj.AxFilterDetail, ...
+                    'background',    obj.AxBackground, ...
+                    'latency',       obj.AxLatency));
             obj.Monitor.LogX = obj.TransferLogXCheck.Value;
             obj.sync_spectrum_units_menu_();
         end
 
+        function build_tone_tab_(obj)
+            % Levels against frequency, and under them the distortion and SNR
+            % measured at each of those frequencies. A tone sweep is the only
+            % calibration here that measures the rig one frequency at a time,
+            % and so the only one that can say where it stops behaving.
+            [obj.ToneTab, tg] = obj.add_stacked_tab_('Tones', 'TabTones', ...
+                {'1.5x', '1x'});
+            obj.AxTone       = obj.tab_axes_(tg, 1, 1);
+            obj.AxToneDetail = obj.tab_axes_(tg, 2, 1);
+        end
+
+        function build_click_tab_(obj)
+            % The same two plots against duration instead of frequency. The
+            % pairing is what a click series is judged on: peak level rises
+            % with duration while SNR falls as it shortens, and where those
+            % meet is where the short end of the table stops meaning
+            % anything.
+            [obj.ClickTab, tg] = obj.add_stacked_tab_('Clicks', 'TabClicks', ...
+                {'1.5x', '1x'});
+            obj.AxClick       = obj.tab_axes_(tg, 1, 1);
+            obj.AxClickDetail = obj.tab_axes_(tg, 2, 1);
+        end
+
+        function build_swept_tab_(obj)
+            % Three plots, because a swept sine measures more than a table:
+            % the table on top, then the deconvolved response -- flatness and
+            % group delay together, since a rig can be flat and still smear a
+            % transient -- beside the impulse response that same
+            % deconvolution produced. The bottom two share a row because they
+            % are two readings of one measurement, and side by side is how
+            % they get compared.
+            [obj.SweptTab, tg] = obj.add_stacked_tab_('Swept Sine', 'TabSweptSine', ...
+                {'1.2x', '1x'}, {'1x', '1x'});
+            obj.AxSwept        = obj.tab_axes_(tg, 1, [1 2]);
+            obj.AxSweptDetail  = obj.tab_axes_(tg, 2, 1);
+            obj.AxSweptImpulse = obj.tab_axes_(tg, 2, 2);
+        end
+
+        function build_filter_test_tab_(obj)
+            % The equalizer's verification, and the only tab that is not a
+            % lookup table. Two plots because the test measures the same
+            % quantity twice and the answer is the difference: the two
+            % responses in dB SPL on top -- where an equalizer that bought
+            % flatness by throwing output away is visible -- and under them
+            % each one's deviation from flat, which is what the pass
+            % criterion is applied to.
+            %
+            % It had no tab of its own until it had two plots to put on one:
+            % drawn on the Tones tab it either painted over the tone table or
+            % was wiped by the next redraw of it, and the unfiltered curve was
+            % overwritten by the filtered one halfway through the run.
+            [obj.FilterTestTab, tg] = obj.add_stacked_tab_('Filter Test', ...
+                'TabFilterTest', {'1.2x', '1x'});
+            obj.AxFilterTest   = obj.tab_axes_(tg, 1, 1);
+            obj.AxFilterDetail = obj.tab_axes_(tg, 2, 1);
+        end
+
         function [tab, ax] = add_plot_tab_(obj, titleText, tooltipKey)
-            % One tab in the plots panel, carrying one axes. The axes needs a
-            % layout container of its own: dropped straight into a uitab it
-            % would take its default Position rather than filling the tab.
+            % One tab in the plots panel, carrying a single axes.
+            [tab, tg] = obj.add_stacked_tab_(titleText, tooltipKey, {'1x'});
+            ax = obj.tab_axes_(tg, 1, 1);
+        end
+
+        function [tab, tg] = add_stacked_tab_(obj, titleText, tooltipKey, rowHeights, colWidths)
+            % One tab carrying a grid of axes, returning the grid for the
+            % caller to place them in. An axes needs that container: dropped
+            % straight into a uitab it takes its default Position rather than
+            % filling the tab. Heights are proportions rather than pixels --
+            % the tab strip resizes with the window, and a fixed height would
+            % leave a detail panel unreadable on a small screen and stranded
+            % on a large one.
+            arguments
+                obj
+                titleText (1,:) char
+                tooltipKey (1,:) char
+                rowHeights (1,:) cell
+                colWidths (1,:) cell = {'1x'}
+            end
             tab = uitab(obj.PlotTabs, Title=titleText, ...
                 Tooltip=stimgen.util.tooltip('CalibrationGui', tooltipKey));
-            tg = uigridlayout(tab, [1 1]);
+            tg = uigridlayout(tab, [numel(rowHeights) numel(colWidths)]);
+            tg.RowHeight = rowHeights;
+            tg.ColumnWidth = colWidths;
             tg.Padding = [2 2 2 2];
+            tg.RowSpacing = 4;
+            tg.ColumnSpacing = 4;
+        end
+
+        function ax = tab_axes_(~, tg, row, col)
+            % One axes in a tab's grid.
             ax = uiaxes(tg);
+            ax.Layout.Row = row;
+            ax.Layout.Column = col;
             grid(ax, 'on');
         end
 
         function on_plot_tab_changed_(obj, evt)
             % The tab strip is the view selector; TransferView_ only follows
             % it, so what is on screen and what the object thinks is on screen
-            % cannot disagree. Nothing is redrawn: all three panels are drawn
-            % as their measurements arrive and stay drawn, which is the whole
-            % point of the tabs.
+            % cannot disagree. Nothing is redrawn: every panel is drawn as its
+            % measurement arrives and stays drawn, which is the whole point of
+            % the tabs.
             switch evt.NewValue
+                case obj.ClickTab,      obj.TransferView_ = "click";
+                case obj.SweptTab,      obj.TransferView_ = "swept_sine";
+                case obj.FilterTestTab, obj.TransferView_ = "filter_test";
                 case obj.BackgroundTab, obj.TransferView_ = "background";
                 case obj.LatencyTab,    obj.TransferView_ = "latency";
-                otherwise,              obj.TransferView_ = "calibration";
+                otherwise,              obj.TransferView_ = "tone";
             end
         end
 
@@ -1187,12 +1493,16 @@ classdef CalibrationGui < handle
             % Nothing is redrawn: every panel already holds its measurement.
             arguments
                 obj
-                view (1,1) string {mustBeMember(view, ["calibration", "background", "latency"])}
+                view (1,1) string {mustBeMember(view, ["tone", "click", ...
+                    "swept_sine", "filter_test", "background", "latency"])}
             end
             switch view
-                case "background", tab = obj.BackgroundTab;
-                case "latency",    tab = obj.LatencyTab;
-                otherwise,         tab = obj.TransferTab;
+                case "click",       tab = obj.ClickTab;
+                case "swept_sine",  tab = obj.SweptTab;
+                case "filter_test", tab = obj.FilterTestTab;
+                case "background",  tab = obj.BackgroundTab;
+                case "latency",     tab = obj.LatencyTab;
+                otherwise,          tab = obj.ToneTab;
             end
             if ~isempty(obj.PlotTabs) && isgraphics(obj.PlotTabs) && isgraphics(tab)
                 obj.PlotTabs.SelectedTab = tab;
@@ -1202,24 +1512,39 @@ classdef CalibrationGui < handle
             obj.TransferView_ = view;
         end
 
-        function focus_sweep_panel_(obj)
-            % Bring the Transfer Curves tab up for a sweep that is about to
-            % fill it in. Called by each measurement that draws there, so a
-            % run started while the background or the delay panel is on top
-            % is watched rather than happening off screen -- the one cost of
-            % tabs, and the one place worth spending a tab switch on.
-            obj.set_transfer_view_("calibration");
+        function focus_sweep_panel_(obj, stage)
+            % Bring up the tab a run is about to fill in. Called by each
+            % measurement before it starts, so a run begun while another
+            % panel is on top is watched rather than happening off screen --
+            % the one cost of tabs, and the one place worth spending a tab
+            % switch on.
+            %
+            % Named by RUN STAGE rather than by tab, and resolved through the
+            % same map the monitor routes the live updates with: a list kept
+            % here could disagree with that one, and the failure would be an
+            % operator watching an empty panel while the curve fills in
+            % behind another tab. It is also why a lookup-table test names
+            % itself and lands on the panel of the table it verifies.
+            arguments
+                obj
+                stage (1,1) string
+            end
+            obj.set_transfer_view_( ...
+                stimgen.calibration.LiveMonitor.stage_panel(stage));
         end
 
         function redraw_transfer_panels_(obj)
-            % Redraw all three measurement panels. They own separate axes and
-            % no longer clear each other, so there is no view to choose
-            % between and no ordering to respect -- this is what a display
-            % option that applies to every panel (the log x-axis, the drive
-            % voltage axis, a weighting overlay) calls to make the change
-            % show on the two panels that are not on top as well as the one
-            % that is.
+            % Redraw every measurement panel: the three stimulus tabs and
+            % their detail axes, the filter test, the background analysis,
+            % the delay probe.
+            % They own separate axes and no longer clear each other, so there
+            % is no view to choose between and no ordering to respect -- this
+            % is what a display option that applies to every panel (the log
+            % x-axis, the drive voltage axis, a weighting overlay) calls to
+            % make the change show on the panels that are not on top as well
+            % as the one that is.
             obj.Monitor.show_calibration(obj.Engine);
+            obj.Monitor.show_filter_test(obj.Engine);
             obj.Monitor.show_background(obj.Engine);
             obj.Monitor.show_latency(obj.LastLatency_);
         end
@@ -1495,7 +1820,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Tone calibration cancelled.', false);
                 return
             end
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("tone");
             if isempty(freqs)
                 obj.Engine.calibrate_tones([], repeatCount);
             else
@@ -1542,7 +1867,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Click calibration cancelled.', false);
                 return
             end
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("click");
             if isempty(durs)
                 obj.Engine.calibrate_clicks([], repeatCount);
             else
@@ -1583,7 +1908,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Swept sine calibration cancelled.', false);
                 return
             end
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("swept_sine");
             if isempty(freqs)
                 obj.Engine.calibrate_swept_sine(duration, [], repeatCount);
             else
@@ -1628,7 +1953,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Tone LUT test cancelled.', false);
                 return
             end
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("tone_test");
 
             % The plots are deliberately left showing the test's own curve
             % rather than refreshed back to the committed LUTs -- the measured
@@ -1678,7 +2003,7 @@ classdef CalibrationGui < handle
                 obj.set_status_('Click LUT test cancelled.', false);
                 return
             end
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("click_test");
 
             % Prompt is in ms; Engine.test_clicks takes seconds. The plots are
             % deliberately left showing the test's own curve rather than
@@ -1768,8 +2093,12 @@ classdef CalibrationGui < handle
             % the sweep raw and through the filter and compares the flatness
             % of the two measured responses. Stored in
             % CalibrationData.filterTest by the engine.
-            obj.focus_sweep_panel_();
+            obj.focus_sweep_panel_("filter_test");
             r = obj.Engine.test_filter();
+            % The run leaves the second of its two sweeps on the panel; the
+            % comparison the test exists for is only drawable now that both
+            % have been measured.
+            obj.Monitor.show_filter_test(obj.Engine);
             if r.passed
                 verdict = 'PASS';
             else
@@ -1927,6 +2256,9 @@ classdef CalibrationGui < handle
                 obj
                 ffn (1,:) char = ''
             end
+            % The notes go in the file, so they have to reach the engine
+            % before it writes one.
+            obj.commit_notes_();
             ffn = obj.Engine.save(ffn);
             if isempty(ffn)
                 obj.set_status_('Save cancelled.', false);
@@ -2146,12 +2478,26 @@ classdef CalibrationGui < handle
             % Open the calibration walkthrough in a browser. The workflow is
             % maintained once, on the wiki, rather than in a dialog that drifts
             % out of step with the GUI it describes.
-            status = web(stimgen.calibration.CalibrationGui.QuickStartURL, '-browser');
+            obj.open_wiki_page_(stimgen.calibration.CalibrationGui.QuickStartURL, ...
+                'Calibration Quick Start', 'The calibration walkthrough');
+        end
+
+        function on_show_gui_guide_(obj)
+            % Open this window's own section of the walkthrough -- the tour
+            % that names every control in the order a session uses them.
+            obj.open_wiki_page_(stimgen.calibration.CalibrationGui.GuiGuideURL, ...
+                'Calibration GUI Guide', 'The guide to this window');
+        end
+
+        function open_wiki_page_(obj, url, dlgTitle, what)
+            % Hand a wiki page to the system browser, and if there is none,
+            % put the address where the operator can copy it. The address is
+            % what they need either way, so a failure states it rather than
+            % just reporting that nothing opened.
+            status = web(url, '-browser');
             if status ~= 0
-                uialert(obj.Figure, sprintf(['No browser could be opened.\n\n' ...
-                    'The calibration walkthrough is at:\n%s'], ...
-                    stimgen.calibration.CalibrationGui.QuickStartURL), ...
-                    'Calibration Quick Start', Icon='info');
+                uialert(obj.Figure, sprintf('No browser could be opened.\n\n%s is at:\n%s', ...
+                    what, url), dlgTitle, Icon='info');
             end
         end
 
@@ -2195,6 +2541,9 @@ classdef CalibrationGui < handle
             obj.NormativeField.Value = obj.Engine.NormativeValue;
             obj.ShowLivePlotsCheck.Value = obj.Engine.ShowLivePlots;
             obj.ToneSweptSineCheck.Value = obj.Engine.ToneLutSource == "swept_sine";
+            % One cell entry per line: what a text area holds, and what
+            % splitlines makes of the single string the engine keeps.
+            obj.NotesArea.Value = cellstr(splitlines(obj.Engine.Notes));
             obj.sync_hardware_dialog_();
             obj.sync_delay_dialog_();
             obj.sync_excitation_dialog_();
@@ -2831,10 +3180,10 @@ classdef CalibrationGui < handle
             % are validated against the field each is headed for via
             % sync_controls_: a hand-edited preference outside its range
             % would otherwise throw there rather than here. Max Output,
-            % Excitation Voltage, Tone Rise/Fall Time, the ambient temperature
-            % and the FFT length state their limits literally because their
-            % controls live in an on-demand settings window and do not exist
-            % yet. Every value here is in the unit the Engine property holds
+            % Excitation Voltage, Tone Rise/Fall Time, the ambient
+            % temperature, the two recorded hardware gains and the FFT
+            % length state their limits literally because their controls
+            % live in an on-demand settings window and do not exist yet. Every value here is in the unit the Engine property holds
             % -- the temperature preference is Celsius, not the Fahrenheit its
             % field shows, and the ramp is seconds, not the milliseconds its
             % field shows.
@@ -2848,6 +3197,8 @@ classdef CalibrationGui < handle
                 'ExcitationVoltage',  [eps, 10]
                 'ToneRampDuration',   [0.1e-3, 50e-3]
                 'MaxOutputVoltage',   [eps, 1000]
+                'AdcGain',            [-200, 200]
+                'DacAttenuation',     [-200, 200]
                 'SpectralFftLength',  [0, 2^24]
                 };
 
@@ -2935,8 +3286,18 @@ classdef CalibrationGui < handle
             % The tab last read, so a window reopens where its operator left
             % off. Only the selection is remembered -- what the panels held
             % belonged to a session that has ended.
+            %
+            % "calibration" is what a window wrote before the lookup tables
+            % were split into a tab per stimulus; it means the tone tab now,
+            % which is where a rig's calibration starts. Translated rather
+            % than discarded so the first launch after an update opens where
+            % the last one was left, and rewritten on the way out.
             tab = string(obj.get_pref_('transferTab', ''));
-            if ismember(tab, ["calibration", "background", "latency"])
+            if tab == "calibration"
+                tab = "tone";
+            end
+            if ismember(tab, ["tone", "click", "swept_sine", "filter_test", ...
+                    "background", "latency"])
                 obj.set_transfer_view_(tab);
             end
 
@@ -2965,6 +3326,8 @@ classdef CalibrationGui < handle
                 obj.set_pref_('ExcitationVoltage',  sprintf('%.15g', obj.Engine.ExcitationVoltage));
                 obj.set_pref_('ToneRampDuration',   sprintf('%.15g', obj.Engine.ToneRampDuration));
                 obj.set_pref_('MaxOutputVoltage',   sprintf('%.15g', obj.Engine.MaxOutputVoltage));
+                obj.set_pref_('AdcGain',            sprintf('%.15g', obj.Engine.AdcGain));
+                obj.set_pref_('DacAttenuation',     sprintf('%.15g', obj.Engine.DacAttenuation));
                 obj.set_pref_('AcCoupleResponse',   sprintf('%d', obj.Engine.AcCoupleResponse));
                 obj.set_pref_('SpectralWindow',     char(obj.Engine.SpectralWindow));
                 obj.set_pref_('SpectralFftLength',  sprintf('%d', obj.Engine.SpectralFftLength));
@@ -3300,6 +3663,54 @@ btn = uibutton(g, Text=labelText, ButtonPushedFcn=callback);
 btn.Layout.Row = row;
 btn.Layout.Column = columns;
 btn.Tooltip = stimgen.util.tooltip('CalibrationGui', tooltipKey);
+end
+
+% -------------------------------------------------------------------------
+function fig = modal_settings_figure_(name, position)
+% fig = modal_settings_figure_(name, position)
+% The window every Options settings dialog is built on. Modal: it takes the
+% rig's settings out of the main window's way while they are being read and
+% changed, and there is nothing on the main window worth reaching with one of
+% these open -- each is a handful of fields answered in a moment.
+%
+% Modal does not make the fields pending. They still apply as they are
+% committed (each window's ValueChangedFcn), because the engine, not the
+% window, is what a sweep reads: a value has to be in the engine whether the
+% operator closed this window or MATLAB did.
+%
+% The cost, and the reason the delay window's instruction says to close it
+% first: a modal window blocks the main window, so a measurement cannot be
+% started or watched from behind one.
+fig = uifigure(Name=name, Position=position, Resize='off', WindowStyle='modal');
+end
+
+% -------------------------------------------------------------------------
+function btn = close_row_(fig, g, row)
+% btn = close_row_(fig, g, row)
+% Dismiss button for a settings window, in the field column so it lines up
+% under the fields instead of stretching the width of the window. It only
+% closes: every field on these windows reaches the engine as it is committed,
+% so there is nothing pending to confirm and nothing staged to cancel. It
+% exists because a window with no button at all reads as unfinished -- an
+% operator looks for the one that makes the typed value count -- and because
+% these windows are modal, which makes dismissing one the way back to the
+% rest of the GUI rather than merely tidy.
+btn = uibutton(g, Text='Close', ButtonPushedFcn=@(~,~) delete(fig));
+btn.Layout.Row = row;
+btn.Layout.Column = 2;
+btn.Tooltip = stimgen.util.tooltip('CalibrationGui', 'SettingsClose');
+
+% Escape does the same, which is what a window carrying a single dismiss
+% button invites. Not Return: these windows are numeric edit fields, where
+% Return commits the field being typed in.
+fig.WindowKeyPressFcn = @(~,evt) close_on_escape_(fig, evt);
+end
+
+% -------------------------------------------------------------------------
+function close_on_escape_(fig, evt)
+if strcmp(evt.Key, 'escape')
+    delete(fig)
+end
 end
 
 % -------------------------------------------------------------------------

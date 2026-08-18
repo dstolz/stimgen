@@ -39,6 +39,12 @@ s.ReferenceLevel      = obj.ReferenceLevel;
 s.ReferenceFrequency  = obj.ReferenceFrequency;
 s.ExcitationVoltage   = obj.ExcitationVoltage;
 s.MaxOutputVoltage    = obj.MaxOutputVoltage;
+% The rig settings the tables were measured through. Nothing reads them back
+% into a calculation -- the gain is already inside the voltages -- but a file
+% that does not say which knob positions it was taken at cannot be reproduced
+% or checked against a later one.
+s.AdcGain             = obj.AdcGain;
+s.DacAttenuation      = obj.DacAttenuation;
 s.ToneLutSource       = obj.ToneLutSource;
 s.AcCoupleResponse    = obj.AcCoupleResponse;
 s.AcCoupleFrequency   = obj.AcCoupleFrequency;
@@ -56,6 +62,11 @@ s.AmbientTemperature  = obj.AmbientTemperature;
 % travel with the data that was taken under them.
 s.SpectralWindow      = obj.SpectralWindow;
 s.SpectralFftLength   = obj.SpectralFftLength;
+% The operator's own account of this calibration. Everything else in the file
+% describes how the measurement was made; this is the only field that can say
+% what it was made on, and it is worth nothing if it does not travel with the
+% tables it describes.
+s.Notes               = obj.Notes;
 s.CalibrationTimestamp = obj.CalibrationTimestamp;
 
 save(ffn, '-struct', 's');

@@ -33,12 +33,30 @@ classdef LiveMonitor < handle
     % given none. Objects it created are the only ones reset() deletes, so it
     % can share axes with a host that draws its own static plots.
     %
-    % The transfer curve, the background analysis and the delay probe are one
+    % The lookup tables, the background analysis and the delay probe are one
     % family of views. Given three axes they share the third and each clears
     % the last one on its way in -- one panel, one view at a time. Given five,
-    % each gets its own and a redraw of one leaves the other two standing,
-    % which is what lets a host put them on tabs and keep three measurements
-    % on screen at once (CalibrationGui does).
+    % the background and the delay probe get panels of their own while the
+    % three sweeps still share one, so a redraw of the sweep leaves the other
+    % two measurements standing.
+    %
+    % Given a STRUCT of axes, each stimulus gets a panel of its own as well --
+    % tone, click, swept sine -- and with it a plot shaped for that stimulus
+    % rather than the one shape all three can share. Each may carry detail
+    % axes underneath (see the constructor), drawn from the committed table
+    % when a sweep finishes: per-frequency distortion and SNR for tones, the
+    % same against duration for clicks, and for a swept sine the deconvolved
+    % flatness, the group delay and the impulse response -- none of which a
+    % level-versus-x panel can show. That is the form CalibrationGui uses,
+    % one tab per stimulus.
+    %
+    % The filter test is a panel of that family too, named "filter_test":
+    % what it measures is a level against frequency, so it could be read on
+    % the tone panel, but it is the one measurement that draws the SAME
+    % quantity twice -- once through the speaker and once through the filter
+    % and the speaker -- and put on the tone panel it either overwrote the
+    % tone table or was overwritten by the next redraw of it. Given no panel
+    % of its own it still falls back there.
     %
     % Usage:
     %   % Own window, driven by an engine run:
@@ -94,7 +112,21 @@ classdef LiveMonitor < handle
         % The views that draw on the transfer panel -- one axes between them,
         % or one each. Named here because the clearing rules, the cache keys
         % and the weighting overlays are all per-view.
-        TransferPanels = ["transfer", "background", "latency"]
+        %
+        % "transfer" is the combined view: every lookup table overlaid on one
+        % axes, which is what a host that supplied a single sweep panel gets.
+        % Where each stimulus was given a panel of its own the three named
+        % ones are drawn instead and "transfer" never is. Both forms are in
+        % the family because they resolve to the same axes when the panels
+        % are shared, and clear_for_ decides what a redraw takes down with it
+        % by comparing axes handles rather than names.
+        TransferPanels = ["transfer", "tone", "click", "swept_sine", ...
+            "filter_test", "background", "latency"]
+
+        % The three stimulus panels, in the order a rig is normally
+        % calibrated in. Their names are also the Engine's CalibrationData
+        % field names, which is what lets one loop draw all three.
+        SweepPanels = ["tone", "click", "swept_sine"]
 
         % Units the spectrum panel can be drawn in, in menu order. dB SPL is the
         % calibration's own scale; the electrical units say whether the input
@@ -109,9 +141,24 @@ classdef LiveMonitor < handle
     properties (SetAccess = private)
         AxSignal        % matlab.graphics.axis.Axes | matlab.ui.control.UIAxes | []
         AxSpectrum
-        AxTransfer
+        AxTransfer      % the combined lookup-table panel; = AxTone when unshared
+        AxTone          % tone sweep, tone LUT and the tone LUT test
+        AxClick         % click sweep, click LUT and the click LUT test
+        AxSweptSine     % swept sine sweep and its LUT
+        AxFilterTest    % equalization filter test; own axes when the host named one, else AxTone
         AxBackground    % own axes when the host supplied five; else AxTransfer
         AxLatency       % likewise
+
+        % Detail axes under a stimulus panel; empty when the host gave none,
+        % and every renderer that touches one guards on that. Nothing drawn
+        % here is live: the figures they show are computed when a sweep is
+        % committed, not per measurement, so they fill in when the run ends.
+        AxToneDetail    % harmonic distortion and SNR against frequency
+        AxClickDetail   % harmonic distortion and SNR against duration
+        AxSweptDetail   % deconvolved magnitude flatness and group delay
+        AxSweptImpulse  % impulse response, its arrival and first reflection
+        AxFilterDetail  % filter test: deviation from flat, before and after
+
         Engine          % stimgen.calibration.Engine | []
         OwnsFigure (1,1) logical = false
     end
@@ -139,8 +186,25 @@ classdef LiveMonitor < handle
             %   eng  - stimgen.calibration.Engine to follow; omit to attach later
             %   Axes - [signal spectrum transfer] axes handles, or five --
             %          [signal spectrum transfer background latency] -- to give
-            %          each transfer-family view a panel of its own. Omit to
-            %          create a dedicated figure.
+            %          the background analysis and the delay probe panels of
+            %          their own, or a struct to give each STIMULUS one too:
+            %
+            %            signal, spectrum      the record being acquired
+            %            tone, click, swept_sine   one panel per sweep
+            %            filter_test, background, latency
+            %
+            %          and, optionally, the detail axes drawn beneath four
+            %          of those when a run is committed:
+            %
+            %            tone_detail, click_detail    distortion and SNR
+            %            swept_detail                 flatness and group delay
+            %            swept_impulse                impulse response
+            %            filter_detail                equalized flatness
+            %
+            %          A struct field left out is treated as absent, not as
+            %          an error: a host may want the tone panel's detail and
+            %          not the click panel's. Omit Axes entirely to create a
+            %          dedicated figure.
             arguments
                 eng = []
                 opts.Axes = []
@@ -150,12 +214,15 @@ classdef LiveMonitor < handle
 
             if isempty(opts.Axes)
                 obj.build_figure_();
+            elseif isstruct(opts.Axes)
+                obj.assign_axes_struct_(opts.Axes);
             else
                 ax = opts.Axes;
                 if numel(ax) ~= 3 && numel(ax) ~= 5
                     error('stimgen:calibration:LiveMonitor:badAxes', ...
                         ['Axes must be three handles -- [signal spectrum transfer] ' ...
-                        '-- or five: [signal spectrum transfer background latency].']);
+                        '-- five: [signal spectrum transfer background latency] ' ...
+                        '-- or a struct naming one panel per stimulus.']);
                 end
                 obj.AxSignal   = ax(1);
                 obj.AxSpectrum = ax(2);
@@ -171,6 +238,13 @@ classdef LiveMonitor < handle
                     obj.AxBackground = ax(3);
                     obj.AxLatency    = ax(3);
                 end
+                % Every stimulus draws on the one sweep panel in both of
+                % these forms, which is what makes show_calibration overlay
+                % the tables rather than draw one per stimulus.
+                obj.AxTone      = ax(3);
+                obj.AxClick     = ax(3);
+                obj.AxSweptSine = ax(3);
+                obj.AxFilterTest = ax(3);
             end
 
             if ~isempty(eng)
@@ -191,7 +265,8 @@ classdef LiveMonitor < handle
         update(obj, d)     % Render one stimgen.calibration.LiveUpdate payload.
         reset(obj)         % Delete every graphics object this monitor created.
         show_engine_state(obj, eng)  % Draw an engine's current response, off-run.
-        show_calibration(obj, eng)   % Draw an engine's committed LUTs on the transfer panel.
+        show_calibration(obj, eng)   % Draw an engine's committed LUTs: one panel per stimulus, or all on the shared one.
+        show_filter_test(obj, eng)   % Draw an engine's recorded filter test on its own panel.
         show_background(obj, eng)    % Draw an engine's background analysis on its panel.
         show_latency(obj, lat)       % Draw a conduction-delay probe's diagnostics on its panel.
 
@@ -209,9 +284,9 @@ classdef LiveMonitor < handle
                 for t = stimgen.calibration.LiveMonitor.WeightingTypes
                     obj.drop_(char("wt_" + p + "_" + t));
                 end
+                obj.drop_(char(p + "_legend"));
+                obj.drop_(char(p + "_lut_legend"));
             end
-            obj.drop_('xfer_legend');
-            obj.drop_('static_legend');
             obj.drop_('bg_legend');
         end
 
@@ -233,14 +308,16 @@ classdef LiveMonitor < handle
             % transfer view, plus the right-hand axis they share: neither view
             % clears the voltage traces on its way out. The legends naming
             % those traces go too -- they are built with AutoUpdate off, so a
-            % legend that outlived its lines would keep naming them.
-            keys = {'xfer_volt', 'xfer_vmax', 'xfer_vover', 'static_tone_v', ...
-                'static_swept_sine_v', 'static_click_v', 'static_vmax'};
-            for k = 1:numel(keys)
-                obj.drop_(keys{k});
+            % legend that outlived its lines would keep naming them. Every
+            % sweep panel is swept, not just the one on screen: with a panel
+            % per stimulus there are three of each of these.
+            bases = {'volt', 'vmax', 'vover', 'lut_vmax', 'lut_tone_v', ...
+                'lut_click_v', 'lut_swept_sine_v', 'legend', 'lut_legend'};
+            for p = stimgen.calibration.LiveMonitor.TransferPanels
+                for k = 1:numel(bases)
+                    obj.drop_(char(p + "_" + bases{k}));
+                end
             end
-            obj.drop_('xfer_legend');
-            obj.drop_('static_legend');
 
             if ~value
                 obj.hide_voltage_axis_();
@@ -271,17 +348,107 @@ classdef LiveMonitor < handle
         render_(obj, d)             % Draw all three panels from one payload.
         render_signal_(obj, d)      % Waveform panel.
         render_spectrum_(obj, d)    % Spectrum panel.
-        render_transfer_(obj, d)    % Transfer-curve panel.
+        render_transfer_(obj, d, panel)  % Live sweep on one stimulus panel.
         render_latency_(obj, lat)   % Conduction-delay panel.
+        show_lut_(obj, eng, panel)  % One committed lookup table on its own panel.
+        draw_quality_panel_(obj, ax, panel, x, m, xLabelText, titleText)  % Distortion/SNR detail axes.
+        show_tone_detail_(obj, eng)      % Distortion and SNR against frequency.
+        show_click_detail_(obj, eng)     % Distortion and SNR against duration.
+        show_swept_detail_(obj, eng)     % Flatness, group delay and impulse response.
         render_weighting_(obj, panel, f, lvl)  % Weighting curves over a level/frequency axis.
 
         function ax = panel_axes_(obj, panel)
-            % The axes one view draws on. The three transfer-family views
-            % return the same handle unless the host gave each its own.
+            % The axes one view draws on. Views the host gave no panel of
+            % their own return the same handle, which is what clear_for_
+            % compares to decide whether a redraw of one takes another down
+            % with it.
             switch panel
-                case "background", ax = obj.AxBackground;
-                case "latency",    ax = obj.AxLatency;
-                otherwise,         ax = obj.AxTransfer;
+                case "background",  ax = obj.AxBackground;
+                case "latency",     ax = obj.AxLatency;
+                case "tone",        ax = obj.AxTone;
+                case "click",       ax = obj.AxClick;
+                case "swept_sine",  ax = obj.AxSweptSine;
+                case "filter_test", ax = obj.AxFilterTest;
+                otherwise,          ax = obj.AxTransfer;
+            end
+        end
+
+        function ax = detail_axes_(obj, panel, which)
+            % ax = detail_axes_(obj, panel, which)
+            % One stimulus panel's detail axes, or [] where the host gave
+            % none. "which" is 1 for the panel's first detail axes and 2 for
+            % the second, which only the swept sine has.
+            ax = [];
+            switch panel
+                case "tone"
+                    if which == 1, ax = obj.AxToneDetail; end
+                case "click"
+                    if which == 1, ax = obj.AxClickDetail; end
+                case "swept_sine"
+                    if which == 1
+                        ax = obj.AxSweptDetail;
+                    else
+                        ax = obj.AxSweptImpulse;
+                    end
+                case "filter_test"
+                    if which == 1, ax = obj.AxFilterDetail; end
+            end
+            if ~isempty(ax) && ~all(isgraphics(ax))
+                ax = [];
+            end
+        end
+
+        function tf = sweeps_share_panel_(obj)
+            % True when the host gave one axes for all three stimuli, which
+            % is what makes show_calibration overlay the tables instead of
+            % drawing a plot per stimulus. Asked of the handles rather than
+            % remembered from the constructor, so an axes deleted underneath
+            % this object cannot leave the two disagreeing.
+            tf = isequal(obj.AxTone, obj.AxClick) && ...
+                 isequal(obj.AxTone, obj.AxSweptSine);
+        end
+
+        function assign_axes_struct_(obj, s)
+            % assign_axes_struct_(obj, s)
+            % Take the panel axes from a struct, one field per panel. Absent
+            % fields stay empty and every renderer guards on that, so a host
+            % may supply a stimulus panel without its detail axes -- or, for
+            % the two views this object has always been able to share, no
+            % panel at all.
+            obj.AxSignal    = field_(s, 'signal');
+            obj.AxSpectrum  = field_(s, 'spectrum');
+            obj.AxTone      = field_(s, 'tone');
+            obj.AxClick     = field_(s, 'click');
+            obj.AxSweptSine = field_(s, 'swept_sine');
+
+            % The combined view's axes. It is never drawn where the three
+            % stimuli have panels of their own, but clear_for_ still asks
+            % for it by name, and an empty handle there would make the
+            % family comparison meaningless.
+            obj.AxTransfer = obj.AxTone;
+
+            % A host that named no background or delay panel falls back to
+            % the tone panel, the same sharing the three-axes form has
+            % always had rather than silently dropping the measurement.
+            obj.AxBackground = field_(s, 'background', obj.AxTone);
+            obj.AxLatency    = field_(s, 'latency',    obj.AxTone);
+
+            % The filter test falls back the same way. Sharing the tone panel
+            % is what it did before it had one of its own, and a host that
+            % names no panel for it gets that rather than a run with nowhere
+            % to draw.
+            obj.AxFilterTest = field_(s, 'filter_test', obj.AxTone);
+
+            obj.AxToneDetail   = field_(s, 'tone_detail');
+            obj.AxClickDetail  = field_(s, 'click_detail');
+            obj.AxSweptDetail  = field_(s, 'swept_detail');
+            obj.AxSweptImpulse = field_(s, 'swept_impulse');
+            obj.AxFilterDetail = field_(s, 'filter_detail');
+
+            if isempty(obj.AxTone) || isempty(obj.AxClick) || isempty(obj.AxSweptSine)
+                error('stimgen:calibration:LiveMonitor:badAxes', ...
+                    ['An Axes struct must name a panel for every stimulus: ' ...
+                    'tone, click and swept_sine.']);
             end
         end
 
@@ -377,19 +544,67 @@ classdef LiveMonitor < handle
         end
 
         function hide_voltage_axis_(obj)
-            % Retire the transfer panel's right-hand drive-voltage axis. The
-            % axis itself outlives the lines drawn on it -- deleting those
-            % leaves an empty scale and a label behind -- so it is hidden the
-            % same way show_background hides it; whichever view draws voltage
-            % next turns it back on.
-            ax = obj.AxTransfer;
-            if isempty(ax) || ~all(isgraphics(ax)) || numel(ax.YAxis) < 2
-                return
+            % Retire the right-hand drive-voltage axis on every sweep panel.
+            % The axis itself outlives the lines drawn on it -- deleting
+            % those leaves an empty scale and a label behind -- so it is
+            % hidden the same way show_background hides it; whichever view
+            % draws voltage next turns it back on. Shared panels resolve to
+            % one handle and are hidden once.
+            done = {};
+            for p = stimgen.calibration.LiveMonitor.TransferPanels
+                ax = obj.panel_axes_(p);
+                if isempty(ax) || ~all(isgraphics(ax)) || numel(ax.YAxis) < 2
+                    continue
+                end
+                if any(cellfun(@(h) isequal(h, ax), done))
+                    continue
+                end
+                done{end+1} = ax;
+                yyaxis(ax, 'right');
+                ylabel(ax, '');
+                ax.YAxis(2).Visible = 'off';
+                yyaxis(ax, 'left');
             end
-            yyaxis(ax, 'right');
-            ylabel(ax, '');
-            ax.YAxis(2).Visible = 'off';
-            yyaxis(ax, 'left');
+        end
+    end
+
+    methods (Static)
+        function panel = stage_panel(stage)
+            % panel = stimgen.calibration.LiveMonitor.stage_panel(stage)
+            % The stimulus panel a run stage draws its lookup table on.
+            %
+            % Public and static because a host has to agree with it: a GUI
+            % that brings up a tab before starting a run picks the tab from
+            % here rather than from a list of its own, or the two drift and
+            % an operator watches an empty panel while the curve fills in
+            % behind another tab (CalibrationGui.focus_sweep_panel_).
+            %
+            % A table's verification belongs on the panel of the table it
+            % verifies -- a tone LUT test read anywhere but under the tone
+            % curve is a set of numbers with nothing to disagree with. The
+            % filter test is the exception, and has a panel of its own: it
+            % verifies no table, it draws two curves of the same quantity
+            % rather than one, and sharing the tone panel meant one of the
+            % two measurements always lost.
+            %
+            % Parameters:
+            %   stage - a stimgen.calibration.LiveUpdate Stage
+            %
+            % Returns:
+            %   panel - "tone" | "click" | "swept_sine" | "filter_test"
+            arguments
+                stage (1,1) string
+            end
+            switch stage
+                case {"click", "click_test"}
+                    panel = "click";
+                case "swept_sine"
+                    panel = "swept_sine";
+                case "filter_test"
+                    panel = "filter_test";
+                otherwise   % tone, tone_test
+                    panel = "tone";
+            end
         end
     end
 
@@ -427,12 +642,26 @@ classdef LiveMonitor < handle
                 case "latency"
                     keys = [{'lat_corr', 'lat_pick', 'lat_pick_txt', ...
                         'lat_bound', 'lat_probe', 'lat_floor', 'lat_legend'}, wt];
-                otherwise   % "transfer": the live sweep and the committed LUTs
-                    keys = [{'xfer_meas', 'xfer_sd', 'xfer_pending', 'xfer_cur', ...
-                        'xfer_norm', 'xfer_volt', 'xfer_vmax', 'xfer_vover', ...
-                        'xfer_legend', 'static_tone', 'static_swept_sine', ...
-                        'static_click', 'static_tone_v', 'static_swept_sine_v', ...
-                        'static_click_v', 'static_vmax', 'static_legend'}, wt];
+                otherwise
+                    % A stimulus panel, or the combined one. All four own the
+                    % same shapes -- a live sweep, a committed table, and the
+                    % detail axes underneath -- so one list of base names is
+                    % scoped by the panel's own name rather than repeated
+                    % four times. Listing a name no panel happens to draw
+                    % costs nothing: drop_ ignores a key it has never seen.
+                    bases = {'meas', 'sd', 'pending', 'cur', 'norm', ...
+                        'volt', 'vmax', 'vover', 'legend', ...
+                        'lut_tone', 'lut_click', 'lut_swept_sine', ...
+                        'lut_tone_v', 'lut_click_v', 'lut_swept_sine_v', ...
+                        'lut_vmax', 'lut_legend', ...
+                        'det1', 'det2', 'det3', 'det4', 'det_ref', 'det_legend', ...
+                        'dev', 'dev_band', 'gd', 'gd_bulk', 'gd_legend', ...
+                        'ir', 'ir_arr', 'ir_refl', 'ir_legend', ...
+                        'ft_unfiltered', 'ft_filtered', 'ft_dev_unfiltered', ...
+                        'ft_dev_filtered', 'ft_tol', 'ft_ref', 'ft_legend', ...
+                        'ft_det_legend'};
+                    keys = [cellfun(@(b) char(panel + "_" + b), bases, ...
+                        UniformOutput=false), wt];
             end
         end
 
@@ -533,6 +762,38 @@ classdef LiveMonitor < handle
             s = sprintf('%d:%02d', floor(seconds / 60), mod(seconds, 60));
         end
 
+        function m = lut_metrics_(eng, field)
+            % m = lut_metrics_(eng, field)
+            % The metrics struct one committed table carries, or an empty
+            % struct where the table is absent or predates them. Every
+            % reader asks isfield of what comes back, so an .esgc saved
+            % before a figure existed degrades to a panel without that trace
+            % rather than to a render failure that suspends live plotting
+            % for the rest of the run.
+            m = struct();
+            C = eng.CalibrationData;
+            if ~isstruct(C) || ~isfield(C, field) || isempty(C.(field))
+                return
+            end
+            S = C.(field);
+            if isfield(S, 'metrics') && isstruct(S.metrics)
+                m = S.metrics;
+            end
+        end
+
+        function s = calibration_stamp_(eng)
+            % Age of the calibration, so a stale file is obvious on screen.
+            % Every panel drawn from committed data carries it, which is why
+            % it is here rather than local to one of them.
+            t = eng.CalibrationTimestamp;
+            if isnat(t)
+                s = 'measurement date unknown';
+                return
+            end
+            s = sprintf('measured %s', ...
+                char(datetime(t, Format='dd-MMM-yyyy HH:mm')));
+        end
+
         function s = stage_name_(stage)
             % Human-readable name for a run stage.
             switch stage
@@ -549,4 +810,20 @@ classdef LiveMonitor < handle
             end
         end
     end
+end
+
+% ------------------------------------------------------------------------ %
+function ax = field_(s, name, dflt)
+% One axes handle out of the constructor's Axes struct, or the default when
+% the field is absent or empty. Absent rather than an error, so a host can
+% name only the panels it built.
+arguments
+    s (1,1) struct
+    name (1,:) char
+    dflt = []
+end
+ax = dflt;
+if isfield(s, name) && ~isempty(s.(name)) && all(isgraphics(s.(name)))
+    ax = s.(name);
+end
 end

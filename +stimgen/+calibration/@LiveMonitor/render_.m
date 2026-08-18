@@ -10,16 +10,17 @@ if isgraphics(obj.AxSpectrum)
     obj.render_spectrum_(d);
 end
 
-% The transfer panel serves whichever of its views the payload carries data
-% for. A delay probe has no lookup table and would otherwise leave the panel
-% showing the last sweep's curve while the measurement it is running has
-% nowhere to be drawn.
-if ~isgraphics(obj.AxTransfer)
-    return
-end
+% Below them, the panel the run's own stage belongs to. A delay probe has no
+% lookup table and would otherwise leave a sweep panel showing the last
+% curve while the measurement it is running has nowhere to be drawn; a
+% sweep goes to its stimulus's panel, which where the host gave each one is
+% what keeps a click run from painting over a tone table.
 if ~isempty(d.Latency.lag_ms)
-    obj.render_latency_(d.Latency);
+    if isgraphics(obj.AxLatency)
+        obj.render_latency_(d.Latency);
+    end
 elseif ~isempty(d.Table.x)
-    obj.render_transfer_(d);
+    obj.render_transfer_(d, ...
+        stimgen.calibration.LiveMonitor.stage_panel(d.Stage));
 end
 end

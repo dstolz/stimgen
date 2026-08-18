@@ -36,6 +36,15 @@ if isfield(s, 'AcCoupleFrequency')
     obj.AcCoupleFrequency = s.AcCoupleFrequency;
 end
 
+% Written since the rig gain settings were recorded alongside the tables. An
+% older file simply never said; it restores at the neutral 0 dB default.
+if isfield(s, 'AdcGain')
+    obj.AdcGain = s.AdcGain;
+end
+if isfield(s, 'DacAttenuation')
+    obj.DacAttenuation = s.DacAttenuation;
+end
+
 % Written since the tone burst ramp became configurable; an older file keeps
 % the fixed 5 ms edge it was actually measured with.
 if isfield(s, 'ToneRampDuration')
@@ -57,5 +66,13 @@ if isfield(s, 'SpectralWindow')
 end
 if isfield(s, 'SpectralFftLength')
     obj.SpectralFftLength = s.SpectralFftLength;
+end
+
+% Written since the operator could annotate a calibration. An older file
+% simply carries no account of itself, which is the empty default. Joined
+% rather than assigned: the field is one string here, but a struct built by
+% hand -- or by a GUI text area -- naturally holds one entry per line.
+if isfield(s, 'Notes') && ~isempty(s.Notes)
+    obj.Notes = join(string(s.Notes(:)), newline);
 end
 end

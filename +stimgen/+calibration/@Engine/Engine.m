@@ -59,6 +59,8 @@ classdef Engine < handle
     %                                   % within tolerance (default 1 dB)
     %   eng.design_filter();            % optional; see design_filter for
     %                                   % length/interpolation/smoothing options
+    %   eng.set_configuration(Notes="Rig B, ES1 at 10 cm on axis");
+    %   eng.describe();                 % what was measured, and how well
     %   eng.save('my_cal.esgc');
     %
     %   % offline use (no adapter needed):
@@ -84,6 +86,17 @@ classdef Engine < handle
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
         ExcitationVoltage   (1,1) double {mustBePositive}                   = 1     % V (<=10)
         MaxOutputVoltage    (1,1) double {mustBePositive,mustBeFinite}      = 10    % V full scale
+        % Hardware gain settings, recorded for the log and nothing else.
+        % Neither enters any calculation here: a calibration measures the
+        % chain as it was configured, so these settings are already inside
+        % every voltage and level in the tables, and applying them again
+        % would double-count them. They exist so a saved calibration states
+        % which knob positions produced it -- the one thing a table cannot
+        % be checked against afterwards. Both default to 0 dB, the neutral
+        % setting, which is also what a calibration saved before these
+        % fields existed restores as.
+        AdcGain             (1,1) double {mustBeReal,mustBeFinite}          = 0     % dB, input stage
+        DacAttenuation      (1,1) double {mustBeReal,mustBeFinite}          = 0     % dB, output stage
         % AC-couple every acquired record before it is analyzed: a zero-phase
         % high-pass at AcCoupleFrequency. A DC offset on the input stage adds
         % to the RMS, biases the cross-correlation that segments a burst
@@ -137,6 +150,14 @@ classdef Engine < handle
         % swept sine data exists, falling back to the tone LUT when it does not.
         % Both LUTs stay stored either way; this only redirects the lookup.
         ToneLutSource       (1,1) string {mustBeMember(ToneLutSource, ["tone", "swept_sine"])} = "tone"
+        % Whatever the operator wants recorded about this calibration in
+        % their own words: which speaker and microphone, where they stood,
+        % what was wrong with the rig that day. Free text, multi-line,
+        % never parsed. Saved into the .esgc and restored with it, because
+        % everything else in the file describes the measurement and nothing
+        % describes what was measured -- a table cannot say which speaker
+        % produced it. describe() prints it alongside the tables.
+        Notes               (1,1) string {mustBeNonmissing}                 = ""
         CalibrationTimestamp (1,1) datetime = datetime("")
     end
 
@@ -234,6 +255,7 @@ classdef Engine < handle
         results = refine_clicks(obj, options) % Iteratively test and correct the click LUT until levels land within tolerance.
         v = compute_adjusted_voltage(obj, type, value, level) % Interpolate LUT voltage.
         r = filter_level_reference(obj, x) % Level reference for running the equalization filter in hardware.
+        s = describe(obj) % Describe the calibration in words; prints to the command window when nothing takes the output.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
         restore(obj, s) % Restore engine state from a serialized struct.
         cancel(obj) % Request cancellation of an in-progress calibration run.

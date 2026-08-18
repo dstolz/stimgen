@@ -30,7 +30,7 @@ if d.Phase == "start"
         if d.Stage == "latency"
             obj.clear_for_("latency");
         else
-            obj.clear_for_("transfer");
+            obj.clear_for_(stimgen.calibration.LiveMonitor.stage_panel(d.Stage));
         end
     end
     obj.LastStage_ = d.Stage;

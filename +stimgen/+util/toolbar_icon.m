@@ -10,7 +10,7 @@ function icon = toolbar_icon(name)
 %   name - one of "open", "save", "protocol", "calibration", "connect",
 %          "disconnect", "help", "add", "remove", "play", "inspect",
 %          "refresh", "transfer", "background", "ghost", "voltage", "logx",
-%          "camera"
+%          "camera", "summary", "wiki"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
@@ -19,7 +19,7 @@ arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
         "calibration","connect","disconnect","help","add","remove","play", ...
         "inspect","refresh","transfer","background","ghost","voltage","logx", ...
-        "camera"])}
+        "camera","summary","wiki"])}
 end
 
 N = 24;
@@ -165,6 +165,57 @@ switch name
                 mask(12:15, c) = true;
             end
         end
+
+    case "summary" % page of written text -- the calibration described
+        % Outlined page carrying solid text lines: the opposite figure and
+        % ground of "protocol" (a solid page with its lines knocked out),
+        % so the two never read as the same glyph on the same toolbar. The
+        % last line runs short, which is what makes a block of bars read as
+        % prose rather than as a table or a list.
+        page  = row>=3 & row<=21 & col>=5 & col<=20;
+        inner = row>=5 & row<=19 & col>=7 & col<=18;
+        mask  = page & ~inner;
+        mask(8:9,   9:16) = true;
+        mask(12:13, 9:16) = true;
+        mask(16:17, 9:13) = true;
+
+    case "wiki" % open book -- the documentation, on the web
+        % The only glyph here drawn pixel by pixel rather than composed
+        % from filled regions. Two things have to land exactly for this to
+        % read as an open book and not as a roof or as a pair of documents:
+        % the notch between the two top edges with the spine starting just
+        % below it, and the outer edges tapering in at the foot. A polygon
+        % fill needs a pixel-level fix-up afterwards to get either.
+        %
+        % Solid pages with the text knocked out, not outlined pages:
+        % uitoolbar resamples a 24 px icon down to 16, where a 1 px outline
+        % washes out to grey while a filled silhouette keeps its shape.
+        art = [ ...
+            "........................"
+            "........................"
+            "........................"
+            "........................"
+            "..xxxxxxxx....xxxxxxxx.."
+            "..xxxxxxxx....xxxxxxxx.."
+            "..xx....xx.xx.xx....xx.."
+            "..xx....xx.xx.xx....xx.."
+            "..xxxxxxxx.xx.xxxxxxxx.."
+            "..xx....xx.xx.xx....xx.."
+            "..xx....xx.xx.xx....xx.."
+            "..xxxxxxxx.xx.xxxxxxxx.."
+            "..xxxxxxxx.xx.xxxxxxxx.."
+            "..xxxxxxxx.xx.xxxxxxxx.."
+            "..xxxxxxxx.xx.xxxxxxxx.."
+            "...xxxxxxx.xx.xxxxxxx..."
+            "....xxxxxx.xx.xxxxxx...."
+            ".......xxx.xx.xxx......."
+            ".........xxxxxx........."
+            "........................"
+            "........................"
+            "........................"
+            "........................"
+            "........................"];
+        mask = char(art) == 'x';
 end
 
 accent = [0.16 0.38 0.58];
