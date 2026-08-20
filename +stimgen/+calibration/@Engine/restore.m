@@ -22,6 +22,24 @@ arguments
     s   (1,1) struct
 end
 
+% A struct written before the level scale was corrected carries tables that
+% double-counted the calibrator. Version 2 marks the fix; anything older, or
+% unversioned, is only ambiguous when the calibrator was not the default 94 dB,
+% because that is the one setting at which the two scales agree.
+if isfield(s, 'ReferenceLevel') && ~isempty(s.ReferenceLevel)
+    stale = ~isfield(s, 'version') || isempty(s.version) || s.version < 2;
+    offsetDb = double(s.ReferenceLevel) - 94;
+    if stale && abs(offsetDb) >= 0.05
+        stimgen.util.vprintf(0, 1, ...
+            ['This calibration was serialized on the old level scale, which ' ...
+             'added the %.1f dB calibrator level on top of the 20 uPa ' ...
+             'reference. Its levels are %+.1f dB off and the rig would play ' ...
+             'about %.1f dB too %s. Re-measure it.'], ...
+            s.ReferenceLevel, offsetDb, abs(offsetDb), ...
+            stale_direction_(offsetDb));
+    end
+end
+
 if isfield(s, 'CalibrationData') && isstruct(s.CalibrationData)
     obj.CalibrationData = s.CalibrationData;
 end
@@ -65,4 +83,17 @@ end
 
 if ~isempty(cfg)
     obj.set_configuration(cfg{:});
+end
+end
+
+
+% ------------------------------------------------------------------------ %
+function d = stale_direction_(offsetDb)
+% Which way a stale calibration errs: an overstated level produces an
+% understated drive voltage, so the rig plays quieter than asked.
+if offsetDb > 0
+    d = 'quietly';
+else
+    d = 'loudly';
+end
 end

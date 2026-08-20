@@ -18,6 +18,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
 - [stimgen_StimInspector.md](stimgen_StimInspector.md): detail window for one stimulus — waveform, spectrum, spectrogram, THD and signal metrics
+- [stimgen_SpotCheck.md](stimgen_SpotCheck.md): play one stimulus through the rig, record it, and compare what came back with what was asked for
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference
 - [stimgen_SweptSineCalibration.md](stimgen_SweptSineCalibration.md): swept-sine calibration method
@@ -80,6 +81,14 @@ See [stimgen_calibration.md](stimgen_calibration.md) for the full walkthrough.
 - you want to save and reload stimulus banks as `.spl` files
 
 `stimgen.StimPlayer` optionally accepts a `stimgen.HardwareHost` that provides the hardware interfaces used for playback; omit it for speaker-preview-only operation. The older `StimGenInterface` and `StimGenInterface_Simple` GUIs have been removed; `StimPlayer` is the current playback tool.
+
+### Use `SpotCheck` when
+
+- you have a calibration already and want to confirm that *this* stimulus comes out of the speaker at the level it asks for
+- you want to see what the rig did to a waveform — rolloff, distortion, a clipped input stage — before a session rather than after it
+- you want a saved record of that check, with both waveforms and every metric
+
+`stimgen.SpotCheck` plays one stimulus through the calibration engine's adapter, records the microphone, and hands the result to `stimgen.StimInspector`. It answers a question a calibration cannot: a calibration maps table points, a spot check measures a whole waveform. See [stimgen_SpotCheck.md](stimgen_SpotCheck.md).
 
 ## Runtime and hardware expectations
 

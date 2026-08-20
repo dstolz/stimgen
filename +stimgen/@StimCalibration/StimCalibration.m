@@ -94,6 +94,11 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             % Serialize to a plain struct for protocol persistence.
             S                         = struct;
             S.Class                   = "stimgen.StimCalibration";
+            % Same schema version as a .esgc, and for the same reason: a
+            % calibration carried into a .spl bank or a protocol file has to
+            % say which level scale its tables were built on. Version 2 is the
+            % 20 uPa-only scale; see stimgen.calibration.Engine.volts_to_spl.
+            S.version                 = 2;
             S.CalibrationData         = obj.CalibrationData;
             S.MicSensitivity          = obj.MicSensitivity;
             S.NormativeValue          = obj.NormativeValue;
@@ -274,6 +279,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     methods
         function s = saveobj(obj)
             % Serialize for MATLAB session saves.
+            s.version                = 2;   % see toStruct
             s.CalibrationData        = obj.Engine.CalibrationData;
             s.MicSensitivity         = obj.Engine.MicSensitivity;
             s.NormativeValue         = obj.Engine.NormativeValue;

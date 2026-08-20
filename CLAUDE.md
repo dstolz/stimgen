@@ -18,6 +18,7 @@ addpath('C:\src\stimgen')   % the ROOT, never +stimgen itself (MATLAB resolves i
 t = stimgen.Tone; t.Frequency = 4000; t.update_signal; t.plot   % smoke test
 stimgen.StimPlayer                        % bank editor/player (offline = speaker preview only)
 stimgen.calibration.CalibrationGui        % offline: inspect/load a .esgc
+stimgen.SpotCheck                         % offline: load/inspect a stimulus; Run needs an adapter
 ```
 
 After editing a classdef, MATLAB caches the old definition. `clear classes` (or restart) before
@@ -29,7 +30,8 @@ Commit messages follow Conventional Commits (`docs:`, `feat:`, …).
 
 ## Architecture
 
-Three subsystems, plus two abstract seams that keep the package standalone.
+Three subsystems, plus two abstract seams that keep the package standalone, plus one tool
+that spans them.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
@@ -58,6 +60,15 @@ catches listener errors (warning per notify), `emit_live_` guards payload constr
 `LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
 per-measurement warning storm. `Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset`
 remain only as deprecated shims that forward to an attached monitor.
+
+**Spot check** — `stimgen.SpotCheck` (in `@SpotCheck/`) spans all three: it plays a stimulus
+through `Engine.play_and_capture`, wraps the microphone record in a `stimgen.CapturedSignal`
+(a `StimType` that carries samples instead of synthesizing them), and hands it to
+`StimInspector` for characterization. It reimplements no analysis; only the two plots that
+compare the *pair* of waveforms live in its own window. `Engine.play_and_capture` and
+`Engine.spl_from_volts` were added for it and are generally useful: the first is the
+arbitrary-waveform acquisition, the second is the one public volts-to-dB-SPL conversion.
+See `documentation/stimgen_SpotCheck.md`.
 
 ### The two abstract seams — do not break these
 
@@ -176,13 +187,41 @@ an inherited entry just by declaring the same key — that is how `ClickTrain.Du
 base-class text without editing `@StimType/propMeta.m`. GUI code with no stimulus object passes a
 section name instead (`stimgen.util.tooltip('StimPlayer','RunBtn')`); `@StimPlayer/create.m`,
 `@StimInspector/build_ui_.m` and `+calibration/CalibrationGui.m` all do
-this for their own controls and toolbars. An unknown key returns `''` and logs a warning rather
+this for their own controls and toolbars, as does `@SpotCheck/build_ui_.m`. An unknown key returns `''` and logs a warning rather
 than erroring, so a missing tooltip never blocks a GUI. The file is cached and re-read on change,
 so edits take effect without `clear functions`.
 
 **Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
 a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
-automatically offered in GUI dropdowns.
+automatically offered in GUI dropdowns. The glob reaches only loose files, so a `StimType` subclass
+that must *not* be offered as a stimulus goes in a class folder rather than onto the exclusion
+list — that is why `stimgen.CapturedSignal` lives in `@CapturedSignal/` despite being a single
+short file. Self-excluding by construction beats a name someone has to remember to add.
+
+**A vector property in `UserProperties` is a variant axis.** `get_variant_source_values_` scans
+`UserProperties` and treats anything with `numel > 1` as a combination axis, so a property holding
+bulk data — `CapturedSignal.Waveform`, a whole recording — must be left out of it or a million
+samples become a million combinations. The cost is that such a property does not survive
+`toStruct`/`fromStruct` or a `.spl` bank; `CapturedSignal` accepts that and is documented as a
+session object rather than a persistence format. Overriding `is_non_vectorizable_property_`
+instead does not work: that path *errors* on a non-scalar value rather than passing it through.
+
+**Reading a variant value without advancing it.** `selected_value` reselects when called outside a
+variant cycle — it advances the selection order and bumps the use count, because generating the
+next stimulus is what it is for. Code that only wants to *report* what the last generated waveform
+was made from must use `StimType.active_variant_values`, which returns the active combination and
+touches no selection state. Asking with `selected_value` changes the answer.
+
+**The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
+`spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
+`20*log10((v/MicSensitivity)/Engine.ReferencePressurePa)`. `compute_spl_voltage_`,
+`analyze_background_` and `LiveMonitor.convert_spectrum_` all route through it. Do not write the
+expression again anywhere — it used to exist as eight copies, one of which added the calibrator's
+`ReferenceLevel` on top of the 20 µPa reference and so counted the calibrator twice (harmless at
+the default 94 dB, 20 dB wrong at 114). `ReferenceLevel` is a property of the *calibrator* and is
+read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into V/Pa. `.esgc`
+schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
+is not 94.
 
 **Calibration coupling.** A subclass's `CalibrationType` constant (`"tone"`, `"click"`,
 `"filter"`, `"swept_sine"`) selects which LUT `apply_calibration` interpolates and which property

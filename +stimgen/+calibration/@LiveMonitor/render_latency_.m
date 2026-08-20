@@ -10,6 +10,11 @@ function render_latency_(obj, lat)
 %     its own peak. A single narrow spike is a delay worth trusting; a broad
 %     hump or a second comparable peak is a room, a resonance, or an aliased
 %     click train, and the reading should be repeated before it is used;
+%   - the detection threshold the arrival had to rise above: the largest
+%     peak of the correlation at negative lags, which is what the correlation
+%     looks like before the excitation has played. The delay marks the first
+%     causal sample above this line -- the direct arrival's onset -- not the
+%     correlation's maximum, which ringing or a reflection can pull later;
 %   - the probe-region response on the same lag axis, so the arrival the
 %     correlation is pointing at is visible as a waveform rather than
 %     inferred. Both share the axis because it is anchored to the click
@@ -122,6 +127,21 @@ if isfinite(lat.bound_ms)
     set(h, XData=[lat.bound_ms lat.bound_ms], YData=[0 1.15]);
 else
     obj.drop_('lat_bound');
+end
+
+% The pre-excitation correlation peak the arrival had to rise above. Guarded
+% by isfield because an archived diagnostics struct may predate it.
+thr = 0;
+if isfield(lat, 'corr_threshold') && isfinite(lat.corr_threshold)
+    thr = lat.corr_threshold;
+end
+if thr > 0 && ~isempty(lat.lag_ms)
+    h = obj.gobj_('lat_thresh', @() line(ax, NaN, NaN, LineStyle=':', ...
+        Color=[0.10 0.25 0.60], LineWidth=0.75, ...
+        DisplayName='detection threshold'));
+    set(h, XData=[lat.lag_ms(1) lat.lag_ms(end)], YData=[thr thr]);
+else
+    obj.drop_('lat_thresh');
 end
 end
 

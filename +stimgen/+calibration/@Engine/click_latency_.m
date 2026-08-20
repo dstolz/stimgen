@@ -12,18 +12,27 @@ function [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd
 % The lag comes from a bounded cross-correlation of the response against
 % xClick -- the excitation with everything but the probe click(s) zeroed,
 % which is what keeps a tonal train sharing the record from smearing the
-% correlation. The result is judged before it is trusted, inside the probe
-% region only (the record's head, before any tone burst):
+% correlation. The chosen lag is the correlation's first arrival: the first
+% causal sample that rises above the largest peak of the correlation at
+% negative lags -- measured just before the excitation, so noise by
+% definition -- rather than the correlation's maximum, which ringing or a
+% reflection can pull later than the direct arrival (see align_response_).
+% The result is judged before it is trusted, inside the probe region only
+% (the record's head, before any tone burst):
 %
 %   - the response peak there must stand clearly above the region's robust
 %     noise level -- otherwise the microphone or speaker is dead and the
 %     lag is noise;
-%   - that peak must sit where the measured lag predicts a click response,
-%     within a short ring window -- a strong response whose peak the lag
-%     does not explain means nothing inside the search bound aligns, which
-%     is what a delay larger than maxLagN looks like (the bounded search
-%     then picks a noise peak that is rarely on the bound itself);
-%   - the correlation peak must not sit on the bound.
+%   - the record must actually carry a response where the measured lag
+%     predicts one: the peak inside a short window at the predicted arrival
+%     has to clear that same floor. A lag pointing at silence means nothing
+%     inside the search bound aligns, which is what a delay larger than
+%     maxLagN looks like (the bounded search then picks a noise crossing
+%     that is rarely on the bound itself). The test is deliberately local --
+%     asking instead that the region's *loudest* peak be the arrival would
+%     fail every rig whose reflection or ringdown outweighs its direct
+%     sound, which is the case the first-arrival lag exists to get right;
+%   - the chosen lag must not sit on the bound.
 %
 % Parameters:
 %   xClick    - (1,:) double excitation with only the probe click(s)
@@ -41,7 +50,7 @@ function [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd
 %     peak_v, noise_v        - probe-region response peak and robust noise
 %     corr                   - normalized correlation over the click
 %                              support at the chosen lag; diagnostic only
-%     at_bound               - correlation peak sat on the search bound
+%     at_bound               - chosen lag sat on the search bound
 %     valid                  - the measurement is trustworthy
 %     measuredOn             - datetime of the measurement
 %     temperature_c          - AmbientTemperature the path was derived at
@@ -51,7 +60,11 @@ function [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd
 %   diagnostics - struct of the evidence the verdict was reached from, for
 %     a caller that draws or archives it. Built only when asked for, so a
 %     sweep taking one of these per acquisition pays nothing for it:
-%     lag_ms, corr           - the searched correlation curve
+%     lag_ms, corr           - the searched correlation curve, over the full
+%                              [-bound, bound] lag span
+%     corr_threshold         - the pre-excitation correlation peak the
+%                              arrival had to rise above, on corr's
+%                              normalized scale
 %     probe_v, probe_lag0_ms - the probe-region response and where its first
 %                              sample sits relative to the click onset, so
 %                              record and correlation share one lag axis
@@ -78,17 +91,27 @@ region = y0(1:n);
 % that does not is a disconnected microphone or a muted speaker.
 peakV  = max([abs(region), 0]);
 noiseV = 1.4826 * median(abs(region));
-peakOk = isfinite(peakV) && peakV > 10 * max(noiseV, eps);
+floorV = 10 * max(noiseV, eps);
+peakOk = isfinite(peakV) && peakV > floorV;
 
-% Does the lag explain the region's peak? Direct arrival lands on the
-% predicted sample; the ring window absorbs a speaker whose energy peaks a
-% moment after onset.
+% Is there a response where the lag says one should be? Measured over a
+% window opening just before the predicted arrival and closing after the
+% ringdown, so a speaker whose energy peaks a moment after onset still
+% counts. Anything louder elsewhere in the region -- a reflection, a
+% ringdown of a previous click -- is irrelevant to whether this arrival is
+% real, and is deliberately not consulted.
 clickIdx = find(xClick(1:min(numel(xClick), n)) ~= 0);
-[~, peakIdx] = max([abs(region), 0]);
-tolPre = round(0.5e-3 * fs);
-ringN  = round(3e-3 * fs);
-d      = peakIdx - lagN - clickIdx;
-agree  = ~isempty(clickIdx) && any(d >= -tolPre & d <= ringN);
+tolPre   = round(0.5e-3 * fs);
+ringN    = round(3e-3 * fs);
+arrivalV = 0;
+for ci = clickIdx
+    lo = max(ci + lagN - tolPre, 1);
+    hi = min(ci + lagN + ringN, numel(region));
+    if lo <= hi
+        arrivalV = max(arrivalV, max(abs(region(lo:hi))));
+    end
+end
+agree = ~isempty(clickIdx) && arrivalV > floorV;
 
 % Diagnostic only: how strongly the click support correlates at the chosen
 % lag. Not gated on -- the agreement test above is the discriminator.
@@ -134,6 +157,7 @@ diagnostics = struct( ...
     'fs',                fs, ...
     'lag_ms',            curve.lag_samples ./ fs .* 1e3, ...
     'corr',              curve.value, ...
+    'corr_threshold',    curve.threshold, ...
     'probe_v',           region, ...
     'probe_lag0_ms',     lag0Ms, ...
     'delay_ms',          delayS * 1e3, ...

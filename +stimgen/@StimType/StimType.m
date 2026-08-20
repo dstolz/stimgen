@@ -197,6 +197,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         v = selected_value(obj, propName)                                         % Scalar value for a vectorized property
         value = evalPropertyExpression(obj, propName, expressionText)             % Evaluate a property expression
         info = get_variant_info(obj)                                              % Variant-combination state
+        s = active_variant_values(obj)                                           % Active combination's values, without reselecting
         info = set_variant_index(obj, idx)                                        % Select variant by index
         info = step_variant(obj, step)                                            % Step variant index
         text = current_parameter_summary(obj)                                     % Non-default parameter summary

@@ -618,6 +618,12 @@ measurement is a diagnostic and not a sweep):
   peak. A single narrow spike is a delay worth trusting; a broad hump or a
   second comparable peak means a room, a resonance or an aliased click train,
   and the reading should be repeated before it is used
+- the **detection threshold**, the largest peak of the correlation at negative
+  lags — measured just before the excitation played, so noise by definition.
+  The measured delay is the first causal sample of the correlation that rises
+  above this line: the direct arrival's onset, not the correlation's maximum,
+  which speaker ringing or a reflection can pull later than the arrival and
+  overstate the delay (and the distance read from it)
 - the **probe response** in volts on the right-hand axis, on the same lag axis
   — lag 0 is the moment the click was played — so the arrival the correlation
   points at is visible as a waveform rather than inferred

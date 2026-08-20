@@ -53,7 +53,7 @@ if isempty(f)
 end
 
 convert = @(v) stimgen.calibration.LiveMonitor.convert_spectrum_(v, ...
-    obj.SpectrumUnits, d.Context.ReferenceLevel, d.Context.MicSensitivity, noiseBw);
+    obj.SpectrumUnits, d.Context.MicSensitivity, noiseBw);
 [lvl, info] = convert(vrms);
 
 % The ghost advances only when the record itself is new. Redrawing the same

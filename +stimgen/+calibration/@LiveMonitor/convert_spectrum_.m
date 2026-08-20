@@ -1,5 +1,5 @@
-function [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)
-% [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)
+function [v, info] = convert_spectrum_(vrms, unit, micSens, noiseBw)
+% [v, info] = convert_spectrum_(vrms, unit, micSens, noiseBw)
 % Convert an rms-volts spectrum into one of the display units listed in
 % stimgen.calibration.LiveMonitor.SpectrumUnitList, and describe how it should
 % be drawn.
@@ -16,10 +16,15 @@ function [v, info] = convert_spectrum_(vrms, unit, refLevel, micSens, noiseBw)
 % alone, which is how harmonics and sidebands are read on an uncalibrated or
 % not-yet-referenced rig.
 %
+% The dB SPL forms go through stimgen.calibration.Engine.volts_to_spl, so the
+% level read off this axis is the same number the engine would put in a lookup
+% table for the same voltage. They took the calibrator's ReferenceLevel as an
+% offset until that was found to double-count it -- the scale is fixed by the
+% 20 uPa reference, and the calibrator enters only through micSens.
+%
 % Parameters:
 %   vrms     - (1,:) double magnitude spectrum (V rms per bin)
 %   unit     - (1,1) string display unit
-%   refLevel - (1,1) double reference level (dB SPL)
 %   micSens  - (1,1) double microphone sensitivity (V/Pa)
 %   noiseBw  - (1,1) double equivalent noise bandwidth of the window (Hz)
 %
@@ -36,11 +41,12 @@ noiseBw = max(noiseBw, eps);
 
 switch unit
     case "dB SPL"
-        v = refLevel + 20 * log10(vrms ./ micSens);
+        v = stimgen.calibration.Engine.volts_to_spl(vrms, micSens);
         info = info_('level (dB SPL)', '%.0f', 'dB SPL', true);
 
     case "dB SPL/Hz"
-        v = refLevel + 20 * log10(vrms ./ micSens) - 10 * log10(noiseBw);
+        v = stimgen.calibration.Engine.volts_to_spl(vrms, micSens) ...
+            - 10 * log10(noiseBw);
         info = info_('density (dB SPL/Hz)', '%.0f', 'dB SPL/Hz', true);
 
     case "Pa"

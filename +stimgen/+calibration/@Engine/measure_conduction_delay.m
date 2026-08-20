@@ -26,7 +26,13 @@ function [info, diagnostics] = measure_conduction_delay(obj, options)
 %   MaxDelay      - (1,1) double largest delay considered, in seconds
 %                   (default 0.05)
 %   ClickDuration - (1,1) double click length in seconds (default 100e-6);
-%                   clamped up to one sample at the current rate.
+%                   clamped up to one sample at the current rate. Leave it
+%                   there: the estimator reads the arrival's onset by
+%                   removing the probe's own correlation width, which is
+%                   exact only while the probe is short against the response
+%                   it excites. A click of a millisecond or more rings
+%                   against itself, and the reading drifts late by a
+%                   fraction of its length.
 %   NumClicks     - (1,1) double clicks in the probe train (default 1).
 %                   More clicks buy signal in a noisy room, but a delay
 %                   near the click spacing aliases; leave at 1 unless the
@@ -40,7 +46,7 @@ function [info, diagnostics] = measure_conduction_delay(obj, options)
 %     peak_v        - peak of the demeaned click response
 %     noise_v       - robust noise level of the record
 %     corr          - normalized correlation at the chosen lag; diagnostic
-%     at_bound      - correlation peak sat on the MaxDelay search bound
+%     at_bound      - chosen lag sat on the MaxDelay search bound
 %     valid         - the measurement is trustworthy
 %     measuredOn    - datetime of the measurement
 %     temperature_c, speed_of_sound_ms, path_m - the air path the delay

@@ -18,6 +18,6 @@ else
     m_rms = measurement;
 end
 
-spl_db  = 20 * log10(m_rms / obj.MicSensitivity) + obj.ReferenceLevel;
+spl_db  = obj.spl_from_volts(m_rms);
 voltage = obj.ExcitationVoltage * 10 ^ ((obj.NormativeValue - spl_db) / 20);
 end

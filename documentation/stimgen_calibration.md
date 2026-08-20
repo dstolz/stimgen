@@ -288,6 +288,34 @@ This records only — nothing is played. The tone is produced by the calibrator,
 
 The acquisition goes through `HwAdapter.record()`, whose default implementation is a silent `play_and_record`; a backend that can acquire without arming its output may override it.
 
+#### Where `ReferenceLevel` enters — and where it must not
+
+`ReferenceLevel` describes the **calibrator**, not the level scale. It is read in exactly
+one place, here, to turn the recorded volts into a sensitivity:
+
+```
+pressure       = 20e-6 * 10^(ReferenceLevel/20)     % Pa the calibrator produces
+MicSensitivity = recorded_volts / pressure          % V/Pa
+```
+
+Every level afterwards is read through `Engine.volts_to_spl`, which knows only the
+20 µPa reference:
+
+```
+dB SPL = 20*log10( (volts / MicSensitivity) / 20e-6 )
+```
+
+So a 94 dB calibrator and a 114 dB one give *different* sensitivities for the same
+microphone — which is the point — and *identical* levels from it afterwards, which is
+also the point.
+
+> **Fixed in schema version 2.** Earlier versions added `ReferenceLevel` to the level
+> formula as well, counting the calibrator twice. The error is exactly
+> `ReferenceLevel - 94` dB: nothing at the default 94 dB setting, and 20 dB on a 114 dB
+> calibrator — in the direction that makes the rig play *quieter* than requested.
+> `Engine.load` warns when it opens a version 1 file whose `ReferenceLevel` is not 94;
+> those calibrations should be re-measured. Files taken at 94 dB are unaffected.
+
 ### Step 4b — Measure The Background (optional, recommended)
 
 With the calibrator off the microphone and the rig in the state an experiment would find it:
@@ -340,7 +368,14 @@ autocorrelation is a single sharp peak; estimating the delay from the tone
 train itself (which is what earlier versions did) gives the correlation a
 quasi-periodic ridge to wander along, and every analysis window then lands
 early by the unaccounted delay — visibly including pre-response silence in
-the waveform panel's measured span. The probe rides in the very record it
+the waveform panel's measured span. The delay is read as the correlation's
+*first arrival*, not its largest peak: the correlation at negative lags —
+measured just before the excitation played, so noise by definition — sets a
+detection threshold with its largest peak, and the chosen lag is the first
+causal sample that rises above it. Picking the correlation's maximum instead
+would follow the strongest return, which speaker ringing or a room reflection
+can place after the direct arrival, overstating the delay and the distance
+derived from it. The probe rides in the very record it
 corrects because acquisition latency is only guaranteed *within* a record:
 it can differ with record length and buffer size, so a delay measured on
 one record cannot be assumed for another. Each measurement lands in the
@@ -368,9 +403,10 @@ plot(diag.lag_ms, diag.corr);   % the correlation the lag was chosen from
 ```
 
 `diag` carries that correlation over every lag searched (normalized to its own
-peak), the probe-region record on the same click-anchored lag axis
-(`probe_v`, `probe_lag0_ms`), the bound it was searched to, and the peak and
-noise the verdict compared. It is also broadcast as the `LiveUpdate` payload's
+peak), the detection threshold the arrival had to rise above
+(`corr_threshold`, on the same normalized scale), the probe-region record on
+the same click-anchored lag axis (`probe_v`, `probe_lag0_ms`), the bound it
+was searched to, and the peak and noise the verdict compared. It is also broadcast as the `LiveUpdate` payload's
 `Latency`, so `LiveMonitor` draws the same panel live or after the fact — see
 [the GUI guide](stimgen_CalibrationGui.md#measuring-it-on-its-own). It is
 returned rather than stored on `ConductionDelay`, because a tone sweep fills
@@ -817,7 +853,7 @@ prefer a `LiveMonitor`.
 | Parameter | Default | Meaning |
 |---|---|---|
 | `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known |
-| `ReferenceLevel` | 94 dB | SPL produced by your calibrator |
+| `ReferenceLevel` | 94 dB | SPL produced by your calibrator. Read only by `calibrate_reference`; it is not an offset in the dB SPL scale (see [above](#where-referencelevel-enters--and-where-it-must-not)) |
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
 | `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |

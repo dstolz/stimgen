@@ -78,9 +78,29 @@ classdef Engine < handle
     %           stimgen.calibration.LiveMonitor, stimgen.calibration.LiveUpdate,
     %           documentation/stimgen_calibration.md
 
+    properties (Constant)
+        % 0 dB SPL, in pascals. The reference every level in this package is
+        % measured against, and the only constant in the conversion from
+        % volts to dB SPL.
+        %
+        % This is NOT ReferenceLevel. ReferenceLevel is a property of the
+        % acoustic calibrator on the bench -- 94 dB on one, 114 dB on
+        % another -- and it belongs in the measurement of MicSensitivity,
+        % where calibrate_reference uses it. It is not part of the scale.
+        % Treating it as though it were is exactly the error that made a
+        % 114 dB calibrator report every level 20 dB high; see
+        % volts_to_spl.
+        ReferencePressurePa = 20e-6
+    end
+
     % --- Persistent calibration parameters ---
     properties (SetAccess = protected, SetObservable, AbortSet)
         MicSensitivity      (1,1) double {mustBePositive,mustBeFinite}      = 1     % V/Pa
+        % Output level of the acoustic calibrator used by calibrate_reference,
+        % in dB SPL -- 94 on a B&K 4231 at its low setting, 114 at its high
+        % one. Read ONLY there, to turn the recorded volts into a sensitivity
+        % in V/Pa. It is not an offset in the dB SPL scale and must never be
+        % added to one; ReferencePressurePa is what defines that scale.
         ReferenceLevel      (1,1) double {mustBePositive,mustBeFinite}      = 94    % dB SPL
         ReferenceFrequency  (1,1) double {mustBePositive,mustBeFinite}      = 1000  % Hz
         NormativeValue      (1,1) double {mustBePositive,mustBeFinite}      = 80    % dB SPL
@@ -244,6 +264,7 @@ classdef Engine < handle
         calibrate_reference(obj) % Measure microphone sensitivity by recording an acoustic calibrator (plays nothing).
         [info, diagnostics] = measure_conduction_delay(obj, options) % Measure speaker-to-mic conduction delay with a click probe.
         results = measure_background(obj, duration, repeatCount, options) % Capture and characterize the background with nothing presented.
+        capture = play_and_capture(obj, signal, options) % Play an arbitrary waveform and return the microphone record aligned to it.
         calibrate_tones(obj, freqs, repeatCount, options) % Build tone calibration LUT.
         calibrate_clicks(obj, durs, repeatCount) % Build click calibration LUT.
         calibrate_swept_sine(obj, duration, freqs, repeatCount, tailDuration) % Run swept-sine calibration.
@@ -291,6 +312,32 @@ classdef Engine < handle
                 mons{k}.reset();
             end
             drawnow;
+        end
+
+        function spl = spl_from_volts(obj, vrms)
+            % spl = spl_from_volts(obj, vrms)
+            % Measured rms volts as a level in dB SPL, on this engine's scale.
+            %
+            % The one conversion the whole package reads a level through.
+            % Every site that turns a measured voltage into a level goes
+            % through here or through the static volts_to_spl behind it:
+            % compute_spl_voltage_ building a LUT, analyze_background_
+            % reducing a noise floor, LiveMonitor drawing a dB SPL spectrum,
+            % stimgen.SpotCheck measuring a stimulus. They were once eight
+            % separate copies of the expression, which is how one of them
+            % came to be wrong without the others disagreeing loudly enough
+            % to notice.
+            %
+            % Parameters:
+            %   vrms - (1,:) double measured rms amplitude(s) in volts
+            %
+            % Returns:
+            %   spl  - (1,:) double level(s) in dB SPL; -Inf for a silent input
+            arguments
+                obj
+                vrms (1,:) double
+            end
+            spl = stimgen.calibration.Engine.volts_to_spl(vrms, obj.MicSensitivity);
         end
 
         function s = spectral_options(obj)
@@ -597,6 +644,61 @@ classdef Engine < handle
     methods (Static)
         [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
         r = spectral_rms(x, freq, fs, options) % Estimate RMS amplitude at a frequency.
+
+        function spl = volts_to_spl(vrms, micSensitivity)
+            % spl = stimgen.calibration.Engine.volts_to_spl(vrms, micSensitivity)
+            % Measured rms volts as a level in dB SPL.
+            %
+            %   pressure = vrms / micSensitivity            (V / (V/Pa) = Pa)
+            %   spl      = 20*log10(pressure / 20e-6 Pa)
+            %
+            % Static so a caller holding a sensitivity but no engine gets the
+            % same number the engine would -- stimgen.calibration.LiveMonitor
+            % converts a spectrum without one. Same pattern, and same reason,
+            % as speed_of_sound below.
+            %
+            % ReferenceLevel is deliberately absent. The scale is defined by
+            % the 20 uPa reference and nothing else; the calibrator's own
+            % output level enters once, in calibrate_reference, where it
+            % turns recorded volts into micSensitivity. Adding it here as
+            % well -- which this package did until it was caught -- counts it
+            % twice, and reports every level (ReferenceLevel - 94) dB high.
+            % On a 114 dB calibrator that is a 20 dB error in the direction
+            % that makes a rig play too quietly.
+            %
+            % Parameters:
+            %   vrms           - (1,:) double measured rms amplitude(s), volts
+            %   micSensitivity - (1,1) double microphone sensitivity, V/Pa
+            %
+            % Returns:
+            %   spl - (1,:) double level(s) in dB SPL; -Inf for a silent input
+            arguments
+                vrms (1,:) double
+                micSensitivity (1,1) double
+            end
+            pa  = max(vrms, 0) ./ max(micSensitivity, eps);
+            spl = 20 * log10(pa ./ stimgen.calibration.Engine.ReferencePressurePa);
+        end
+
+        function pa = spl_to_pressure(spl)
+            % pa = stimgen.calibration.Engine.spl_to_pressure(spl)
+            % A level in dB SPL as a pressure in pascals -- the inverse of
+            % volts_to_spl's second half.
+            %
+            % calibrate_reference needs exactly this: the calibrator states a
+            % level, and the sensitivity is the recorded volts divided by the
+            % pressure that level represents.
+            %
+            % Parameters:
+            %   spl - (1,:) double level(s) in dB SPL
+            %
+            % Returns:
+            %   pa  - (1,:) double pressure(s) in pascals
+            arguments
+                spl (1,:) double
+            end
+            pa = stimgen.calibration.Engine.ReferencePressurePa .* 10 .^ (spl ./ 20);
+        end
 
         function c = speed_of_sound(tempC)
             % c = stimgen.calibration.Engine.speed_of_sound(tempC)

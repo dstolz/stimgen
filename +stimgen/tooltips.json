@@ -196,5 +196,25 @@
     "RefreshTool": "Recompute from stimulus",
     "PlayTool": "Play signal",
     "ExportTool": "Export signal and metrics to workspace"
+  },
+
+  "SpotCheck": {
+    "LoadBtn": "Load a stimulus to check, from a .spl bank or a .mat holding a StimType.",
+    "MatchRateBtn": "Set the stimulus sample rate to the hardware's. Regenerates the waveform.",
+    "RunBtn": "Play the stimulus, record the microphone, and compare. Cancels a run in progress.",
+    "PreDelay": "Silence before the stimulus, in ms. The noise floor is measured over it.",
+    "PostDelay": "Silence after the stimulus, in ms. Must exceed the rig round-trip latency or the response cannot be located.",
+    "Repeats": "Acquisitions to average. Each is aligned on its own delay first.",
+    "InspectCaptureTool": "Open a Stimulus Inspector on the recording",
+    "InspectStimTool": "Open a Stimulus Inspector on the stimulus",
+    "SaveTool": "Save the spot check, both waveforms and all metrics, to a .mat",
+    "ShotTool": "Save the whole window, plots and table, to an image file",
+    "SummaryTool": "Print the spot check to the command window",
+    "HelpTool": "Open the calibration guide (wiki)"
+  },
+
+  "CapturedSignal": {
+    "SourceLabel": "What was played to produce this record. Free text, carried with the samples.",
+    "Waveform": "The captured samples, in volts. Reported exactly as recorded: never normalized, gated or scaled."
   }
 }

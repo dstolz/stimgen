@@ -59,8 +59,12 @@ arguments
 end
 
 nRep    = numel(records);
-micSens = max(obj.MicSensitivity, eps);
-refLvl  = obj.ReferenceLevel;
+
+% Every level below goes through this one handle rather than repeating the
+% conversion. Passed down into the local functions too, so there is no site
+% here that could drift from Engine.volts_to_spl -- which is how the
+% calibrator's level came to be counted twice in the first place.
+toSpl   = @(vrms) obj.spl_from_volts(vrms);
 
 % --- Time-domain measures, one per record ---------------------------------
 % DC is an offset in the acquisition path, not sound. It is removed before
@@ -91,8 +95,8 @@ clipping    = peakAll >= fullScaleV * 0.999;
 headroomDb  = 20 * log10(max(fullScaleV, eps) / max(peakAll, eps));
 
 rmsAll    = sqrt(mean(rmsV .^ 2));   % power-average, not level-average
-splAll    = refLvl + 20 * log10(rmsAll ./ micSens);
-repeatSpl = refLvl + 20 * log10(rmsV ./ micSens);
+splAll    = toSpl(rmsAll);
+repeatSpl = toSpl(rmsV);
 rangeDb   = max(repeatSpl) - min(repeatSpl);
 
 % --- Averaged power spectrum ----------------------------------------------
@@ -105,13 +109,13 @@ df = f(2) - f(1);
 % bin contributes nothing -- the weighting is zero there by construction.
 aw     = stimgen.util.weighting_db(f, "A");
 powA   = sum(pxx .* 10 .^ (aw ./ 10)) * df;
-splA   = refLvl + 10 * log10(max(powA, realmin)) - 20 * log10(micSens);
+splA   = toSpl(sqrt(max(powA, realmin)));
 
 % --- Fractional-octave band levels ----------------------------------------
 % The lowest usable band is the one wide enough to hold a few FFT bins; below
 % that a "band level" is one bin with a band's name on it.
 fMin = max(5 * df, 10);
-bands = band_levels_(pxx, f, df, options.FractionalOctave, fMin, fs / 2, refLvl, micSens);
+bands = band_levels_(pxx, f, df, options.FractionalOctave, fMin, fs / 2, toSpl);
 bands.snr_at_normative_db = obj.NormativeValue - bands.level_db;
 bands.level_dba = bands.level_db + stimgen.util.weighting_db(bands.frequency, "A");
 
@@ -125,11 +129,11 @@ end
 % A finer band set is kept for drawing. The raw record is not saved in the
 % .esgc, so without this the analysis could never be redrawn from a loaded
 % file -- only the numbers would survive.
-spectrum = band_levels_(pxx, f, df, 12, fMin, fs / 2, refLvl, micSens);
+spectrum = band_levels_(pxx, f, df, 12, fMin, fs / 2, toSpl);
 spectrum = rmfield(spectrum, {'edges', 'fraction'});
 
 % --- Tonal components ------------------------------------------------------
-peaks = tonal_peaks_(pxx, f, df, fs, refLvl, micSens, ...
+peaks = tonal_peaks_(pxx, f, df, fs, toSpl, ...
     options.TonalProminenceDb, options.MaxPeaks);
 mains = mains_components_(peaks, df);
 
@@ -196,7 +200,7 @@ results.worst_band = worstBand;
 
 results.normative_value_db        = obj.NormativeValue;
 results.headroom_to_normative_db  = headroomToNormative;
-results.reference_level_db        = refLvl;
+results.reference_level_db        = obj.ReferenceLevel;
 results.mic_sensitivity           = obj.MicSensitivity;
 
 results.tonal_prominence_db = options.TonalProminenceDb;
@@ -241,7 +245,7 @@ pxx = pxx ./ numel(records);
 end
 
 % ------------------------------------------------------------------------ %
-function b = band_levels_(pxx, f, df, frac, fMin, fMax, refLvl, micSens)
+function b = band_levels_(pxx, f, df, frac, fMin, fMax, toSpl)
 % Integrate the PSD over IEC 61260 base-ten fractional-octave bands.
 G    = 10 ^ (3 / 10);
 kLo  = ceil(frac  * log(fMin / 1000) / log(G));
@@ -263,7 +267,7 @@ for k = 1:n
     if ~any(m)
         continue
     end
-    lvl(k) = refLvl + 10 * log10(max(sum(pxx(m)) * df, realmin)) - 20 * log10(micSens);
+    lvl(k) = toSpl(sqrt(max(sum(pxx(m)) * df, realmin)));
 end
 
 ok = isfinite(lvl);
@@ -275,7 +279,7 @@ b = struct( ...
 end
 
 % ------------------------------------------------------------------------ %
-function p = tonal_peaks_(pxx, f, df, fs, refLvl, micSens, promDb, maxPeaks)
+function p = tonal_peaks_(pxx, f, df, fs, toSpl, promDb, maxPeaks)
 % Narrowband components standing above the local spectral floor.
 %
 % Prominence is measured against a running median rather than an absolute
@@ -320,7 +324,7 @@ lvl  = nan(1, numel(idx));
 fRef = nan(1, numel(idx));
 for k = 1:numel(idx)
     span = max(idx(k) - 2, 1) : min(idx(k) + 2, numel(pxx));
-    lvl(k)  = refLvl + 10 * log10(max(sum(pxx(span)) * df, realmin)) - 20 * log10(micSens);
+    lvl(k)  = toSpl(sqrt(max(sum(pxx(span)) * df, realmin)));
     fRef(k) = refine_peak_(pxxDb, f, idx(k), df);
 end
 

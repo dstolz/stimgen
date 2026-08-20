@@ -50,11 +50,21 @@ if r <= 0 || (isfinite(snrDb) && snrDb < MIN_TONE_SNR_DB)
         f0, snrDb, f0, obj.ReferenceLevel);
 end
 
-% Convert measured RMS voltage to V/Pa.
-% At ReferenceLevel dB SPL (standard 94 dB = 1 Pa),
-% dv = 1 -> MicSensitivity = r V/Pa.
-dv = 10 ^ ((obj.ReferenceLevel - 94) / 20);
-obj.MicSensitivity = r / dv;
+% Convert the measured rms voltage to a sensitivity in V/Pa.
+%
+% This is the ONE place ReferenceLevel enters a calculation. The calibrator
+% states its output level; spl_to_pressure turns that into the pressure at the
+% microphone, and the sensitivity is the volts recorded for it. Everything
+% downstream reads levels through volts_to_spl, which knows only the 20 uPa
+% reference -- so a 114 dB calibrator and a 94 dB one produce different
+% sensitivities from the same microphone, which is the point, and identical
+% levels from it afterwards, which is also the point.
+%
+% Previously this divided by 10^((ReferenceLevel-94)/20) and the level formula
+% added ReferenceLevel back, counting the calibrator twice: correct at 94 dB
+% by coincidence, and 20 dB wrong at 114.
+pRef = stimgen.calibration.Engine.spl_to_pressure(obj.ReferenceLevel);
+obj.MicSensitivity = r / pRef;
 
 % Emitted after MicSensitivity is updated so the spectrum is drawn on the
 % scale the measurement just established, not the one it replaced.

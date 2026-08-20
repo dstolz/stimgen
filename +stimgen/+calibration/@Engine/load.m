@@ -42,6 +42,8 @@ end
 eng = stimgen.calibration.Engine();
 eng.restore_from_struct_(s);
 
+warn_if_stale_spl_scale_(s, ffn);
+
 if isstruct(eng.CalibrationData)
     % isnat, not isequal against datetime(""): NaT compares unequal to itself
     % the way NaN does, so the isequal form never caught the case. Reachable
@@ -53,5 +55,58 @@ if isstruct(eng.CalibrationData)
     else
         stimgen.util.vprintf(0, 'Loaded calibration: "%s" from %s', ffn, string(ts));
     end
+end
+end
+
+
+% ------------------------------------------------------------------------ %
+function warn_if_stale_spl_scale_(s, ffn)
+% warn_if_stale_spl_scale_(s, ffn)
+% Say so when a file's tables were built on the pre-v2 level scale.
+%
+% Version 1 computed dB SPL as ReferenceLevel + 20*log10(v/MicSensitivity),
+% which added the calibrator's own output level to a scale that is defined by
+% the 20 uPa reference and nothing else -- counting the calibrator twice, once
+% in the sensitivity and again in every level derived from it.
+%
+% The error is exactly (ReferenceLevel - 94) dB, so a file taken at the default
+% 94 dB calibrator setting is unaffected and passes silently. A file taken at
+% 114 dB has drive voltages 20 dB too low and will play that much too quietly.
+%
+% Reported rather than corrected. The correction is arithmetic --
+% CalibrationData tone/click/swept_sine voltages scale by
+% 10^((ReferenceLevel-94)/20) and their spl_db shift by -(ReferenceLevel-94) --
+% but a rig whose levels were visibly wrong may already have been compensated
+% somewhere else, and silently moving measurement data underneath a user who
+% cannot see it happen is worse than telling them plainly.
+
+if ~isfield(s, 'version') || s.version >= 2
+    return
+end
+if ~isfield(s, 'ReferenceLevel') || isempty(s.ReferenceLevel)
+    return
+end
+
+offsetDb = s.ReferenceLevel - 94;
+if abs(offsetDb) < 0.05
+    return      % the default calibrator; version 1 and 2 agree
+end
+
+stimgen.util.vprintf(0, 1, ...
+    ['Calibration "%s" was saved on the old level scale, which added the ' ...
+     '%.1f dB calibrator level on top of the 20 uPa reference. Every level ' ...
+     'in it is %+.1f dB off and its drive voltages are %+.1f dB the other ' ...
+     'way, so this rig would play about %.1f dB too %s. Re-run the reference ' ...
+     'and the sweeps to rebuild it.'], ...
+    ffn, s.ReferenceLevel, offsetDb, -offsetDb, abs(offsetDb), ...
+    ternary_(offsetDb > 0, 'quietly', 'loudly'));
+end
+
+
+function out = ternary_(cond, a, b)
+if cond
+    out = a;
+else
+    out = b;
 end
 end

@@ -31,7 +31,12 @@ if ~strcmpi(ext, '.esgc')
     ffn = [ffn '.esgc'];
 end
 
-s.version             = 1;
+% 2: levels are referenced to 20 uPa alone. Version 1 files added the
+% calibrator's ReferenceLevel on top of that, counting it twice, so their
+% tables are (ReferenceLevel - 94) dB off -- nothing at the default 94 dB
+% calibrator setting, 20 dB on a 114 dB one. load() checks for this and says
+% so rather than letting a stale table pass silently. See Engine.volts_to_spl.
+s.version             = 2;
 s.CalibrationData     = obj.CalibrationData;
 s.MicSensitivity      = obj.MicSensitivity;
 s.NormativeValue      = obj.NormativeValue;
