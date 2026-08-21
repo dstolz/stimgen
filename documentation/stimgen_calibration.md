@@ -867,7 +867,7 @@ prefer a `LiveMonitor`.
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `Notes` | `""` | Free text about this calibration in the operator's own words — the speaker, the microphone, the placement, whatever the tables cannot state for themselves. Never parsed and never read into a calculation. Saved in the `.esgc` file, restored with it, kept by `reset_calibration`, and printed at the top of `describe`. Entered in the GUI's Notes box |
 | `ShowLivePlots` | false | Broadcast a `LiveUpdate` event per measurement during sweeps |
-| `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. Saved in the `.esgc` file |
+| `ToneLutSource` | `"tone"` | Which LUT serves `"tone"` lookups (and the `"filter"`/`"noise"` lookups anchored to them): the direct tone table, or `"swept_sine"` to override it with the swept sine calibration whenever swept sine data exists. A redirect in force is announced in red at verbosity 0 the first time a lookup resolves through it, and again after any change of source — the substitution is invisible in the stimulus and in the recording, so the log is the only place it can be seen. Saved in the `.esgc` file |
 
 These are all `SetAccess = protected` — they are readable from anywhere but can only
 be written through `eng.set_configuration(Name=value)`, which is what runs their

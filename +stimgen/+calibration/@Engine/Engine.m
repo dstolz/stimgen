@@ -225,6 +225,7 @@ classdef Engine < handle
         Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
+        ToneLutRedirectWarned_ (1,1) logical = false  % latched by resolve_tone_lut_ so a redirect announces itself once per change, not per lookup
         LastDcRemoved_ (1,1) double = nan   % DC ac_couple_response_ took off the current record; NaN when it took none
         LastAcCoupleHz_ (1,1) double = nan  % corner it high-passed that record at; NaN when it did not filter
         AcCoupleFilter_ = []                % cached high-pass design for the current (fs, corner)
@@ -299,6 +300,24 @@ classdef Engine < handle
         function c = get.SpeedOfSound(obj)
             % Speed of sound in air at the configured ambient temperature.
             c = stimgen.calibration.Engine.speed_of_sound(obj.AmbientTemperature);
+        end
+
+        function set.ToneLutSource(obj, src)
+            % Re-arm resolve_tone_lut_'s one-shot redirect notice.
+            %
+            % The notice is latched so a table consulted once per variant does
+            % not shout once per variant, which leaves it owing an answer to
+            % "when does it become loud again?" -- here, whenever the source
+            % actually changes. AbortSet means an assignment of the value
+            % already in force never reaches this, so restoring a .esgc or
+            % re-running set_configuration with the same options is not a
+            % change and does not re-arm.
+            % MCSUP warns about a set method touching another property, which
+            % matters for a value class whose construction order is undefined.
+            % Engine is a handle class and this flag is private state with a
+            % default, so there is nothing to order.
+            obj.ToneLutSource = src;
+            obj.ToneLutRedirectWarned_ = false; %#ok<MCSUP>
         end
 
         function plot_reset(obj)
