@@ -11,3 +11,6 @@ slprj/
 # Sound files used with stimgen.SoundFile during local testing
 *.wav
 *.flac
+
+# Screenshot regeneration output (documentation/tools/make_shots.m)
+documentation/tools/out/
