@@ -1326,6 +1326,9 @@ classdef StimPlayer < handle
                 case "stimgen:util:filterRateMismatch"
                     messageText = string(ME.message) + newline + newline + ...
                         "An equalization filter only corrects the frequencies it was designed for at the sample rate it was designed at. Redesign the filter for this rate in the calibration GUI (Design Filter, ""Design sample rate"" field) -- the measurement itself does not have to be repeated -- or set the sample rate back to the one the calibration was designed at.";
+                case "stimgen:StimType:UnknownWindowFcn"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "Window Shape names a MATLAB window function. Pick one of the listed shapes, or supply a function on the path that takes a length in samples and returns that many window values.";
                 case "stimgen:StimType:NonVectorizableProperty"
                     messageText = "This property must stay scalar in StimPlayer. Use a single value rather than a vector or expression that expands to multiple values.";
                 case "stimgen:StimType:PairwiseLengthMismatch"

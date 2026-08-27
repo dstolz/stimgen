@@ -180,7 +180,31 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
                 case "cos2"
                     g = hann(n);
                 otherwise
-                    g = feval(char(windowFcnValue),n);
+                    % Any single-argument window function is accepted by
+                    % name -- stimgen.StimType.window_options is what the
+                    % GUI offers, not the limit of what WindowFcn holds.
+                    % The name is only resolved here, when a gate is
+                    % actually wanted, so a bank naming a window this
+                    % machine does not have still loads and can be
+                    % repointed rather than failing on assignment.
+                    fcnName = char(windowFcnValue);
+                    if isempty(which(fcnName))
+                        error('stimgen:StimType:UnknownWindowFcn', ...
+                            ['Window function "%s" was not found on the ' ...
+                             'MATLAB path.'], fcnName);
+                    end
+                    try
+                        g = feval(fcnName, n);
+                    catch ME
+                        error('stimgen:StimType:UnknownWindowFcn', ...
+                            ['Window function "%s" failed to produce a ' ...
+                             'window of %d samples: %s'], fcnName, n, ME.message);
+                    end
+                    if numel(g) ~= n
+                        error('stimgen:StimType:UnknownWindowFcn', ...
+                            ['Window function "%s" returned %d samples ' ...
+                             'where %d were requested.'], fcnName, numel(g), n);
+                    end
             end
             g = g(:)'; % conform to row vector
         end
@@ -250,6 +274,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         c = list                                                                    % Enumerate available stimgen stimulus classes
         s = display_scale(pm, propName)                                            % GUI display scale factor for a propMeta entry
         sections = group_prop_meta(meta)                                           % Bucket propMeta fields into ordered display groups
+        opts = window_options                                                     % Catalog of gate shapes offered for WindowFcn
     end % methods (Static)
 
     methods (Static, Access = protected)

@@ -11,7 +11,9 @@ All classes inherit `SoundLevel`, `Duration`, `WindowDuration`, `WindowFcn`,
 introduced by each subclass are listed below. Time-valued properties are stored in
 **seconds** and shown in **milliseconds** in the GUI unless noted otherwise. Any
 property marked vectorizable can be assigned a vector to define variants (see
-[Variants](stimgen_StimType.md#variant-selection)).
+[Variants](stimgen_StimType.md#variant-selection)). `WindowFcn` selects the *shape*
+of the onset/offset ramp from a catalog of window functions -- see
+[Gate shape](stimgen_StimType.md#gate-shape-windowfcn).
 
 | Class | Summary | `CalibrationType` | `Normalization` |
 | --- | --- | --- | --- |

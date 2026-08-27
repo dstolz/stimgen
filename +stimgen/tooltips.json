@@ -21,6 +21,7 @@
     "ApplyCalibration": "Scale to calibrated voltage. Off: normalized only, Sound Level is nominal.",
     "Duration": "Total waveform length in ms. Gate is applied inside this duration, not added to it.",
     "WindowDuration": "Onset + offset ramp length in ms (each ramp is half). Ignored when Apply Window is off.",
+    "WindowFcn": "Shape of the onset/offset ramp. Blackman and Blackman-Harris splatter less for the same ramp length; Rectangular applies no taper. Ignored when Apply Window is off.",
     "ApplyWindow": "Gate on/off to suppress spectral splatter from abrupt transitions.",
     "VariantSelectionMode": "Serial = table order; ShuffleUniform = random; ShuffleLeastUsed = random, least-presented first; CustomSelector = custom class.",
     "VariantCombinationMode": "Cartesian = all combinations; PairwiseStrict = element-wise, equal length; PairwiseScalarExpand = element-wise with scalar repeat.",

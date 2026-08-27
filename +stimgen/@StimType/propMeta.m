@@ -52,6 +52,25 @@ m.Duration       = struct('label', 'Duration (ms)',        'format', '%.1f ms', 
 m.WindowDuration = struct('label', 'Window Duration (ms)', 'format', '%.2f ms',  'limits', [0.001 10000], ...
                           'scale', 1000, 'group', 'Timing', 'order', 30, ...
                           'tooltip', stimgen.util.tooltip(obj, 'WindowDuration'));
+% The gate shape sits between the ramp length (order 30) and the on/off
+% switch (order 40), since it only means anything between the two.
+% WindowFcn accepts any single-argument window function by name, so a value
+% set programmatically that the catalog does not list is appended as its own
+% item: a dropdown cannot show a value it has no item for, and the
+% alternative -- letting the widget rewrite the property to whatever happens
+% to be first -- would gate the stimulus with a window nobody asked for.
+wopts  = stimgen.StimType.window_options();
+wLabel = [wopts.Label];
+wName  = [wopts.Name];
+current = string(obj.WindowFcn);
+if ~any(wName == current)
+    wLabel(end+1) = current;
+    wName(end+1)  = current;
+end
+m.WindowFcn      = struct('label', 'Window Shape', 'widget', 'dropdown', ...
+                          'items', wLabel, 'itemsData', wName, ...
+                          'group', 'Timing', 'order', 35, ...
+                          'tooltip', stimgen.util.tooltip(obj, 'WindowFcn'));
 m.ApplyWindow    = struct('label', 'Apply Window', 'group', 'Timing', 'order', 40, ...
                           'tooltip', stimgen.util.tooltip(obj, 'ApplyWindow'));
 m.VariantSelectionMode = struct('label', 'Variant Selection', 'widget', 'dropdown', ...

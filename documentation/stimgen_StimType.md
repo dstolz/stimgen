@@ -243,6 +243,43 @@ to divide by 100 and multiply by `Duration` (`"Proportional"`), or to convert a
 per-ramp period count into seconds (`"#Periods"`; doubled, since `apply_gate`
 splits the window in half between onset and offset).
 
+### Gate shape (`WindowFcn`)
+
+`WindowDuration` sets how long the onset and offset ramps are; `WindowFcn` sets what
+shape they are. It holds the *name* of a window function, and the `Window` getter
+resolves it when a gate is actually wanted:
+
+| value | gate |
+| --- | --- |
+| `"cos2"` (default) | raised cosine, synthesized with `hann` |
+| `""` | no taper (`ones`) -- what `ClickTrain` and `TORC` construct with |
+| anything else | `feval(name, n)` |
+
+`stimgen.StimType.window_options()` is the catalog the GUIs offer -- `Name`/`Label`
+pairs for the single-argument windows (Hamming, Blackman, Blackman-Harris, Nuttall,
+Flat Top, Bartlett, Bartlett-Hann, Bohman, Parzen, Triangular, Tukey, Gaussian) plus
+the two special values above. `propMeta` renders it as a dropdown in the `Timing`
+group at order 35, between `WindowDuration` and `ApplyWindow`, so both generated GUIs
+(`create_gui` and `StimPlayer`'s bank editor) pick it up with no further work.
+
+The catalog is what the GUI **offers**, not what the property **accepts**. A name set
+programmatically that is not listed -- `kaiser`, `chebwin`, a lab's own window
+function -- still gates, and `propMeta` appends it to the dropdown as its own item so
+the value stays visible rather than being silently rewritten to whichever item happens
+to be first. Windows taking a shape parameter are left off the catalog for the same
+reason they are still accepted: `WindowFcn` has nowhere to carry the parameter, so
+listing them would present a default as though it had been chosen.
+
+Resolution happens in the getter rather than in a setter, so a bank naming a window
+this installation does not have still loads and can be repointed. When the name does
+not resolve, is not callable with one argument, or returns the wrong number of
+samples, `Window` raises `stimgen:StimType:UnknownWindowFcn`, which
+`StimPlayer.format_gui_error_message_` turns into user-facing guidance.
+
+`apply_gate` splits whatever `Window` returns in half -- first half onto the onset,
+second half onto the offset -- so a window has to be symmetric to gate symmetrically.
+Every entry in the catalog is.
+
 ### Parameter grouping
 
 Each `propMeta` entry may also declare `group` (`'Waveform'` | `'Level'` |
