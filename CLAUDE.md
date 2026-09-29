@@ -215,7 +215,9 @@ touches no selection state. Asking with `selected_value` changes the answer.
 **The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
 `spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
 `20*log10((v/MicSensitivity)/Engine.ReferencePressurePa)`. `compute_spl_voltage_`,
-`analyze_background_` and `LiveMonitor.convert_spectrum_` all route through it. Do not write the
+`analyze_background_`, `LiveMonitor.convert_spectrum_`, `stimgen.util.sound_levels`,
+`stimgen.util.level_as_calibrated` and `StimInspector.to_db_` (every level the inspector draws)
+all route through it. Do not write the
 expression again anywhere — it used to exist as eight copies, one of which added the calibrator's
 `ReferenceLevel` on top of the 20 µPa reference and so counted the calibrator twice (harmless at
 the default 94 dB, 20 dB wrong at 114). `ReferenceLevel` is a property of the *calibrator* and is

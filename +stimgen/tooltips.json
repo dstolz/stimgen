@@ -198,7 +198,16 @@
   "StimInspector": {
     "RefreshTool": "Recompute from stimulus",
     "PlayTool": "Play signal",
-    "ExportTool": "Export signal and metrics to workspace"
+    "ExportTool": "Export signal and metrics to workspace",
+    "UnitsDD": "Sound pressure (Pa, dB SPL) needs a recording that came with a microphone sensitivity, i.e. captured with a calibration loaded. Signal shows the same record in volts: the view for input-stage headroom.",
+    "DensityCheck": "Per Hz divides out the analysis bin width, so noise and noise floors compare fairly across FFT lengths. Per bin reads a tone's level directly.",
+    "NoiseFloorCheck": "Draw the silence recorded just before the stimulus on the same footing as the recording, so the gap between the two is the signal-to-noise ratio.",
+    "Warnings": "Everything that qualifies this recording: clipping, a delay search at its bound, a level too close to the noise floor, or a requested level that was never calibrated.",
+    "BandFractionDD": "Band width on IEC 61260 base-ten centres. Bands the record is too short to resolve (lower edge under five resolution cells) are left out rather than guessed.",
+    "BandWeightingDD": "Weighting applied at each band centre. Z: none. A: the ear at moderate levels. C: nearly flat, for high levels and peaks.",
+    "HistoryWeightingDD": "Frequency weighting of the time-weighted level plotted above the table.",
+    "TimeWeightingDD": "Exponential time weighting, started from zero at the first sample: Fast 125 ms, Slow 1 s. A record shorter than a few time constants reads low, as it would on a meter.",
+    "LevelTable": "Sound level meter readouts per weighting. Leq: equivalent level. Lpeak: peak. LFmax / LSmax: maximum Fast / Slow level. LE: exposure re 1 s. peSPL / ppeSPL: rms level of a sine with the same peak / peak-to-peak (the click table is on the peSPL scale)."
   },
 
   "SpotCheck": {
