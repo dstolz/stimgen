@@ -121,7 +121,7 @@
     "ComboPrevBtn": "Show previous variant combination (also left arrow key).",
     "ComboNextBtn": "Show next variant combination (also right arrow key).",
     "ComboStatusLbl": "Variant combination displayed / total for this stimulus.",
-    "OutputDD": "Speakers: normalized to unit peak (calibration levels not reproduced). Calibrated HW: verbatim waveform at calibrated level (needs host application).",
+    "OutputDD": "Speakers: normalized to unit peak (calibration levels not reproduced). Calibrated HW: verbatim waveform at calibrated level (needs a host application or a capture adapter).",
     "CalibrationStatusLabel": "Green = calibrated levels played. Amber = calibration loaded but speaker preview normalizes. Red = no calibration.",
     "PlayBtn": "Preview displayed combination. Does not advance run counter.",
     "PlayAllBtn": "Preview all variant combinations in turn. Press again to stop.",

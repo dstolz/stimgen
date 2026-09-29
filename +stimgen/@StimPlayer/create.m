@@ -219,7 +219,8 @@ R = R + 1;
 
 % Preview output routing: speakers audition a normalized copy, hardware
 % plays the generated (calibrated) waveform through the host's calibration
-% route. Selecting hardware without a host raises, and the callback reverts.
+% route, or CaptureAdapter with no host. Selecting hardware with neither
+% raises, and the callback reverts.
 OUTPUT_TIP = tip('OutputDD');
 
 lbl = uilabel(bg, 'Text', 'Output:', 'HorizontalAlignment', 'right');

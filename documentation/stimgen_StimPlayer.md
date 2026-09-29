@@ -373,10 +373,15 @@ is already running.
   (`HardwareHost.calibrationAdapter`, the `BufferOut`/`BufferIn` circuits
   the calibration itself was measured through) when the playback tags are
   absent. The microphone response `play_and_record` returns on the adapter
-  route is discarded.
+  route is discarded. With **no host** attached, the route is
+  `CaptureAdapter` instead: hardware that can capture a stimulus can play
+  one, and an application that owns its own audio path (MABR, for one)
+  supplies an adapter rather than a `HardwareHost`. The adapter is resolved
+  at every play (a function handle is called each time), and its
+  `play_and_record` return is likewise discarded.
 
-Selecting `Calibrated HW` requires a host and raises
-`stimgen:StimPlayer:NoHardwareHost` without one; the dropdown callback
+Selecting `Calibrated HW` requires a host or a `CaptureAdapter` and raises
+`stimgen:StimPlayer:NoHardwareHost` with neither; the dropdown callback
 reverts the selection so the GUI never displays a route that cannot play.
 Switching onto hardware adopts the host's sample rate (when it reports one)
 so the bank is regenerated at the rate the converters run at; at play time

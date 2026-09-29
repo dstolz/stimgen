@@ -101,10 +101,12 @@ classdef StimPlayer < handle
         %                unit peak, so a calibration sets spectrum shape at
         %                most and calibrated levels are NOT reproduced.
         %   "Hardware" - the attached host's calibration hardware route
-        %                (stimgen.HardwareHost.calibrationAdapter); the
-        %                generated waveform is played verbatim, so a loaded
-        %                calibration is heard at its calibrated voltage.
-        % Selecting "Hardware" requires a host and errors without one.
+        %                (stimgen.HardwareHost.calibrationAdapter), or, with
+        %                no host, CaptureAdapter; the generated waveform is
+        %                played verbatim, so a loaded calibration is heard at
+        %                its calibrated voltage.
+        % Selecting "Hardware" requires a host or a CaptureAdapter and errors
+        % with neither.
         % Hardware Run sessions always play the generated waveform and are
         % unaffected by this setting.
         PlaybackOutput (1,1) string {mustBeMember(PlaybackOutput,["Speakers","Hardware"])} = "Speakers"
@@ -131,6 +133,10 @@ classdef StimPlayer < handle
         % settings are at that moment rather than when the player opened.
         % Empty falls back to the attached host's calibration adapter; with
         % neither, capture is unavailable and its controls are disabled.
+        % With no host attached it is also the "Hardware" preview route
+        % (PlaybackOutput): hardware that can capture a stimulus can play one,
+        % and an application that owns its own audio path supplies this
+        % rather than a HardwareHost.
         CaptureAdapter = []
 
         % Silence played before the stimulus in a capture, in seconds. The
@@ -298,11 +304,12 @@ classdef StimPlayer < handle
 
         % -----------------------------------------------------------------
         function set.PlaybackOutput(obj, value)
-            % Route Play / Play All to speakers or to the host's calibration
-            % hardware. Selecting hardware without a host is refused up
-            % front, so the property never claims a route that cannot play.
+            % Route Play / Play All to speakers or to hardware (the host's
+            % calibration route, else CaptureAdapter). Selecting hardware
+            % with neither is refused up front, so the property never claims
+            % a route that cannot play.
             if value == "Hardware"
-                obj.require_hardware_host_;
+                obj.require_hardware_route_;
             end
             obj.PlaybackOutput = value;
             obj.on_playback_output_changed_;
@@ -327,6 +334,12 @@ classdef StimPlayer < handle
             end
             obj.CaptureAdapter = value;
             obj.sync_capture_controls_;
+            % Without a host the adapter was the hardware preview route too;
+            % taking it away must not leave the output naming one.
+            if isempty(value) && isempty(obj.Host) && obj.PlaybackOutput == "Hardware"
+                obj.PlaybackOutput = "Speakers";
+            end
+            obj.update_protocol_status_;
         end
 
         % -----------------------------------------------------------------
@@ -737,6 +750,23 @@ classdef StimPlayer < handle
         end
 
         % -----------------------------------------------------------------
+        function tf = has_hardware_route_(obj)
+            % tf = has_hardware_route_() - True when hardware preview can play:
+            % an attached host, or a CaptureAdapter to play through instead.
+            tf = ~isempty(obj.Host) || ~isempty(obj.CaptureAdapter);
+        end
+
+        % -----------------------------------------------------------------
+        function require_hardware_route_(obj)
+            % require_hardware_route_() - Error unless hardware preview can play.
+            if ~obj.has_hardware_route_
+                error('stimgen:StimPlayer:NoHardwareHost', ...
+                    ['No hardware host or CaptureAdapter is attached, so only ' ...
+                    'speaker preview is available.']);
+            end
+        end
+
+        % -----------------------------------------------------------------
         function on_playback_output_changed_(obj)
             % on_playback_output_changed_() - React to a preview-output switch.
             % Syncs the dropdown (for programmatic assignment), adopts the
@@ -769,13 +799,22 @@ classdef StimPlayer < handle
             %
             % Errors (with the host's own diagnostic) when no interface
             % exposes the calibration playback tags.
+            %
+            % With no host, the route is CaptureAdapter -- resolved afresh
+            % each time and never cached here, since a function handle is
+            % there precisely so the adapter follows the application's
+            % current device settings.
+
+            if isempty(obj.Host)
+                obj.require_hardware_route_;
+                adapter = obj.resolve_capture_adapter_;
+                return
+            end
 
             if ~isempty(obj.PreviewAdapter_) && isvalid(obj.PreviewAdapter_)
                 adapter = obj.PreviewAdapter_;
                 return
             end
-
-            obj.require_hardware_host_;
 
             try
                 adapter = obj.Host.calibrationAdapter();
@@ -807,15 +846,18 @@ classdef StimPlayer < handle
             % contract) are preferred, so a preview exercises the exact
             % route a Run will use. When they are absent, playback falls
             % back to the host's calibration adapter (BufferOut/BufferIn
-            % circuits), whose play_and_record return is discarded.
+            % circuits), whose play_and_record return is discarded. With no
+            % host, CaptureAdapter is played through the same way.
 
             if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
                 error('stimgen:StimPlayer:PreviewDuringRun', ...
                     'Stop the running session before previewing through hardware.');
             end
 
-            obj.require_hardware_host_;
-            obj.ensure_host_connected_;
+            obj.require_hardware_route_;
+            if ~isempty(obj.Host)
+                obj.ensure_host_connected_;
+            end
 
             signal = double(stimObj.Signal);
             peak = max(abs(signal));
@@ -824,7 +866,7 @@ classdef StimPlayer < handle
                     'The waveform peaks at %.2f V, beyond the +/-10 V output range.', peak);
             end
 
-            if isempty(fieldnames(obj.PARAMS))
+            if isempty(fieldnames(obj.PARAMS)) && ~isempty(obj.Host)
                 obj.resolve_params_;
             end
 
@@ -1089,7 +1131,11 @@ classdef StimPlayer < handle
             end
 
             if isempty(obj.Host) || ~obj.Host.hasProtocol()
-                h.ProtocolStatusLabel.Text = 'Protocol: none | HW: speaker preview only';
+                if isempty(obj.Host) && ~isempty(obj.CaptureAdapter)
+                    h.ProtocolStatusLabel.Text = 'Protocol: none | HW: capture adapter';
+                else
+                    h.ProtocolStatusLabel.Text = 'Protocol: none | HW: speaker preview only';
+                end
                 return
             end
 
@@ -1240,7 +1286,7 @@ classdef StimPlayer < handle
                 obj.remember_recent_calibration_(ffn);
                 stimgen.util.vprintf(1, 'Calibration applied to %d bank items.', numel(obj.StimPlayObjs));
                 statusText = "Calibration applied to " + string(numel(obj.StimPlayObjs)) + " bank item(s).";
-                if obj.PlaybackOutput == "Speakers" && ~isempty(obj.Host)
+                if obj.PlaybackOutput == "Speakers" && obj.has_hardware_route_
                     statusText = statusText + " Set Output to Calibrated Hardware to preview at calibrated levels.";
                 end
                 obj.set_status_(statusText);
@@ -1690,8 +1736,9 @@ classdef StimPlayer < handle
                 case "StimPlayer:InvalidCalibrationFile"
                     messageText = "The selected calibration file did not contain a usable calibration object.";
                 case "stimgen:StimPlayer:NoHardwareHost"
-                    messageText = "StimPlayer was opened without a hardware host, so only speaker preview is available. " + ...
-                        "Open StimPlayer from the host application (e.g. EPsych) to play through calibrated hardware.";
+                    messageText = "StimPlayer has no hardware to play through, so only speaker preview is available. " + ...
+                        "Open StimPlayer from the host application (e.g. EPsych), or set CaptureAdapter " + ...
+                        "to a stimgen.calibration.HwAdapter, to play through calibrated hardware.";
                 case "stimgen:StimPlayer:HardwareRateMismatch"
                     messageText = string(ME.message) + newline + newline + ...
                         "A waveform generated at one rate plays at the wrong frequencies and duration at another. " + ...
