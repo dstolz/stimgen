@@ -466,12 +466,27 @@ At run time the class:
 3. Regenerates signals for every bank item.
 4. Starts a fixed-rate timer.
 5. Chooses the next bank index using the player-level `SelectionType`.
-6. Writes the stimulus waveform into one of two hardware buffers.
+6. Writes the stimulus waveform into one of two hardware buffers, inverted
+   on every other presentation of a variant whose stimulus alternates
+   polarity (see below).
 7. Toggles the matching trigger parameter.
-8. Logs presentation order and elapsed trigger time.
+8. Logs presentation order, elapsed trigger time, and the sign played
+   (`StimOrder`, `StimOrderTime`, `StimPolarity`).
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
+
+### Alternating polarity
+
+A stimulus whose `alternates_polarity()` is true (a `Tone` with
+`Polarity = 0`, a `ClickTrain` with `Polarity = 2`) is generated positive and inverted here, on every other
+presentation **of the same variant combination** — `claim_polarity_` keeps
+one count per bank item per combination, reset at each start. Counting per
+bank item instead would be wrong whenever an item has an even number of
+combinations visited in turn: each combination would always land on the same
+sign. The sign actually played is logged in `StimPolarity`, row-aligned with
+`StimOrder`. Preview playback (Play / Play All / capture) always plays the
+positive waveform.
 
 ### Required hardware parameters
 

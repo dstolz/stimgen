@@ -9,7 +9,13 @@ classdef ClickTrain < stimgen.StimType
     
     properties (AbortSet,SetObservable)
         Rate        (1,:) double {mustBePositive,mustBeFinite} = 10; % Hz
-        Polarity    (1,:) double {mustBeMember(Polarity,[-1 0 1])} = 1;
+        % 1 positive, -1 negative, 0 alternating click by click WITHIN the
+        % train, 2 alternating whole PRESENTATIONS: the train is generated
+        % positive and the presenter inverts every other presentation of
+        % it (see alternates_polarity). 2 is the one a single-click
+        % stimulus needs -- with one click there is nothing to alternate
+        % within, so 0 plays every presentation positive.
+        Polarity    (1,:) double {mustBeMember(Polarity,[-1 0 1 2])} = 1;
         ClickDuration (1,:) double {mustBePositive,mustBeFinite} = 20e-6; % s
         OnsetDelay  (1,:) double {mustBeNonnegative,mustBeFinite} = 0; % sec
         Truncate    (1,:) logical = false;
@@ -84,6 +90,10 @@ classdef ClickTrain < stimgen.StimType
                     y = [y x*yx];
                     x = -x;
                 end
+            elseif polarity == 2
+                % Alternating presentations: generated positive, flipped
+                % by the presenter (alternates_polarity).
+                y = repmat(y,1,n);
             else
                 y = polarity .* y;
                 y = repmat(y,1,n);
@@ -107,6 +117,21 @@ classdef ClickTrain < stimgen.StimType
             
             obj.apply_gate;
         end
+
+        function tf = alternates_polarity(obj)
+            % tf = alternates_polarity(obj) - True when the active variant
+            % asks for alternating PRESENTATIONS (Polarity = 2). Within-train
+            % alternation (Polarity = 0) is already in the waveform, so the
+            % presenter has nothing to add and this stays false for it.
+            % Reads the active combination without reselecting.
+            v = obj.active_variant_values();
+            if isfield(v, 'Polarity')
+                p = v.Polarity;
+            else
+                p = obj.Polarity;
+            end
+            tf = double(p(1)) == 2;
+        end
     end
 
     methods (Access = protected)
@@ -119,8 +144,8 @@ classdef ClickTrain < stimgen.StimType
                                      'scale', 1000, ...
                 'tooltip', stimgen.util.tooltip(obj, 'ClickDuration'));
             m.Polarity      = struct('label', 'Polarity', 'widget', 'dropdown', ...
-                                    'items',     {{'+ Positive', '+/- Alternate', '- Negative'}}, ...
-                                    'itemsData', {{1, 0, -1}}, ...
+                                    'items',     {{'+ Positive', '+/- Alternate clicks', '+/- Alternate presentations', '- Negative'}}, ...
+                                    'itemsData', {{1, 0, 2, -1}}, ...
                                     'tooltip', stimgen.util.tooltip(obj, 'Polarity'));
             m.OnsetDelay    = struct('label', 'Onset Delay (ms)',    'format', '%.2f ms',  'limits', [0 10000], ...
                                      'scale', 1000, ...

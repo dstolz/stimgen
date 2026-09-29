@@ -32,6 +32,7 @@
   "Tone": {
     "Frequency": "Frequency in Hz. Vectorizable. Also used as the key for calibration lookup.",
     "OnsetPhase": "Starting phase in degrees. 0 = zero crossing, 90 = positive peak.",
+    "Polarity": "Alternate: inverts every other presentation of each combination, cancelling stimulus artifact in averaged responses. Repetitions are split between the signs, not doubled (unlike Onset Phase [0 180]).",
     "WindowMethod": "Units for Window Duration: Duration (ms), Proportional (%), or #Periods (carrier periods). Changing this resets Window Duration.",
     "WindowDuration_Proportional": "Onset + offset ramp length as % of Duration. Each ramp is half. Ignored when Apply Window is off.",
     "WindowDuration_Periods": "Each onset and offset ramp in carrier periods, so ramp scales with Frequency. Ignored when Apply Window is off."
@@ -74,7 +75,7 @@
   "ClickTrain": {
     "Rate": "Clicks per second. Interval 1/Rate must ≥ Click Duration. Vectorizable.",
     "ClickDuration": "Click width in ms. Also calibration lookup key. Must be ≥1 sample at current Fs.",
-    "Polarity": "Alternate: flips each click, cancels stimulus artifact in averaged responses.",
+    "Polarity": "Alternate clicks: flips each click within the train. Alternate presentations: flips the whole train on every other presentation (use this for a single click). Either cancels stimulus artifact in averaged responses.",
     "OnsetDelay": "Leading silence in ms. Train shifts within Duration, not added to it.",
     "Truncate": "Cut at Duration instead of zero-padding. Train ends early if clicks don't fit a whole interval.",
     "Duration": "Total train length in ms. Incomplete clicks are dropped; remainder zero-padded unless Truncate is on."

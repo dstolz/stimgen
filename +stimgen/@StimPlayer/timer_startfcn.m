@@ -15,6 +15,8 @@ try
     % Clear presentation log
     obj.StimOrder     = double.empty(0,1);
     obj.StimOrderTime = double.empty(0,1);
+    obj.StimPolarity  = double.empty(0,1);
+    obj.PolarityCount_ = {};
 
     obj.trialCount_ = 0;
 
@@ -28,6 +30,7 @@ try
     end
 
     % Pre-load the first buffer
+    obj.nextPolarity_ = obj.claim_polarity_;
     obj.update_buffer;
 
     % Set ISI for the first interval

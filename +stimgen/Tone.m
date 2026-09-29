@@ -8,7 +8,16 @@ classdef Tone < stimgen.StimType
     
     properties (SetObservable,AbortSet)
         Frequency  (1,:) double {mustBePositive,mustBeFinite} = 1000; % Hz
-        OnsetPhase (1,:) double = 0;
+        OnsetPhase (1,:) double = 0; % degrees
+
+        % Sign of the waveform: 1 positive, -1 inverted, 0 alternating. The
+        % alternation is ACROSS PRESENTATIONS -- a tone pip has no train to
+        % flip within, unlike ClickTrain -- so 0 generates the positive
+        % waveform and leaves the flipping to whoever presents it (see
+        % alternates_polarity). Unlike OnsetPhase = [0 180], which makes two
+        % variants and so doubles the presentations, alternating keeps one
+        % variant and splits its repetitions between the two signs.
+        Polarity   (1,:) double {mustBeMember(Polarity,[-1 0 1])} = 1;
         
         % How WindowDuration is interpreted: as a time in seconds
         % ("Duration"), as a percentage of Duration ("Proportional"), or as
@@ -31,7 +40,7 @@ classdef Tone < stimgen.StimType
             % Defaults first, caller's pairs last, so a caller's value wins.
             obj = obj@stimgen.StimType( ...
                 'DisplayName', 'Tone', ...
-                'UserProperties', ["Frequency","SoundLevel","Duration","WindowDuration","ApplyWindow","OnsetPhase","WindowMethod"], ...
+                'UserProperties', ["Frequency","SoundLevel","Duration","WindowDuration","ApplyWindow","OnsetPhase","Polarity","WindowMethod"], ...
                 varargin{:});
         end
         
@@ -44,8 +53,17 @@ classdef Tone < stimgen.StimType
             t = obj.Time;
             freq = double(obj.selected_value("Frequency"));
             onsetPhase = double(obj.selected_value("OnsetPhase"));
+            polarity = double(obj.selected_value("Polarity"));
             
-            obj.Signal = sin(2.*pi.*freq.*t+onsetPhase);
+            % OnsetPhase is in degrees (label, tooltip and docs all say so),
+            % the same convention AMnoise follows.
+            obj.Signal = sin(2.*pi.*freq.*t+deg2rad(onsetPhase));
+
+            % Alternating (0) is generated positive; the presenter inverts
+            % every other presentation (alternates_polarity).
+            if polarity == -1
+                obj.Signal = -obj.Signal;
+            end
 
 
             obj.apply_normalization;
@@ -53,6 +71,21 @@ classdef Tone < stimgen.StimType
             obj.apply_calibration;
             
             obj.apply_gate;
+        end
+
+        function tf = alternates_polarity(obj)
+            % tf = alternates_polarity(obj) - True when the active variant
+            % asks for alternating polarity (Polarity = 0), i.e. the
+            % presenter should invert every other presentation of it.
+            % Reads the active combination without reselecting, so it
+            % describes the waveform currently in Signal.
+            v = obj.active_variant_values();
+            if isfield(v, 'Polarity')
+                p = v.Polarity;
+            else
+                p = obj.Polarity;
+            end
+            tf = double(p(1)) == 0;
         end
         
     end
@@ -65,6 +98,10 @@ classdef Tone < stimgen.StimType
                 'tooltip', stimgen.util.tooltip(obj, 'Frequency'));
             m.OnsetPhase   = struct('label', 'Onset Phase',   'format', '%.1f deg', ...
                 'tooltip', stimgen.util.tooltip(obj, 'OnsetPhase'));
+            m.Polarity     = struct('label', 'Polarity', 'widget', 'dropdown', ...
+                'items',     {{'+ Positive', '+/- Alternate', '- Negative'}}, ...
+                'itemsData', {{1, 0, -1}}, ...
+                'tooltip', stimgen.util.tooltip(obj, 'Polarity'));
             % Grouped with Timing (order 20) so it sits next to Duration
             % (order 10) and WindowDuration (order 30), which it controls.
             m.WindowMethod = struct('label', 'Window Method', 'widget', 'dropdown', ...

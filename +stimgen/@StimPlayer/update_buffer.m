@@ -1,6 +1,8 @@
 function update_buffer(obj)
 % update_buffer(obj) - Write the current stimulus signal to the hardware buffer.
 % Uses double-buffering: TrigBufferID alternates 0/1 based on trialCount_.
+% The signal is multiplied by nextPolarity_, which claim_polarity_ sets to -1
+% on every other presentation of a stimulus that alternates polarity.
 % No-op if hardware parameters are not available.
 
 if ~obj.HardwareAvailable
@@ -16,7 +18,7 @@ obj.TrigBufferID = mod(obj.trialCount_, 2);
 bid = obj.TrigBufferID;
 
 % Zero-pad first and last sample (required by RPvds SerSource components)
-buffer = [0, sp.Signal, 0];
+buffer = [0, obj.nextPolarity_ .* sp.Signal, 0];
 nSamps = numel(buffer);
 
 try

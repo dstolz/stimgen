@@ -22,6 +22,7 @@ try
     % Log presentation
     obj.StimOrder(end+1, 1)     = obj.nextSPOIdx;
     obj.StimOrderTime(end+1, 1) = obj.timeSinceStart;
+    obj.StimPolarity(end+1, 1)  = obj.nextPolarity_;
     presentedIdx = obj.nextSPOIdx;
 
     % Trigger hardware (no-op if hardware unavailable)
@@ -46,6 +47,7 @@ try
     end
 
     % Pre-load next buffer (into the non-triggered buffer slot)
+    obj.nextPolarity_ = obj.claim_polarity_;
     obj.update_buffer;
 catch ME
     if ~isempty(obj.Timer) && isvalid(obj.Timer)

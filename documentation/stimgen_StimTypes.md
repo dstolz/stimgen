@@ -42,7 +42,20 @@ Pure sine tone at `Frequency` for `Duration` seconds.
 | --- | --- | --- |
 | `Frequency` | yes | Hz, 100–40000 |
 | `OnsetPhase` | yes | degrees |
+| `Polarity` | yes | `1` positive, `-1` negative, `0` alternating across presentations |
 | `WindowMethod` | no | `"Duration"` \| `"Proportional"` \| `"#Periods"` — reinterprets `WindowDuration` |
+
+`Polarity = 0` does **not** alternate within the waveform the way `ClickTrain`'s
+does — a tone pip is one event, with nothing inside it to flip. The positive
+waveform is generated and `alternates_polarity()` returns true, which tells the
+presenter to invert every other presentation of that variant:
+`StimPlayer`'s hardware playback does (see
+[Alternating polarity](stimgen_StimPlayer.md#alternating-polarity)), and so does
+a host that owns presentation (MABR imports it as `alternatePolarity`). This is
+the difference from `OnsetPhase = [0 180]`, which makes **two variants** and so
+doubles the presentations: alternating keeps one variant and splits its
+repetitions between the signs. `alternates_polarity()` reads the active
+combination without reselecting, so it describes the waveform in `Signal`.
 
 `WindowMethod` changes both the meaning and display scale of the inherited
 `WindowDuration`: a fixed time (ms), a percentage of total duration, or a count of
@@ -146,7 +159,7 @@ Train of rectangular clicks at `Rate`, each `ClickDuration` long, filling `Durat
 | Property | Vectorizable | Meaning |
 | --- | --- | --- |
 | `Rate` | yes | Hz, click repetition rate |
-| `Polarity` | yes | `1` positive, `-1` negative, `0` alternating |
+| `Polarity` | yes | `1` positive, `-1` negative, `0` alternating click by click within the train, `2` alternating whole presentations |
 | `ClickDuration` | yes | seconds; must be ≤ `1/Rate` |
 | `OnsetDelay` | yes | seconds before the first click |
 | `Truncate` | yes | if false, zero-pads to `Duration` instead of cutting a partial train |
@@ -156,7 +169,18 @@ Also read-only via the `Dependent` `ClickInterval`. Construction disables the
 inherited window (`ApplyWindow = false`, `WindowFcn = ""`) because clicks are
 already discrete pulses, not a continuous tone needing onset/offset ramping.
 `ClickDuration` too long for `Rate`, or shorter than one sample at `Fs`, raises
-`stimgen:ClickTrain:ClickDuration:InvalidValue`. `CalibrationType` is `"click"`: the
+`stimgen:ClickTrain:ClickDuration:InvalidValue`. The two alternating modes answer different questions. `0` flips each click
+inside the train, so the waveform itself alternates and every presentation is
+the same. `2` generates the positive train and returns `alternates_polarity()`
+true, so the presenter inverts every other presentation of it — exactly as a
+`Tone` with `Polarity = 0` does (see
+[Alternating polarity](stimgen_StimPlayer.md#alternating-polarity)). A
+single-click stimulus (`Duration` shorter than one `ClickInterval`) needs `2`:
+with one click there is nothing to alternate within, so `0` plays every
+presentation positive. Like the Tone's, `2` keeps one variant and splits its
+repetitions between the signs.
+
+`CalibrationType` is `"click"`: the
 LUT is keyed on `ClickDuration`, and the CalibrationGui transfer plot keeps that axis
 in µs rather than ms (see [Time is seconds…](../CLAUDE.md)).
 

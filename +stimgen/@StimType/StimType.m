@@ -225,6 +225,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         info = set_variant_index(obj, idx)                                        % Select variant by index
         info = step_variant(obj, step)                                            % Step variant index
         text = current_parameter_summary(obj)                                     % Non-default parameter summary
+        tf = alternates_polarity(obj)                                             % Presenter should invert every other presentation
         h = create_gui(obj, src, event)                                           % Auto-build parameter GUI
         m = get_prop_meta(obj)                                                    % Public accessor for propMeta()
         set_gui_handles(obj, handleStruct)                                        % Register widgets built by a host GUI
