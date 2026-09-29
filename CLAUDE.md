@@ -261,6 +261,14 @@ known identifiers to user-facing guidance — a new user-triggerable error shoul
 `UserProperties` string array, plus the core base-class set. A subclass property missing from
 `UserProperties` will not survive a save/load round-trip.
 
+**Restoring holds calibration off until the stimulus is whole.** Both restore paths —
+`StimType.fromStruct` and `StimPlayer.load_bank` — set `ApplyCalibration` false first and assign
+the saved value **last**, after the serialized calibration is back. Each restored property
+regenerates the signal, and doing that against the default, empty `StimCalibration` logged a
+critical `No calibration data available for stim` about a stimulus that was calibrated — the
+same line an uncalibrated one earns. A new restore path has to bracket its assignments the same
+way.
+
 **Logging.** `stimgen.util.vprintf(level, [red], msg, ...)`, gated by the global `GVerbosity`
 (-1 log-only, 0 critical, 1 info, 2 debug, 3 verbose, 4 trace). With values `msg` is a printf
 format string; with none it is literal text, so `ME.message` and Windows paths survive. It

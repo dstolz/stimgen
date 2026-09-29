@@ -39,9 +39,21 @@ try
         end
         stimObj   = stimgen.(stimClass)();
 
+        % Calibration is held off until the item is whole, then switched to
+        % the saved setting. Each assignment below regenerates the signal,
+        % and before the item's calibration is back that is against an empty
+        % one -- which logged a critical "No calibration data available for
+        % stim" while loading a bank that was calibrated. See
+        % stimgen.StimType.fromStruct, which restores the same way.
+        applyCal = stimObj.ApplyCalibration;    % class default, if unsaved
+        if isfield(S.StimObj, 'ApplyCalibration')
+            applyCal = S.StimObj.ApplyCalibration;
+        end
+        stimObj.ApplyCalibration = false;
+
         % Restore base StimType properties
         baseProps = {'SoundLevel','Duration','WindowDuration','WindowFcn', ...
-                     'ApplyCalibration','ApplyWindow','Fs', ...
+                     'ApplyWindow','Fs', ...
                      'VariantSelectionMode','VariantCombinationMode', ...
                      'VariantSelectorClass','VariantSelectorConfig', ...
                      'VariantReselectOnUpdate'};
@@ -56,6 +68,7 @@ try
         if isfield(S.StimObj, 'UserProperties')
             for j = 1:numel(S.StimObj.UserProperties)
                 p = char(S.StimObj.UserProperties(j));
+                if strcmp(p, 'ApplyCalibration'), continue; end   % restored last
                 if isfield(S.StimObj, p)
                     stimObj.(p) = S.StimObj.(p);
                 end
@@ -70,6 +83,9 @@ try
                 stimObj.Calibration = stimgen.StimCalibration.loadobj(calData);
             end
         end
+
+        % Last: the one regeneration made with everything in place.
+        stimObj.ApplyCalibration = applyCal;
 
         sp      = stimgen.StimPlay(stimObj);
         sp.Reps = S.Reps;

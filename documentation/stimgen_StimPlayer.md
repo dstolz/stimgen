@@ -520,11 +520,25 @@ repetition count, which ends the session cleanly.
 `load_bank()` reconstructs each item by:
 
 - creating a new stimulus object from `S.StimObj.Class`
+- switching `ApplyCalibration` off for the duration
 - restoring base `StimType` properties, `Fs` among them
 - restoring the serialized `UserProperties`
+- restoring the calibration serialized with the item
+- setting `ApplyCalibration` to the saved value, **last**
 - wrapping the result in a new `stimgen.StimPlay`
 - adopting the first item's `Fs` as the bank rate and re-applying it to the
   rest (see [Sample rate](#sample-rate))
+
+`ApplyCalibration` brackets the rest because every restored property
+regenerates the signal, and until the item's calibration is back that would be
+against an empty one. `apply_calibration` answers an empty calibration with a
+critical `No calibration data available for stim`, so loading a **calibrated**
+bank used to log the same line an uncalibrated one earns. Held off,
+`apply_calibration` returns before it looks; the closing assignment is the one
+regeneration made with every property and the calibration in place.
+`StimType.fromStruct` restores the same way, so a stimulus loaded by
+`SpotCheck` or a host application is covered too. A bank item that really has
+no calibration still raises the warning, once.
 
 ### Compatibility note
 
