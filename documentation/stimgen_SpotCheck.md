@@ -81,11 +81,18 @@ same way the table that calibrated it was measured.**
 | --- | --- | --- |
 | `tone` | spectral rms at the tone frequency | the tone LUT is built from exactly this estimate (`Engine.spectral_rms`) |
 | `click` | peak, converted to rms equivalent (÷√2) | the click LUT is built from a peak, and a click train is mostly silence — an rms would read tens of dB low |
+| `LevelReference = "peak"` | peak, converted to rms equivalent (÷√2) | a stimulus that scales its peak rather than its rms (`stimgen.SoundFile`) asks for a peak level |
 | everything else | broadband rms | noise, TORC and sound files have no single frequency to anchor to |
 
 Measuring a tone with a broadband rms instead would fold every bit of room noise in the
 record into the number, and read as a calibration error of a decibel or two that is not
 there.
+
+The rule lives in two shared functions rather than in this tool:
+`stimgen.util.level_request(stimObj)` reads what the stimulus asks for and how it has to
+be measured, and `stimgen.util.level_as_calibrated(y, fs, req, micSens, spectral)` makes
+the measurement. `stimgen.StimPlayer.capture_stim` and the capture inspector use the same
+two, so a spot check and a capture cannot measure one stimulus two ways.
 
 Volts become dB SPL through `Engine.spl_from_volts`, which is the one conversion the whole
 package reads a level through — the same one `compute_spl_voltage_` builds a LUT with,
@@ -233,6 +240,28 @@ renormalized it would destroy the one number the capture was made to obtain.
 `ApplyCalibration` and `ApplyWindow` default to false to match, and neither is offered in
 the generated panel. `Duration` is derived from the record, as `SoundFile` derives it from
 the selected file.
+
+**The scale travels with the samples.** What turns volts into pascals is the microphone
+sensitivity of the chain the record came through, so a recording carries it
+(`MicSensitivity`, V/Pa; `NaN` when unknown) — copied in at capture time rather than
+looked up through a calibration handle, because a calibration can be reloaded underneath a
+recording and a record must not silently change level when it is. `StimInspector` reads a
+record with a sensitivity in pascals and dB SPL. Alongside it:
+
+| Property | Holds |
+| --- | --- |
+| `NoiseRecord` | the silence recorded just before the stimulus, on the same input and scale |
+| `NoiseRms` | rms of all the silence acquired, pooled over every repeat |
+| `Request` | what the stimulus asked for (`stimgen.util.level_request`), plus the spectral window its calibration measures with |
+| `Warnings` | everything that qualifies the record |
+| `Played` | a copy of the stimulus as it was played, taken at capture time; the inspector lists its parameters |
+
+`stimgen.CapturedSignal.from_capture(capture, Stimulus=..., MicSensitivity=..., Spectral=...)`
+builds all of that from an `Engine.play_and_capture` result, and is what both this tool and
+`StimPlayer.capture_stim` use — so its recording inspector reads in dB SPL on the engine's
+own scale, the scale this tool reports its levels on. The warnings are `CapturedSignal`'s
+too (`capture_warnings`, `request_warnings`), so a spot check and a capture of one
+acquisition say the same things about it.
 
 Two things about it are deliberate and easy to trip over:
 

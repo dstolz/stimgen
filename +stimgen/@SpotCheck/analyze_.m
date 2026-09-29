@@ -19,6 +19,12 @@ function results = analyze_(obj, capture, stimObj)
 % dB SPL, which is what Engine/compute_spl_voltage_ does when it builds the
 % click table, so the two land on one scale.
 %
+% The rule itself is stimgen.util.level_request (what the stimulus asks for)
+% and stimgen.util.level_as_calibrated (how the record is measured), shared
+% with stimgen.StimPlayer.capture_stim so the two tools cannot measure one
+% stimulus two ways; the warnings are stimgen.CapturedSignal's for the same
+% reason.
+%
 % Parameters:
 %   capture - struct from stimgen.calibration.Engine.play_and_capture
 %   stimObj - the stimgen.StimType that was played
@@ -31,52 +37,32 @@ fs  = capture.fs;
 x   = capture.excitation;
 y   = capture.response;
 
-warnings = string.empty(1, 0);
-
 % ---- What was asked for -------------------------------------------------
-% Read through active_variant_values so a vectorized stimulus reports the
-% combination that actually produced this waveform, without advancing the
-% selection to the next one just by asking.
-variant     = stimObj.active_variant_values();
-requestedDb = double(active_value_(stimObj, "SoundLevel", variant));
-calType     = string(stimObj.CalibrationType);
-
-[mode, anchorHz] = measurement_mode_(stimObj, variant, fs);
-
-hasCalData  = false;
-try
-    C = stimObj.Calibration;
-    hasCalData = isa(C, 'stimgen.StimCalibration') ...
-        && isstruct(C.CalibrationData) && ~isempty(C.CalibrationData);
-catch
-end
-calibrated = logical(stimObj.ApplyCalibration) && hasCalData;
+% stimgen.util.level_request reads it through active_variant_values, so a
+% vectorized stimulus reports the combination that actually produced this
+% waveform without advancing the selection just by asking. The rule for how
+% to measure it lives there too, shared with StimPlayer's capture.
+req         = stimgen.util.level_request(stimObj);
+variant     = req.variant;
+requestedDb = req.level_db;
+calType     = req.calibration_type;
+hasCalData  = req.has_calibration_data;
+calibrated  = req.calibrated;
 
 % ---- What came back -----------------------------------------------------
-switch mode
-    case "specfreq"
-        measurement = stimgen.calibration.Engine.spectral_rms( ...
-            y, anchorHz, fs, Spectral = eng.spectral_options());
-        mRms      = measurement;
-        levelRef  = sprintf('spectral rms at %.4g Hz', anchorHz);
-    case "peak"
-        measurement = max(abs(y));
-        mRms        = measurement / sqrt(2);
-        levelRef    = 'peak, as rms equivalent';
-    otherwise
-        measurement = rms_(y);
-        mRms        = measurement;
-        levelRef    = 'broadband rms';
-end
+lvl = stimgen.util.level_as_calibrated(y, fs, req, eng.MicSensitivity, ...
+    eng.spectral_options());
+mode        = lvl.mode;
+anchorHz    = lvl.frequency_hz;
+measurement = lvl.measurement_v;
+levelRef    = lvl.level_reference;
+measuredDb  = lvl.level_db;
 
-measuredDb = eng.spl_from_volts(mRms);
-
-if isfinite(capture.noise.rms_v) && capture.noise.rms_v > 0
+snrDb = stimgen.CapturedSignal.capture_snr_db(capture);
+if isfinite(snrDb)
     noiseDb = eng.spl_from_volts(capture.noise.rms_v);
-    snrDb   = 20 * log10(rms_(y) / capture.noise.rms_v);
 else
     noiseDb = nan;
-    snrDb   = nan;
 end
 
 % ---- The two waveforms, characterized the same way ----------------------
@@ -87,63 +73,18 @@ stimMetrics = stimgen.StimInspector.signal_metrics(x, fs, nH);
 capMetrics  = stimgen.StimInspector.signal_metrics(y, fs, nH);
 
 % ---- Everything that qualifies the comparison ---------------------------
-if ~logical(stimObj.ApplyCalibration)
-    warnings(end+1) = "Apply Calibration is off for this stimulus, so its " + ...
-        "waveform is normalized rather than scaled to volts. The measured " + ...
-        "level is real, but Sound Level is nominal and the error is meaningless.";
-elseif ~hasCalData
-    warnings(end+1) = "The stimulus asks for calibration but carries no " + ...
-        "calibration data, so it was played un-scaled. The measured level is " + ...
-        "real; the requested one is not.";
-end
-
-if capture.delay_at_bound
-    warnings(end+1) = sprintf( ...
-        "The response delay reached the %.0f ms search bound, so the record " + ...
-        "was probably cut in the wrong place. Raise Post Delay above the " + ...
-        "rig's round-trip latency and run again.", capture.post_delay_s * 1e3);
-end
-
-if capture.headroom.responseClippingLikely
-    warnings(end+1) = sprintf( ...
-        "The recording looks clipped (peak %.4g V, %.1f%% of samples flat at " + ...
-        "the peak). Reduce the input gain; every level here is understated.", ...
-        capture.headroom.responsePeakV, ...
-        100 * capture.headroom.responseFlatTopFraction);
-end
-
-if capture.headroom.excitationClippingLikely
-    warnings(end+1) = sprintf( ...
-        "The excitation peaks at %.4g V, at or above the %.4g V output " + ...
-        "ceiling, so the converter clipped it before the speaker saw it.", ...
-        capture.headroom.excitationPeakV, capture.headroom.assumedFullScaleV);
-end
-
-if isfinite(snrDb) && snrDb < 10
-    warnings(end+1) = sprintf( ...
-        "Only %.1f dB above the noise floor in this record. The level and " + ...
-        "every distortion figure below are dominated by noise.", snrDb);
-end
+% The sentences are CapturedSignal's, so a spot check and a StimPlayer
+% capture of one acquisition say the same things about it.
+warnings = [stimgen.CapturedSignal.request_warnings(req), ...
+            stimgen.CapturedSignal.capture_warnings(capture)];
 
 if isfinite(measuredDb) && ~isfinite(eng.MicSensitivity)
     warnings(end+1) = "No microphone sensitivity is set, so dB SPL is " + ...
         "relative to an unmeasured reference.";
 end
 
-if capture.repeats > 1
-    warnings(end+1) = sprintf( ...
-        "%d acquisitions were averaged, which lowers noise on the response " + ...
-        "but not on the noise floor it is compared with, so the %.1f dB SNR " + ...
-        "is pessimistic by up to %.1f dB.", capture.repeats, snrDb, ...
-        10 * log10(capture.repeats));
-end
-
 % ---- Assemble -----------------------------------------------------------
-if calibrated
-    errorDb = measuredDb - requestedDb;
-else
-    errorDb = nan;
-end
+errorDb = lvl.error_db;
 
 results = struct();
 
@@ -196,70 +137,6 @@ end % analyze_
 
 
 % =========================================================================
-
-function [mode, anchorHz] = measurement_mode_(stimObj, variant, fs)
-% [mode, anchorHz] = measurement_mode_(stimObj, variant, fs)
-% How to measure this stimulus's level, chosen to match the calibration table
-% it was scaled by. See the header of this file for why it matters.
-%
-% Returns:
-%   mode     - "specfreq" | "peak" | "rms", the Engine's own measurement modes
-%   anchorHz - frequency the spectral measurement is taken at; NaN otherwise
-
-anchorHz = nan;
-
-switch string(stimObj.CalibrationType)
-    case "tone"
-        anchorHz = double(active_value_(stimObj, "Frequency", variant));
-        mode     = "specfreq";
-
-    case "click"
-        mode = "peak";
-
-    case "swept_sine"
-        % The LUT is keyed on the geometric mean of the sweep limits, but a
-        % sweep's energy is spread across its whole span and there is no single
-        % bin holding it. Broadband rms is the honest instrument for the
-        % waveform even though the table was keyed on one frequency.
-        mode = "rms";
-
-    otherwise
-        mode = "rms";
-end
-
-if mode == "specfreq" && (~isfinite(anchorHz) || anchorHz <= 0 || anchorHz >= fs/2)
-    % An unusable anchor would make spectral_rms measure an arbitrary bin.
-    mode     = "rms";
-    anchorHz = nan;
-end
-end
-
-
-function v = active_value_(stimObj, propName, variant)
-% v = active_value_(stimObj, propName, variant)
-% One property's value for the active variant, without advancing the cycle.
-% Scalar properties are returned as they are; vectorized ones come from the
-% combination table that active_variant_values already resolved.
-name = char(propName);
-
-if ~isprop(stimObj, name)
-    v = nan;
-    return
-end
-
-raw = stimObj.(name);
-if numel(raw) <= 1
-    v = raw;
-    return
-end
-
-if isstruct(variant) && isfield(variant, name)
-    v = variant.(name);
-else
-    v = raw(1);
-end
-end
-
 
 function r = rms_(y)
 % r = rms_(y) - Root mean square over the finite samples; 0 for none.
