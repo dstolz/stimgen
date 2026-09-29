@@ -223,6 +223,14 @@ read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into
 schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
 is not 94.
 
+**Frequency weighting is not a bilinear IIR.** `stimgen.util.weighting_db` is the curve (for
+spectra and band levels); `stimgen.util.sound_levels` applies the IEC 61672-1 A/C networks to
+a *waveform* by evaluating the analog transfer function on the record's zero-padded FFT grid,
+which is exact in magnitude and phase up to Nyquist at any rate. The obvious alternative, a
+bilinear-transformed IIR, compresses the top octave — its A curve is 7 dB low at 16 kHz on a
+48 kHz converter. Band arithmetic (IEC 61260 base-ten centres) is `stimgen.util.band_levels`,
+shared by `analyze_background_` and the inspector's Bands tab.
+
 **Calibration coupling.** A subclass's `CalibrationType` constant (`"tone"`, `"click"`,
 `"filter"`, `"swept_sine"`) selects which LUT `apply_calibration` interpolates and which property
 supplies the lookup key (Frequency, ClickDuration, or geometric mean of Start/StopFrequency). A new
