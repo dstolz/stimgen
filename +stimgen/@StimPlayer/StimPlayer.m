@@ -73,6 +73,7 @@ classdef StimPlayer < handle
         step_combination(obj, step)
         open_calibration_gui(obj)
         open_stim_inspector(obj)
+        viewer = show_all_combinations(obj, src, event)
         rec = capture_stim(obj, src, event)
         dlg = edit_capture_settings(obj)
         save_bank(obj, ffn)
@@ -202,9 +203,13 @@ classdef StimPlayer < handle
 
         Inspector                            % stimgen.StimInspector | [] (detail window)
 
+        CombinationViewers_ = {}             % stimgen.CombinationViewer windows opened from here
+
         CaptureInspector_                    % stimgen.StimInspector | [] showing the last capture
         Capturing_ (1,1) logical = false     % True while capture_stim is acquiring
         CaptureLocked_ (1,1) logical = false % True while a session holds the bank (lock_bank_controls_)
+
+        PolarityCount_ = {}                  % Per bank item: presentations so far of each variant
     end
 
     % --- Dependent ---
@@ -248,6 +253,12 @@ classdef StimPlayer < handle
             end
             if ~isempty(obj.CaptureInspector_) && isvalid(obj.CaptureInspector_)
                 delete(obj.CaptureInspector_);
+            end
+            for k = 1:numel(obj.CombinationViewers_)
+                v = obj.CombinationViewers_{k};
+                if ~isempty(v) && isvalid(v)
+                    delete(v);
+                end
             end
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
                 stop(obj.Timer);
@@ -1026,7 +1037,8 @@ classdef StimPlayer < handle
                 'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
-                'AddStimTool','DuplicateStimTool','RemoveStimTool'};
+                'AddStimTool','DuplicateStimTool','RemoveStimTool', ...
+                'CombinationsMenu','CombinationsTool'};
             for i = 1:numel(fields)
                 f = fields{i};
                 if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))

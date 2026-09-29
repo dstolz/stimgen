@@ -10,7 +10,7 @@ function icon = toolbar_icon(name)
 %   name - one of "open", "save", "protocol", "calibration", "connect",
 %          "disconnect", "help", "add", "duplicate", "remove", "play", "inspect",
 %          "refresh", "transfer", "background", "ghost", "voltage", "logx",
-%          "camera", "summary", "wiki", "microphone"
+%          "camera", "summary", "wiki", "microphone", "combinations"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
@@ -19,7 +19,7 @@ arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
         "calibration","connect","disconnect","help","add","duplicate","remove","play", ...
         "inspect","refresh","transfer","background","ghost","voltage","logx", ...
-        "camera","summary","wiki","microphone"])}
+        "camera","summary","wiki","microphone","combinations"])}
 end
 
 N = 24;
@@ -197,6 +197,20 @@ switch name
         mask(8:9,   9:16) = true;
         mask(12:13, 9:16) = true;
         mask(16:17, 9:13) = true;
+
+    case "combinations" % 2x2 small multiples, a trace of different size in each
+        % Solid tiles with the trace knocked out, for the same reason as
+        % "wiki": a filled silhouette survives the resample to 16 px.
+        origins = [3 3; 3 14; 14 3; 14 14];
+        amps    = [1.2 2.4 1.8 3.0];
+        for k = 1:4
+            r0 = origins(k,1); c0 = origins(k,2);
+            mask = mask | (row>=r0 & row<=r0+7 & col>=c0 & col<=c0+7);
+            for c = c0+1:c0+6
+                r = round(r0 + 3.5 - amps(k) * sin((c - c0 - 1) / 5 * 2*pi));
+                mask(r, c) = false;
+            end
+        end
 
     case "wiki" % open book -- the documentation, on the web
         % The only glyph here drawn pixel by pixel rather than composed

@@ -18,6 +18,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
 - [stimgen_StimInspector.md](stimgen_StimInspector.md): detail window for one stimulus — waveform, spectrum, spectrogram, THD and signal metrics; a microphone recording is shown in Pa and dB SPL, with sound-level-meter readouts and band levels
+- [stimgen_CombinationViewer.md](stimgen_CombinationViewer.md): every variant combination of one stimulus side by side — tiles, overlay or stack, waveform or spectrum — generated on copies so the bank is not moved
 - [stimgen_SpotCheck.md](stimgen_SpotCheck.md): play one stimulus through the rig, record it, and compare what came back with what was asked for
 - [stimgen_calibration.md](stimgen_calibration.md): calibration concepts, GUI walkthrough, and programmatic workflow
 - [stimgen_CalibrationGui.md](stimgen_CalibrationGui.md): calibration GUI reference

@@ -144,7 +144,20 @@
     "DuplicateStimTool": "Duplicate Stimulus",
     "RemoveStimTool": "Remove Stimulus",
     "InspectStimTool": "Inspect Stimulus (detailed plots and metrics)",
+    "CombinationsTool": "Show All Combinations: open every variant combination of the selected item in a new window, as tiles, an overlay or a stack, in time or frequency",
     "PlayTool": "Play Selected"
+  },
+
+  "CombinationViewer": {
+    "View": "Tiles: one small plot per combination. Overlay: all on one axes. Stacked: offset down one axes, each named on the y axis.",
+    "Domain": "Waveform: amplitude against time. Spectrum: magnitude in dB against frequency.",
+    "SharedScale": "On: every trace on one amplitude scale, so level differences between combinations stay visible. Off: each trace scaled to its own peak, so shapes can be compared.",
+    "ShowAll": "Show every combination",
+    "ShowNone": "Show no combination (then tick the ones wanted in the table)",
+    "InspectTool": "Open the current combination in a Stimulus Inspector (also: double-click a trace)",
+    "RefreshTool": "Regenerate every combination from the source stimulus, picking up parameter edits made since this window opened",
+    "Status": "How many combinations there are, how many are drawn, and which one is current",
+    "Table": "One row per combination: the value of each varying parameter, the peak and the rms. Show chooses which are drawn; clicking a row makes it current."
   },
 
   "CalibrationGui": {

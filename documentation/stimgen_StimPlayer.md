@@ -97,6 +97,24 @@ object that may since have been removed.
 The inspector is deliberately left enabled during playback — it does not
 write to the stimulus — and is closed with the player.
 
+### All combinations of one item
+
+**Tools > Show All Combinations...** (`Ctrl+G`, or the grid button beside
+Inspect Stimulus) calls `show_all_combinations()`. It opens a
+[`stimgen.CombinationViewer`](stimgen_CombinationViewer.md) that generates
+every variant combination of the selected item and draws them side by side:
+as tiles, overlaid, or stacked, as waveforms or spectra. A table lists the
+parameter values, peak and rms of each combination, and any combination can
+be opened from there in a `StimInspector`.
+
+Unlike the inspector, each press opens a **new** window, so two items can be
+compared. The viewer works on copies, so the bank item keeps its active
+combination. Its Refresh button regenerates from the bank item and picks up
+later edits. The command is disabled during a session (by
+`lock_bank_controls_`, and refused by the method itself). Generating a large
+family runs on the playback timer's thread, so it waits until the session
+ends. Open viewers close with the player.
+
 ### Capturing through a microphone
 
 **Capture Selected Stimulus** (Tools menu, `Ctrl+M`, or the microphone toolbar
@@ -342,11 +360,13 @@ and the status label reports the missing path. An empty list shows a disabled
 A toolbar above the signal plot gives one-click access to the most common
 actions, each a duplicate of an existing menu item or button: Load Protocol,
 Load Bank, Save Bank, Open Calibration GUI, Add Stimulus, Duplicate Stimulus,
-Remove Stimulus, Inspect Stimulus and Play Selected. Toolbar buttons that edit
-the bank (Load/Save Bank/Protocol, Open Calibration GUI, Add/Duplicate/Remove
-Stimulus) are disabled during playback by `lock_bank_controls_`, the same as their
-menu/button counterparts. Inspect Stimulus and Play Selected are not, since
-neither edits the bank.
+Remove Stimulus, Inspect Stimulus, Show All Combinations and Play Selected.
+Toolbar buttons that edit the bank (Load/Save Bank/Protocol, Open Calibration
+GUI, Add/Duplicate/Remove Stimulus) are disabled during playback by
+`lock_bank_controls_`, the same as their menu/button counterparts. Show All
+Combinations is disabled too: it edits nothing, but generating every
+combination would compete with the playback timer. Inspect Stimulus and Play
+Selected stay enabled, since neither edits the bank.
 
 The microphone button, Capture Selected, sits after Play Selected. It follows
 its own rule rather than `lock_bank_controls_` alone: it is enabled only when
@@ -598,5 +618,6 @@ before changing `StimPlayer` itself.
 
 - [stimgen_overview.md](stimgen_overview.md) — package orientation
 - [stimgen_StimInspector.md](stimgen_StimInspector.md) — the stimulus detail window
+- [stimgen_CombinationViewer.md](stimgen_CombinationViewer.md) — every combination of one item, side by side
 - [stimgen_StimPlay.md](stimgen_StimPlay.md) — the per-item scheduling wrapper
 - [stimgen_calibration.md](stimgen_calibration.md) — calibrating output levels

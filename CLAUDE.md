@@ -70,6 +70,15 @@ compare the *pair* of waveforms live in its own window. `Engine.play_and_capture
 arbitrary-waveform acquisition, the second is the one public volts-to-dB-SPL conversion.
 See `documentation/stimgen_SpotCheck.md`.
 
+**Combination viewer** — `stimgen.CombinationViewer` (in `@CombinationViewer/`, a single
+classdef file) draws every variant combination of one stimulus side by side, opened from
+StimPlayer by `show_all_combinations` (Tools menu, `Ctrl+G`, toolbar). It generates on
+`copy()`s — the source copied once with `VariantReselectOnUpdate` forced off, then one pinned
+copy per combination via `set_variant_index` — so the bank item's active combination and
+selection state are untouched, and it keeps those copies so Inspect opens the waveform on
+screen. Each press opens a new window; StimPlayer tracks them in `CombinationViewers_` and
+closes them with itself. See `documentation/stimgen_CombinationViewer.md`.
+
 **Capture** — `StimPlayer.capture_stim` is the same acquisition from inside the bank editor:
 it plays the selected combination through `CaptureAdapter` (an `HwAdapter`, or a function
 returning one) or the host's calibration adapter, and opens the record in its own
