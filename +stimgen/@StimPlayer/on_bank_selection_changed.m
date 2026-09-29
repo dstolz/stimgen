@@ -215,6 +215,8 @@ try
     stimObj.update_signal();
     clear computingCleanup;
     obj.update_signal_plot();
+    % Only an edit that took is worth carrying to the next stimulus of this type.
+    obj.remember_stim_settings_(stimObj);
 catch ME
     if isNumExpr
         src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);

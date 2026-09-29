@@ -143,6 +143,31 @@ Presentation counters start from zero. Like a `.spl` round trip, anything not
 listed in `UserProperties` (for example a `CapturedSignal`'s recorded waveform)
 is not carried over.
 
+#### Remembered settings per stimulus type
+
+A new item does not start from the class defaults if you have already tuned one
+of its type. Every parameter edit that takes effect in the editor panel stores
+that stimulus's settings — level, duration, window, variant policy and every
+`UserProperties` entry — under its class in the `StimPlayer` preference group
+(`StimSettings`, one struct per class). `add_stim()` applies them to the new
+object through `apply_remembered_settings_`, so a second `Tone` opens as the
+first was left, and it does so in later sessions too.
+
+- The whole set is stored at each edit, not only the property changed, because
+  some properties change the meaning of others (`Tone.WindowMethod` sets the
+  units of `WindowDuration`); the most recently edited stimulus of a type is
+  what the next one copies.
+- Only GUI edits are remembered. Programmatic assignment, `open_stim`,
+  `load_bank` and `duplicate_stim` neither write nor read the preference, so a
+  script or a loaded bank never rewrites what the operator chose.
+- Not remembered: the sample rate (the bank owns it), `Reps`/`ISI` (bank-level
+  presentation settings) and `SoundFile`'s `Catalog` and `FileIndex`, which
+  describe a file list a new item does not have.
+- Each property is applied on its own inside a `try`, so a stored value that no
+  longer validates costs that property its memory, not the new item its other
+  settings. A missing or unreadable preference is the same as none.
+- To return to class defaults: `rmpref('StimPlayer','StimSettings')`.
+
 ### Sample rate
 
 `stimgen.StimType` carries its own `Fs`, but `StimPlayer` holds **one rate for

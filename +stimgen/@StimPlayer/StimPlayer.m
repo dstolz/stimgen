@@ -1110,6 +1110,101 @@ classdef StimPlayer < handle
         end
 
         % -----------------------------------------------------------------
+        function names = remembered_setting_names_(~, stimObj)
+            % remembered_setting_names_() - Properties worth carrying to the next stimulus of a type.
+            % The settings a user tunes: level, timing, window, variant
+            % policy, and the type's own parameters. Not Fs (the bank owns
+            % the rate) and not Catalog / FileIndex (a file list and indices
+            % into it mean nothing to a new item that has no files yet).
+            base = ["SoundLevel","Duration","WindowDuration","WindowFcn", ...
+                    "ApplyCalibration","ApplyWindow", ...
+                    "VariantSelectionMode","VariantCombinationMode", ...
+                    "VariantSelectorClass","VariantSelectorConfig", ...
+                    "VariantReselectOnUpdate"];
+            names = unique([base, stimObj.UserProperties], 'stable');
+            names = names(~ismember(names, ["Catalog","FileIndex"]));
+            has = false(size(names));
+            for k = 1:numel(names)
+                has(k) = isprop(stimObj, char(names(k)));
+            end
+            names = names(has);
+        end
+
+        % -----------------------------------------------------------------
+        function remember_stim_settings_(obj, stimObj)
+            % remember_stim_settings_(stimObj) - Keep this stimulus's settings for its type.
+            % The whole set is snapshotted, not just the property edited:
+            % some properties change the meaning of others (Tone's
+            % WindowMethod sets the units of WindowDuration), so a value
+            % remembered alone can come back describing something else.
+            % Stored per type in the StimPlayer pref group, so it applies to
+            % the next Add Stim in this window and to later sessions alike.
+            % Remembering is a convenience and never interrupts an edit.
+            try
+                key = matlab.lang.makeValidName(class(stimObj));
+                S = struct();
+                names = obj.remembered_setting_names_(stimObj);
+                for k = 1:numel(names)
+                    v = stimObj.(names(k));
+                    % Plain values only: handles and objects do not survive
+                    % a pref round trip meaningfully.
+                    if isnumeric(v) || islogical(v) || ischar(v) || isstring(v)
+                        S.(names(k)) = v;
+                    end
+                end
+                stored = obj.get_remembered_settings_();
+                stored.(key) = S;
+                setpref('StimPlayer', 'StimSettings', stored);
+            catch ME
+                stimgen.util.vprintf(3, 'StimPlayer: could not remember settings: %s', ME.message);
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function stored = get_remembered_settings_(~)
+            % get_remembered_settings_() - Every type's remembered settings, keyed by class.
+            stored = struct();
+            try
+                if ispref('StimPlayer', 'StimSettings')
+                    s = getpref('StimPlayer', 'StimSettings');
+                    if isstruct(s) && isscalar(s)
+                        stored = s;
+                    end
+                end
+            catch
+                % A pref from another version, or an unreadable one, is the
+                % same as none.
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function apply_remembered_settings_(obj, stimObj)
+            % apply_remembered_settings_(stimObj) - Start a new stimulus from its type's last settings.
+            % Each property is applied on its own, so a value that no longer
+            % validates (a limit that has since changed, a property a newer
+            % version dropped) leaves that property at its default rather
+            % than costing the stimulus the rest.
+            stored = obj.get_remembered_settings_();
+            key = matlab.lang.makeValidName(class(stimObj));
+            if ~isfield(stored, key) || ~isstruct(stored.(key))
+                return
+            end
+            S = stored.(key);
+            names = obj.remembered_setting_names_(stimObj);
+            for k = 1:numel(names)
+                p = char(names(k));
+                if ~isfield(S, p)
+                    continue
+                end
+                try
+                    stimObj.(p) = S.(p);
+                catch ME
+                    stimgen.util.vprintf(3, 'StimPlayer: not applying remembered %s: %s', p, ME.message);
+                end
+            end
+        end
+
+        % -----------------------------------------------------------------
         function get_isi_(obj)
             % get_isi_() - Sample a scalar ISI from obj.ISI range.
             % Updates obj.currentISI.

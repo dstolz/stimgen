@@ -17,6 +17,11 @@ try
 		stimObj.Calibration = obj.Calibration;
 	end
 
+	% Start from the settings last used on this type (this session or an
+	% earlier one), so a second Tone opens as the first was left rather than
+	% back at the class defaults.
+	obj.apply_remembered_settings_(stimObj);
+
 	% Wrap in StimPlay
 	sp              = stimgen.StimPlay(stimObj);
 	sp.Fs           = obj.Fs;
