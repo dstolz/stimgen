@@ -35,7 +35,7 @@ leftG = uigridlayout(g);
 leftG.Layout.Row    = 2;
 leftG.Layout.Column = 1;
 leftG.ColumnWidth   = {'1x'};
-leftG.RowHeight     = {112, 150, '1x'};
+leftG.RowHeight     = {142, 150, '1x'};
 leftG.Padding       = [0 0 0 0];
 leftG.RowSpacing    = 6;
 
@@ -97,14 +97,15 @@ end % build_ui_
 % =========================================================================
 
 function build_stimulus_panel_(obj, parent)
-% What is loaded, where it came from, and the two actions that change it.
+% What is loaded, where it came from, which variant combination is checked,
+% and the two actions that change the stimulus.
 
 pnl = uipanel(parent, 'Title', 'Stimulus', 'FontWeight', 'bold');
 pnl.Layout.Row = 1;
 
 pg = uigridlayout(pnl);
 pg.ColumnWidth = {'1x', 'fit'};
-pg.RowHeight   = {'1x', 24};
+pg.RowHeight   = {'1x', 24, 24};
 pg.Padding     = [6 4 6 4];
 pg.RowSpacing  = 4;
 
@@ -114,17 +115,40 @@ lbl.Layout.Row    = 1;
 lbl.Layout.Column = [1 2];
 obj.handles.StimLabel = lbl;
 
+% Variant row. Always present, disabled for a single-combination stimulus, so
+% the panel does not change shape between stimuli.
+vg = uigridlayout(pg);
+vg.Layout.Row    = 2;
+vg.Layout.Column = [1 2];
+vg.ColumnWidth   = {'fit', 70, 'fit', '1x'};
+vg.RowHeight     = {'1x'};
+vg.Padding       = [0 0 0 0];
+vg.ColumnSpacing = 6;
+
+uilabel(vg, 'Text', 'Variant', 'Tooltip', tip_('VariantSpinner'));
+
+obj.handles.VariantSpinner = uispinner(vg, 'Limits', [1 2], 'Value', 1, ...
+    'Step', 1, 'RoundFractionalValues', 'on', 'ValueDisplayFormat', '%d', ...
+    'Tooltip', tip_('VariantSpinner'), ...
+    'ValueChangedFcn', @(src,~) variant_changed_(obj, src));
+
+obj.handles.VariantCountLabel = uilabel(vg, 'Text', 'of 1');
+
+obj.handles.StepVariantCheck = uicheckbox(vg, 'Text', 'Step each run', ...
+    'Value', obj.StepVariant, 'Tooltip', tip_('StepVariantCheck'), ...
+    'ValueChangedFcn', @(src,~) guarded_(obj, @() set_step_variant_(obj, src)));
+
 b = uibutton(pg, 'Text', 'Load Stimulus...', ...
     'Tooltip', tip_('LoadBtn'), ...
     'ButtonPushedFcn', @(~,~) guarded_(obj, @() obj.load_stimulus()));
-b.Layout.Row    = 2;
+b.Layout.Row    = 3;
 b.Layout.Column = 1;
 obj.handles.LoadBtn = b;
 
 b = uibutton(pg, 'Text', 'Match Rate', ...
     'Tooltip', tip_('MatchRateBtn'), ...
     'ButtonPushedFcn', @(~,~) guarded_(obj, @() obj.match_hardware_rate()));
-b.Layout.Row    = 2;
+b.Layout.Row    = 3;
 b.Layout.Column = 2;
 obj.handles.MatchRateBtn = b;
 end
@@ -257,6 +281,25 @@ end
 
 function set_repeats_(obj, src)
 obj.Repeats = round(src.Value);
+end
+
+
+function variant_changed_(obj, src)
+% The spinner chose a combination. The window is redrawn whether or not that
+% succeeded, so a refused choice puts the spinner back on the variant actually
+% loaded rather than leaving it naming one that is not.
+c = onCleanup(@() obj.refresh_ui_()); %#ok<NASGU>
+guarded_(obj, @() obj.set_variant(round(src.Value)));
+end
+
+
+function set_step_variant_(obj, src)
+obj.StepVariant = logical(src.Value);
+if obj.StepVariant
+    obj.set_status_("Each run will step to the next variant.");
+else
+    obj.set_status_(sprintf('Every run plays variant %d.', obj.VariantIndex));
+end
 end
 
 

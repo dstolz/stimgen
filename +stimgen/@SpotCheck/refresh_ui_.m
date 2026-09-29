@@ -15,6 +15,7 @@ h = obj.handles;
 
 update_header_(obj, h);
 update_stimulus_label_(obj, h);
+update_variant_(obj, h);
 update_enable_(obj, h);
 update_results_table_(obj, h);
 end % refresh_ui_
@@ -62,15 +63,6 @@ catch
     lines(end+1) = obj.StimulusLabel;
 end
 
-try
-    info = stimObj.get_variant_info();
-    if info.NumCombinations > 1
-        lines(end+1) = sprintf('Variant %d of %d — each run steps one.', ...
-            info.ActiveIndex, info.NumCombinations);
-    end
-catch
-end
-
 fsHw = obj.Engine.Fs;
 if ~isempty(obj.Engine.Adapter) && isfinite(fsHw) && fsHw > 0 ...
         && abs(double(stimObj.Fs) - fsHw) > 1e-6
@@ -86,6 +78,42 @@ h.StimLabel.Text = char(strjoin(lines, newline));
 end
 
 
+function update_variant_(obj, h)
+% The variant row: which combination runs play, out of how many, and whether
+% each run steps. The spinner shows VariantIndex -- the combination the next
+% run plays -- rather than the stimulus's own active index, which moves by
+% itself and is put back at the start of a run.
+
+n   = variant_count_(obj);
+idx = min(max(round(obj.VariantIndex), 1), n);
+
+sp = h.VariantSpinner;
+% A spinner's limits must be increasing, so a single combination still gets
+% [1 2]; the control is disabled then. Value goes to 1 first so the new limits
+% never have to be set around a value outside them.
+sp.Value  = 1;
+sp.Limits = [1 max(n, 2)];
+sp.Value  = idx;
+
+h.VariantCountLabel.Text = sprintf('of %d', n);
+h.StepVariantCheck.Value = obj.StepVariant;
+end
+
+
+function n = variant_count_(obj)
+% Combinations the loaded stimulus has; 1 when none is loaded.
+n = 1;
+if isempty(obj.Stimulus) || ~isvalid(obj.Stimulus)
+    return
+end
+try
+    info = obj.Stimulus.get_variant_info();
+    n = max(1, info.NumCombinations);
+catch
+end
+end
+
+
 function update_enable_(obj, h)
 % Which actions are possible right now.
 
@@ -94,6 +122,10 @@ hasStim  = ~isempty(obj.Stimulus) && isvalid(obj.Stimulus);
 hasHw    = ~isempty(obj.Engine.Adapter);
 hasResult = ~isempty(fieldnames(obj.Results));
 hasRec   = ~isempty(obj.Recording) && isvalid(obj.Recording);
+multi    = variant_count_(obj) > 1;
+
+set_enable_(h.VariantSpinner,   ~running && multi);
+set_enable_(h.StepVariantCheck, ~running && multi);
 
 set_enable_(h.LoadBtn,      ~running);
 set_enable_(h.OpenTool,     ~running);
@@ -132,14 +164,17 @@ end
 r = obj.Results;
 rows = cell(0, 2);
 
+% A click (or a peak-referenced sound file) is measured at its peak, so its
+% requested and measured levels are dB peSPL; the noise floor stays an rms.
+lu = stimgen.SpotCheck.level_unit_(r);
 rows(end+1, :) = {'— Level —', ''};
 if isfinite(r.measured.level_error_db)
-    rows(end+1, :) = {'Requested (dB SPL)', num_(r.stimulus.requested_level_db, '%.1f')};
-    rows(end+1, :) = {'Measured (dB SPL)',  num_(r.measured.level_db_spl, '%.1f')};
+    rows(end+1, :) = {['Requested (' lu ')'], num_(r.stimulus.requested_level_db, '%.1f')};
+    rows(end+1, :) = {['Measured (' lu ')'],  num_(r.measured.level_db_spl, '%.1f')};
     rows(end+1, :) = {'Error (dB)',         num_(r.measured.level_error_db, '%+.2f')};
 else
-    rows(end+1, :) = {'Measured (dB SPL)',  num_(r.measured.level_db_spl, '%.1f')};
-    rows(end+1, :) = {'Requested (dB SPL)', 'not comparable'};
+    rows(end+1, :) = {['Measured (' lu ')'],  num_(r.measured.level_db_spl, '%.1f')};
+    rows(end+1, :) = {['Requested (' lu ')'], 'not comparable'};
 end
 rows(end+1, :) = {'Measured as',        char(r.stimulus.level_reference)};
 rows(end+1, :) = {'Noise floor (dB SPL)', num_(r.measured.noise_db_spl, '%.1f')};

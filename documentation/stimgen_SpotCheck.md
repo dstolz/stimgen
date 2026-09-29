@@ -178,13 +178,32 @@ Rate** button) is the explicit fix.
 
 ## Variants
 
-Running a stimulus with vectorized properties advances its variant cycle exactly once per
-run, so successive runs walk the combinations — which is how a whole bank item gets spot
-checked rather than only its first variant. The panel shows which combination is active.
+A stimulus with vectorized properties has several combinations. The one checked is the
+one the window names: the **Variant** spinner in the Stimulus panel, or
+`set_variant(idx)`, sets `VariantIndex`, and every run plays that combination until
+another is chosen. Choosing one regenerates the stimulus there and clears the previous
+result, which described a different combination. The spinner is disabled for a stimulus
+with a single combination.
 
-The waveform is regenerated only when `Signal` is empty, so what is measured is the
-waveform the object is actually holding. For a noise stimulus this matters: regenerating
-would draw a different waveform than the one being reported on.
+To walk a whole bank item instead, tick **Step each run** (`StepVariant = true`). Each
+run after the first on a combination moves one along *before* playing, wrapping at the
+end, so the variant shown and the result shown always describe the same run. Choosing a
+variant resets this, so the next run plays the chosen one rather than its successor.
+
+```matlab
+sc.set_variant(12);      % check combination 12, as often as needed
+sc.StepVariant = true;   % then walk 12, 13, 14, ... one per run
+```
+
+`VariantIndex` is held by the spot check rather than read off the stimulus because the
+stimulus's own active index moves by itself: any regeneration outside a locked cycle —
+the property listener behind `Fs =`, which **Match Rate** triggers, for one — selects the
+next combination. `run` puts the stimulus back on `VariantIndex` first, through
+`set_variant_index`, and `match_hardware_rate` does the same after changing the rate.
+
+Otherwise the waveform is regenerated only when `Signal` is empty, so what is measured is
+the waveform the object is actually holding. For a noise stimulus this matters:
+regenerating would draw a different waveform than the one being reported on.
 
 Values are read through `StimType.active_variant_values`, which reports the combination
 that produced the current signal **without** selecting a new one. `selected_value` could

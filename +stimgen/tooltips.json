@@ -233,6 +233,8 @@
   "SpotCheck": {
     "LoadBtn": "Load a stimulus to check, from a .spl bank or a .mat holding a StimType.",
     "MatchRateBtn": "Set the stimulus sample rate to the hardware's. Regenerates the waveform.",
+    "VariantSpinner": "Which combination of the stimulus's vectorized properties to check. Every run plays this one until another is chosen.",
+    "StepVariantCheck": "Move to the next combination before each run after the first, wrapping at the end, to walk a whole bank item.",
     "RunBtn": "Play the stimulus, record the microphone, and compare. Cancels a run in progress.",
     "PreDelay": "Silence before the stimulus, in ms. The noise floor is measured over it.",
     "PostDelay": "Silence after the stimulus, in ms. Must exceed the rig round-trip latency or the response cannot be located.",

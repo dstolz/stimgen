@@ -5,8 +5,10 @@ function results = run(obj)
 %
 % The whole measurement, in order:
 %
-%   1. the stimulus waveform is taken as it stands (generated only if Signal
-%      is empty, so what is measured is what the object is holding)
+%   1. the stimulus waveform is taken as it stands, on the combination
+%      VariantIndex names (regenerated only if Signal is empty or the
+%      stimulus has moved off that combination, so what is measured is what
+%      the object is holding; StepVariant moves one along first)
 %   2. Engine.play_and_capture sends it, records the microphone, and cuts the
 %      response back to the stimulus's own time base using the delay it
 %      measures from the record itself
@@ -74,12 +76,18 @@ if abs(fsStim - fsHw) > 1e-6
 end
 
 % ---- 1. The waveform to play -------------------------------------------
-% Generated lazily, exactly as stimgen.StimInspector does: an object that
-% already holds a signal is measured on that signal rather than on a freshly
-% drawn one, which for a noise stimulus would not be the same waveform.
+% The combination the window names (VariantIndex), not whatever the stimulus's
+% own selector would pick next. With StepVariant on, a run after one that
+% measured this combination moves one along first, so the variant shown and
+% the result shown always describe the same run. Otherwise the waveform is
+% generated only when missing or on the wrong combination: an object that
+% already holds the right signal is measured on that signal rather than on a
+% freshly drawn one, which for a noise stimulus would not be the same waveform.
 try
-    if isempty(stimObj.Signal)
-        stimObj.update_signal();
+    if obj.StepVariant && obj.VariantMeasured_ && obj.variant_count_() > 1
+        obj.pin_variant_(obj.VariantIndex + 1);
+    else
+        obj.sync_variant_();
     end
 catch ME
     error('stimgen:SpotCheck:signalGenerationFailed', ...
@@ -126,6 +134,7 @@ obj.Recording = stimgen.CapturedSignal.from_capture(capture, ...
 % ---- 4. Reduce to the comparison ---------------------------------------
 results     = obj.analyze_(capture, stimObj);
 obj.Results = results;
+obj.VariantMeasured_ = true;
 
 % ---- 5. Report ----------------------------------------------------------
 obj.refresh_inspectors_();
@@ -166,13 +175,14 @@ end
 
 function s = summary_line_(r)
 % s = summary_line_(r) - One-line verdict for the status bar and the log.
+lu = stimgen.SpotCheck.level_unit_(r);
 if isfinite(r.measured.level_error_db)
-    s = sprintf('%.1f dB SPL measured, %+.1f dB from the %.1f dB requested (%s).', ...
-        r.measured.level_db_spl, r.measured.level_error_db, ...
-        r.stimulus.requested_level_db, r.stimulus.level_reference);
+    s = sprintf('%.1f %s measured, %+.1f dB from the %.1f %s requested (%s).', ...
+        r.measured.level_db_spl, lu, r.measured.level_error_db, ...
+        r.stimulus.requested_level_db, lu, r.stimulus.level_reference);
 elseif isfinite(r.measured.level_db_spl)
-    s = sprintf('%.1f dB SPL measured (%s); no calibrated level to compare against.', ...
-        r.measured.level_db_spl, r.stimulus.level_reference);
+    s = sprintf('%.1f %s measured (%s); no calibrated level to compare against.', ...
+        r.measured.level_db_spl, lu, r.stimulus.level_reference);
 else
     s = 'Capture complete.';
 end

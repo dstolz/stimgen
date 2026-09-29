@@ -58,11 +58,13 @@ classdef SpotCheck < handle
     %   Capture        - raw struct from Engine.play_and_capture ([] before a run)
     %   Recording      - stimgen.CapturedSignal wrapping the last record
     %   Results        - reduced comparison (see run)
+    %   VariantIndex   - variant combination the next run plays (set_variant)
     %
     % Properties (settable):
     %   PreDelay, PostDelay - silence around the stimulus, in seconds.
     %                         PostDelay must exceed the rig round-trip latency.
     %   Repeats             - acquisitions to average
+    %   StepVariant         - advance one combination per run (default false)
     %
     % Usage:
     %   % Interactive, on a sound card:
@@ -80,11 +82,16 @@ classdef SpotCheck < handle
     %   sc  = stimgen.SpotCheck(eng, Stimulus=myTone, Show=false);
     %   sc.run; sc.save_results('spotcheck_rigB.mat');
     %
-    % Running a stimulus with vectorized properties advances its variant cycle
-    % exactly once per run, so successive runs walk the combinations -- which is
-    % how a whole bank item gets spot checked rather than only its first
-    % variant. The waveform is regenerated only when Signal is empty, so what
-    % is measured is the waveform the object is actually holding.
+    % VARIANTS. A stimulus with vectorized properties has several combinations,
+    % and the one checked is the one the window names -- VariantIndex, chosen
+    % with the Variant spinner or set_variant -- never whatever the stimulus's
+    % own selector would pick next. Repeated runs measure that same combination
+    % until another is chosen. StepVariant (the "Step each run" box) walks the
+    % combinations instead: each run after the first on a combination moves one
+    % along before playing, so the result on screen and the variant on screen
+    % always describe the same run. The waveform is regenerated only when it
+    % does not already match the chosen combination, so what is measured is
+    % the waveform the object is actually holding.
     %
     % See also: stimgen.calibration.Engine.play_and_capture,
     %           stimgen.StimInspector, stimgen.CapturedSignal,
@@ -115,6 +122,13 @@ classdef SpotCheck < handle
         Capture       = []                  % struct from Engine.play_and_capture
         Recording                           % stimgen.CapturedSignal | []
         Results       (1,1) struct = struct()
+
+        % Variant combination the next run plays, 1-based. Pinned here rather
+        % than read off the stimulus, because the stimulus's own active index
+        % moves by itself: any regeneration outside a locked cycle (a property
+        % change such as Match Rate's Fs, for one) selects the next
+        % combination. run() puts the stimulus back on this index first.
+        VariantIndex  (1,1) double = 1
     end
 
     % --- Capture settings ---
@@ -133,6 +147,13 @@ classdef SpotCheck < handle
         % Acquisitions to average. Each is aligned on its own measured delay
         % first, so a latency that shifts between records does not smear them.
         Repeats   (1,1) double {mustBeInteger, mustBePositive, mustBeFinite} = 1
+
+        % Advance one variant combination per run, wrapping at the end, so a
+        % series of runs walks a whole bank item. Off by default: a spot check
+        % is usually repeated on one combination until it is right, and a
+        % stimulus that changes between two presses of Run makes the second
+        % press answer a different question.
+        StepVariant (1,1) logical = false
     end
 
     properties (Constant)
@@ -151,6 +172,11 @@ classdef SpotCheck < handle
         CaptureInspector_               % stimgen.StimInspector on the recording
         Running_ (1,1) logical = false
         DataPath_ (1,1) string = ""
+
+        % True once a run has completed on VariantIndex. StepVariant steps
+        % only from a combination that has been measured, so the first run
+        % after choosing one plays that one rather than its successor.
+        VariantMeasured_ (1,1) logical = false
     end
 
     % =====================================================================
@@ -250,6 +276,15 @@ classdef SpotCheck < handle
 
             obj.Stimulus = stimObj;
 
+            % Start on the combination the stimulus arrives on, so a caller
+            % that stepped it before handing it over gets that one checked.
+            obj.VariantIndex     = 1;
+            obj.VariantMeasured_ = false;
+            if ~isempty(stimObj)
+                info = stimObj.get_variant_info();
+                obj.VariantIndex = info.ActiveIndex;
+            end
+
             if strlength(label) > 0
                 obj.StimulusLabel = label;
             elseif ~isempty(stimObj)
@@ -296,10 +331,67 @@ classdef SpotCheck < handle
                 return
             end
             obj.Stimulus.Fs = fs;
+            % Assigning Fs regenerates through the stimulus's own selector,
+            % which moves it on to the next combination; put it back.
+            obj.pin_variant_(obj.VariantIndex);
             stimgen.util.vprintf(1, 'SpotCheck: stimulus sample rate set to %.10g Hz.', fs);
             obj.set_status_(sprintf('Stimulus sample rate set to %.10g Hz.', fs));
             obj.refresh_inspectors_();
             obj.refresh_ui_();
+        end
+
+
+        % -----------------------------------------------------------------
+        function set_variant(obj, idx)
+            % set_variant(obj, idx)
+            % Choose the variant combination to spot check.
+            %
+            % Regenerates the stimulus at that combination and discards the
+            % previous result, which described a different one. Every later
+            % run plays this combination until another is chosen, unless
+            % StepVariant is on (see the class help).
+            %
+            % Parameters:
+            %   idx - 1-based combination index, 1..NumCombinations
+            arguments
+                obj (1,1) stimgen.SpotCheck
+                idx (1,1) double {mustBeInteger, mustBePositive}
+            end
+
+            if obj.Running_
+                error('stimgen:SpotCheck:alreadyRunning', ...
+                    'The variant cannot be changed while a spot check is running.');
+            end
+            if isempty(obj.Stimulus) || ~isvalid(obj.Stimulus)
+                error('stimgen:SpotCheck:noStimulus', ...
+                    'Load a stimulus before choosing a variant.');
+            end
+
+            n = obj.variant_count_();
+            if idx > n
+                error('stimgen:SpotCheck:variantOutOfRange', ...
+                    'Variant %d was asked for, but "%s" has %d combination(s).', ...
+                    idx, obj.StimulusLabel, n);
+            end
+            if idx == obj.VariantIndex && ~isempty(obj.Stimulus.Signal)
+                info = obj.Stimulus.get_variant_info();
+                if info.ActiveIndex == idx
+                    return      % already there; keep the result it produced
+                end
+            end
+
+            obj.pin_variant_(idx);
+
+            obj.Capture   = [];
+            obj.Recording = [];
+            obj.Results   = struct();
+
+            obj.refresh_inspectors_();
+            if obj.is_open()
+                obj.update_compare_plots_();
+                obj.refresh_ui_();
+            end
+            obj.set_status_(sprintf('Variant %d of %d selected.', idx, n));
         end
 
 
@@ -441,6 +533,45 @@ classdef SpotCheck < handle
         end
 
 
+        function n = variant_count_(obj)
+            % Number of variant combinations the loaded stimulus has.
+            info = obj.Stimulus.get_variant_info();
+            n = info.NumCombinations;
+        end
+
+
+        function pin_variant_(obj, idx)
+            % Regenerate the stimulus at combination idx (wrapping at the end)
+            % and make it the one runs play. Through set_variant_index, which
+            % locks the index for the regeneration -- update_signal alone
+            % would select the next combination instead.
+            n   = obj.variant_count_();
+            idx = mod(round(idx) - 1, n) + 1;
+            obj.Stimulus.set_variant_index(idx);
+            if idx ~= obj.VariantIndex
+                obj.VariantMeasured_ = false;
+            end
+            obj.VariantIndex = idx;
+        end
+
+
+        function sync_variant_(obj)
+            % Put the stimulus back on VariantIndex if anything has moved it
+            % off, or give it a waveform if it has none. Left alone otherwise:
+            % regenerating a noise stimulus draws a different waveform, and
+            % the one it is holding is the one being reported on.
+            info = obj.Stimulus.get_variant_info();
+            if isempty(obj.Stimulus.Signal) || info.ActiveIndex ~= obj.VariantIndex
+                if ~isempty(obj.Stimulus.Signal)
+                    stimgen.util.vprintf(2, ...
+                        'SpotCheck: stimulus had moved to variant %d; restoring %d.', ...
+                        info.ActiveIndex, obj.VariantIndex);
+                end
+                obj.pin_variant_(obj.VariantIndex);
+            end
+        end
+
+
         function [stimObj, label] = stimulus_source_(obj)
             % Provider for the stimulus inspector.
             stimObj = [];
@@ -501,6 +632,23 @@ classdef SpotCheck < handle
                 parts = split(string(class(stimObj)), ".");
                 label = parts(end);
             end
+        end
+
+        function u = level_unit_(r)
+            % u = stimgen.SpotCheck.level_unit_(r)
+            % Unit of a result's requested and measured levels: dB peSPL
+            % when the stimulus was measured at its peak (a click, or a
+            % peak-referenced sound file), dB SPL otherwise. Read from
+            % r.stimulus.measurement_mode through stimgen.util.level_unit, so
+            % a saved result is labelled the way it was measured.
+            %
+            % Public for the same reason as default_label_: the local
+            % functions in refresh_ui_.m and run.m need it.
+            mode = "rms";
+            if isfield(r, 'stimulus') && isfield(r.stimulus, 'measurement_mode')
+                mode = string(r.stimulus.measurement_mode);
+            end
+            u = stimgen.util.level_unit(mode);
         end
 
     end % methods (Static)
