@@ -97,6 +97,67 @@ object that may since have been removed.
 The inspector is deliberately left enabled during playback — it does not
 write to the stimulus — and is closed with the player.
 
+### Capturing through a microphone
+
+**Capture Selected Stimulus** (Tools menu, `Ctrl+M`, or the microphone toolbar
+button) plays the selected combination through hardware that records while it
+plays, and opens the recording in a second inspector — the *capture
+inspector* — that reads it as sound: the waveform in pascals, every spectrum
+and level in dB SPL, sound-level-meter readouts, band levels, the noise floor
+the recording sat on, and the level the stimulus asked for against the level
+that came back. See [Recordings](stimgen_StimInspector.md#recordings-sound-pressure-and-db-spl)
+in the inspector guide for what each view shows.
+
+```matlab
+sp = stimgen.StimPlayer;
+sp.open_stim(stimgen.Tone('Frequency', 4000, 'SoundLevel', 70));
+sp.load_calibration_('rigB.esgc');       % or Calibration > Load Calibration
+sp.CaptureAdapter = stimgen.calibration.WindowsSoundCardAdapter(SampleRate=96000);
+rec = sp.capture_stim;                   % or press the microphone button
+```
+
+What a capture does, in order:
+
+1. **Finds the route.** `CaptureAdapter` — a `stimgen.calibration.HwAdapter`,
+   or a function returning one, called at each capture so a host can build it
+   from its device settings at that moment — else the host's calibration
+   adapter, the same one hardware preview uses. With neither, the capture
+   controls are disabled and the button's tooltip says why.
+2. **Takes the waveform as it will be presented.** The generated waveform,
+   verbatim, in volts — what a hardware Run plays, not the normalized copy
+   speaker preview auditions. When the bank's sample rate differs from the
+   hardware's, the combination is regenerated natively at the hardware rate on
+   a copy pinned to the same combination; the bank keeps its own rate and
+   signals. (A noise stimulus's copy is a fresh draw from the same parameters.)
+3. **Takes the scale.** The stimulus's own calibration, else the one loaded
+   into the player — and only one with measured tables, since an empty
+   calibration carries a placeholder 1 V/Pa. Its microphone sensitivity is
+   copied into the recording, and its AC-coupling and spectral-window settings
+   are used for the capture, so a record is conditioned and measured the way
+   the calibration's own measurements were. Without one, the capture still
+   runs and the recording opens in volts, with a warning saying why.
+4. **Plays and records** through `Engine.play_and_capture`: `CapturePreDelay`
+   of silence first (the noise floor is measured over it), the stimulus,
+   `CapturePostDelay` of silence after (it bounds the search for the response
+   delay, so it must be longer than the rig's round trip), repeated
+   `CaptureRepeats` times with each acquisition aligned on its own delay.
+5. **Wraps and shows the result.** `stimgen.CapturedSignal.from_capture` turns
+   the acquisition into a recording that carries its noise floor, its
+   sensitivity, what the stimulus asked for, and every warning that qualifies
+   it. It is left in `LastCapture` and shown in the capture inspector.
+
+**Tools > Capture Settings...** sets the lead-in, tail and repeats, in
+milliseconds. They are remembered in the `StimPlayer` preference group,
+because the round trip the tail has to cover is a property of the rig, not of
+one sitting; they are written only from the dialog, never from the property
+setters.
+
+The capture inspector is one window per player, reused by each new capture
+and kept apart from the inspector that follows the bank selection: that one
+shows what will be played, this one what came back. It is closed with the
+player. Capture is refused while a session holds the hardware — running or
+paused — and only one runs at a time.
+
 ### Stimulus bank panel
 
 The left panel manages the bank itself.
@@ -286,6 +347,11 @@ the bank (Load/Save Bank/Protocol, Open Calibration GUI, Add/Duplicate/Remove
 Stimulus) are disabled during playback by `lock_bank_controls_`, the same as their
 menu/button counterparts. Inspect Stimulus and Play Selected are not, since
 neither edits the bank.
+
+The microphone button, Capture Selected, sits after Play Selected. It follows
+its own rule rather than `lock_bank_controls_` alone: it is enabled only when
+there is hardware to record through, no session holds the bank, and no capture
+is already running.
 
 ## Preview output and calibration status
 

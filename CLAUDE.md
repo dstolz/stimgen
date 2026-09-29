@@ -70,6 +70,19 @@ compare the *pair* of waveforms live in its own window. `Engine.play_and_capture
 arbitrary-waveform acquisition, the second is the one public volts-to-dB-SPL conversion.
 See `documentation/stimgen_SpotCheck.md`.
 
+**Capture** — `StimPlayer.capture_stim` is the same acquisition from inside the bank editor:
+it plays the selected combination through `CaptureAdapter` (an `HwAdapter`, or a function
+returning one) or the host's calibration adapter, and opens the record in its own
+`StimInspector`. Both tools build the record with `CapturedSignal.from_capture`, which copies
+the calibration's `MicSensitivity` into it — the scale travels with the samples, never
+through a live `StimCalibration` handle — along with the pre-stimulus silence
+(`NoiseRecord`), what was asked for (`Request`) and the `Warnings`. The inspector reads any
+`CapturedSignal` with a sensitivity in Pa/dB SPL. The "measure it as it was calibrated" rule
+is `stimgen.util.level_request` + `stimgen.util.level_as_calibrated`, shared by SpotCheck,
+the capture and the inspector; do not re-derive it locally. A capture never touches the
+bank: at a hardware rate the bank does not run at, the combination is regenerated on a
+`copy()` with `VariantReselectOnUpdate` forced off (see *Reading a variant value* below).
+
 ### The two abstract seams — do not break these
 
 `stimgen` never references a host-application type. All hardware coupling goes through:

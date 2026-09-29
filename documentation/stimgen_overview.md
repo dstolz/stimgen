@@ -79,6 +79,7 @@ See [stimgen_calibration.md](stimgen_calibration.md) for the full walkthrough.
 - you want a stimulus bank editor and player, with or without hardware
 - you want easy local speaker preview even when hardware is absent
 - you want to save and reload stimulus banks as `.spl` files
+- you want to hear what the rig makes of the stimulus you are editing: **Capture Selected Stimulus** plays it through hardware that records (`CaptureAdapter`, or the host's calibration adapter), and opens the microphone record in an inspector that reads it in dB SPL
 
 `stimgen.StimPlayer` optionally accepts a `stimgen.HardwareHost` that provides the hardware interfaces used for playback; omit it for speaker-preview-only operation. The older `StimGenInterface` and `StimGenInterface_Simple` GUIs have been removed; `StimPlayer` is the current playback tool.
 
@@ -89,6 +90,8 @@ See [stimgen_calibration.md](stimgen_calibration.md) for the full walkthrough.
 - you want a saved record of that check, with both waveforms and every metric
 
 `stimgen.SpotCheck` plays one stimulus through the calibration engine's adapter, records the microphone, and hands the result to `stimgen.StimInspector`. It answers a question a calibration cannot: a calibration maps table points, a spot check measures a whole waveform. See [stimgen_SpotCheck.md](stimgen_SpotCheck.md).
+
+StimPlayer's capture measures the same way — the same acquisition, the same "measured as it was calibrated" rule, the same recording class — without leaving the bank editor. Reach for SpotCheck when you want the side-by-side comparison plots and a saved result file; reach for the capture when you are tuning a bank and want to see what came back.
 
 ## Runtime and hardware expectations
 

@@ -23,6 +23,16 @@ classdef StimPlayer < handle
     % calibrated voltage. The status bar reports whether a calibration is
     % loaded and whether the selected output actually applies it.
     %
+    % Capture (capture_stim; Tools > Capture Selected Stimulus, or the
+    % microphone toolbar button) plays the selected combination through
+    % hardware that can also record -- CaptureAdapter, or the host's
+    % calibration adapter -- records the microphone, and opens the recording
+    % in its own stimgen.StimInspector. With a calibration loaded the
+    % recording carries its microphone sensitivity, so the inspector reads it
+    % in pascals and dB SPL: sound-level-meter readouts, band levels, the
+    % noise floor it sat on, and the level the stimulus asked for against the
+    % level that came back.
+    %
     % Required parameter names (resolved from the host at Run time):
     %   BufferData_0, BufferData_1   - audio data buffers
     %   BufferSize_0, BufferSize_1   - buffer length in samples
@@ -63,6 +73,8 @@ classdef StimPlayer < handle
         step_combination(obj, step)
         open_calibration_gui(obj)
         open_stim_inspector(obj)
+        rec = capture_stim(obj, src, event)
+        dlg = edit_capture_settings(obj)
         save_bank(obj, ffn)
         load_bank(obj, ffn)
         set_control_visibility(obj, options)
@@ -112,6 +124,34 @@ classdef StimPlayer < handle
             'Output',     true, ... % Preview output dropdown (Speakers/Hardware)
             'Run',        true, ... % Run/Stop button
             'Pause',      true)     % Pause/Resume button
+
+        % Where capture_stim plays and records: a stimgen.calibration.HwAdapter,
+        % or a function handle returning one. A handle is called at each
+        % capture, so a host can build the adapter from whatever its device
+        % settings are at that moment rather than when the player opened.
+        % Empty falls back to the attached host's calibration adapter; with
+        % neither, capture is unavailable and its controls are disabled.
+        CaptureAdapter = []
+
+        % Silence played before the stimulus in a capture, in seconds. The
+        % noise floor the recording is judged against is measured over it.
+        CapturePreDelay  (1,1) double {mustBeNonnegative, mustBeFinite} = 0.05
+
+        % Silence after the stimulus, in seconds. It bounds the search for
+        % the response delay, so it must be longer than the rig's round trip
+        % -- converter latency plus the acoustic path -- or the response is
+        % cut in the wrong place. A sound card's round trip alone can pass
+        % 50 ms, hence the longer default than the lead-in.
+        CapturePostDelay (1,1) double {mustBeNonnegative, mustBeFinite} = 0.1
+
+        % Acquisitions averaged per capture, each aligned on its own delay.
+        CaptureRepeats   (1,1) double {mustBeInteger, mustBePositive, mustBeFinite} = 1
+    end
+
+    % --- Capture results ---
+    properties (SetAccess = protected)
+        % stimgen.CapturedSignal from the most recent capture_stim, or [].
+        LastCapture = []
     end
 
     % --- Calibration state ---
@@ -152,6 +192,10 @@ classdef StimPlayer < handle
         PreviewAdapter_                      % Cached stimgen.calibration.HwAdapter for hardware preview | []
 
         Inspector                            % stimgen.StimInspector | [] (detail window)
+
+        CaptureInspector_                    % stimgen.StimInspector | [] showing the last capture
+        Capturing_ (1,1) logical = false     % True while capture_stim is acquiring
+        CaptureLocked_ (1,1) logical = false % True while a session holds the bank (lock_bank_controls_)
     end
 
     % --- Dependent ---
@@ -180,6 +224,8 @@ classdef StimPlayer < handle
                 obj.Host = host;
             end
             obj.update_protocol_status_;
+            obj.load_capture_settings_;
+            obj.sync_capture_controls_;
 
             if nargout == 0, clear obj; end
         end
@@ -190,6 +236,9 @@ classdef StimPlayer < handle
             obj.disconnect_interfaces_;
             if ~isempty(obj.Inspector) && isvalid(obj.Inspector)
                 delete(obj.Inspector);
+            end
+            if ~isempty(obj.CaptureInspector_) && isvalid(obj.CaptureInspector_)
+                delete(obj.CaptureInspector_);
             end
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
                 stop(obj.Timer);
@@ -254,6 +303,27 @@ classdef StimPlayer < handle
             end
             obj.PlaybackOutput = value;
             obj.on_playback_output_changed_;
+        end
+
+        % -----------------------------------------------------------------
+        function set.CaptureAdapter(obj, value)
+            % Accept an adapter, a function returning one, or empty, and
+            % bring the capture controls into line with whether there is now
+            % a route to record through. A handle is checked when it is
+            % called, not here: calling it now would build the adapter before
+            % anything asked for a capture.
+            ok = isempty(value) || isa(value, 'function_handle') || ...
+                (isa(value, 'stimgen.calibration.HwAdapter') && isscalar(value));
+            if ~ok
+                error('stimgen:StimPlayer:BadCaptureAdapter', ...
+                    ['CaptureAdapter must be a stimgen.calibration.HwAdapter, a ' ...
+                     'function handle returning one, or empty; got a %s.'], class(value));
+            end
+            if isempty(value)
+                value = [];
+            end
+            obj.CaptureAdapter = value;
+            obj.sync_capture_controls_;
         end
 
         % -----------------------------------------------------------------
@@ -380,6 +450,171 @@ classdef StimPlayer < handle
             catch ME
                 stimgen.util.vprintf(1, 1, ...
                     'StimPlayer: stimulus inspector refresh failed: %s', ME.message);
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function adapter = resolve_capture_adapter_(obj)
+            % adapter = resolve_capture_adapter_() - The hardware capture_stim records through.
+            % CaptureAdapter when one is set (calling it when it is a
+            % function), else the host's calibration adapter -- the same one
+            % hardware preview uses, connected on demand. Errors when there
+            % is neither, since a capture through nothing is not a capture.
+            adapter = obj.CaptureAdapter;
+            if isa(adapter, 'function_handle')
+                adapter = adapter();
+                if ~(isa(adapter, 'stimgen.calibration.HwAdapter') && isscalar(adapter))
+                    error('stimgen:StimPlayer:BadCaptureAdapter', ...
+                        ['The CaptureAdapter function returned a %s, not a ' ...
+                         'stimgen.calibration.HwAdapter.'], class(adapter));
+                end
+            end
+            if ~isempty(adapter)
+                return
+            end
+            if ~isempty(obj.Host)
+                adapter = obj.resolve_preview_adapter_;
+                return
+            end
+            error('stimgen:StimPlayer:NoCaptureHardware', ...
+                ['No capture hardware: set CaptureAdapter to a ' ...
+                 'stimgen.calibration.HwAdapter (or a function returning one), ' ...
+                 'or open StimPlayer from a host that supplies a calibration adapter.']);
+        end
+
+        % -----------------------------------------------------------------
+        function [calObj, source] = capture_calibration_(obj, stimObj)
+            % [calObj, source] = capture_calibration_(stimObj) - The scale a capture is read on.
+            % The stimulus's own calibration first -- it is the one that set
+            % the level being checked -- then the one loaded into the player.
+            % Only a calibration with measured tables counts: an empty one
+            % (the default every stimulus is born with) carries the 1 V/Pa
+            % placeholder sensitivity, and reading a recording through that
+            % would print numbers that look like dB SPL and are not.
+            %
+            % Returns:
+            %   calObj - stimgen.StimCalibration, or [] when there is none
+            %   source - (1,1) string, the file it came from, "embedded" for
+            %            one carried in the bank, "" when there is none
+            calObj = [];
+            source = "";
+            candidates = {stimObj.Calibration, obj.Calibration};
+            for k = 1:numel(candidates)
+                C = candidates{k};
+                if isa(C, 'stimgen.StimCalibration') && isscalar(C) && isvalid(C) ...
+                        && C.Engine.IsCalibrated
+                    calObj = C;
+                    break
+                end
+            end
+            if isempty(calObj)
+                return
+            end
+            fromPlayer = isa(obj.Calibration, 'stimgen.StimCalibration') ...
+                && isscalar(obj.Calibration) && calObj == obj.Calibration;
+            if fromPlayer && strlength(obj.CalibrationFile) > 0
+                source = obj.CalibrationFile;
+            else
+                source = "embedded";
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function show_capture_inspector_(obj, rec, label)
+            % show_capture_inspector_(rec, label) - Show a capture in its own inspector.
+            % One per player, reused for each new capture and kept apart from
+            % the inspector that follows the bank selection: that one shows
+            % what will be played, this one what came back.
+            insp = obj.CaptureInspector_;
+            if isempty(insp) || ~isvalid(insp) || ~insp.is_open()
+                insp = stimgen.StimInspector();
+                obj.CaptureInspector_ = insp;
+            end
+            insp.set_source(rec, label);
+            insp.show();
+        end
+
+        % -----------------------------------------------------------------
+        function sync_capture_controls_(obj)
+            % sync_capture_controls_() - Enable capture only when it can run.
+            % It needs a route to record through, no session holding the
+            % hardware (running or paused), and no capture already in
+            % progress. The tooltip says when the route is what is missing,
+            % since a greyed button cannot.
+            h = obj.handles;
+            hasRoute = ~isempty(obj.CaptureAdapter) || ~isempty(obj.Host);
+            enable   = hasRoute && ~obj.CaptureLocked_ && ~obj.Capturing_;
+
+            if hasRoute
+                tipText = stimgen.util.tooltip('StimPlayer', 'CaptureStimTool');
+            else
+                tipText = stimgen.util.tooltip('StimPlayer', 'CaptureNoHardware');
+            end
+
+            for f = ["CaptureStimTool", "CaptureStimMenu"]
+                if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))
+                    h.(f).Enable = matlab.lang.OnOffSwitchState(enable);
+                end
+            end
+            if isfield(h, 'CaptureStimTool') && ~isempty(h.CaptureStimTool) && isvalid(h.CaptureStimTool)
+                h.CaptureStimTool.Tooltip = tipText;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function capture_finished_(obj)
+            % capture_finished_() - Clear the in-progress flag after a capture.
+            % Called from capture_stim's onCleanup, so an error or an
+            % interrupted acquisition cannot leave capture disabled for good.
+            obj.Capturing_ = false;
+            obj.sync_capture_controls_;
+        end
+
+        % -----------------------------------------------------------------
+        function load_capture_settings_(obj)
+            % load_capture_settings_() - Restore the capture timing last chosen.
+            % Round-trip latency is a property of the rig, so the lead-in and
+            % tail that suit one are kept between sessions. Each value is
+            % applied on its own: one that no longer validates leaves that
+            % setting at its default rather than costing the rest.
+            try
+                if ~ispref('StimPlayer', 'CaptureSettings')
+                    return
+                end
+                s = getpref('StimPlayer', 'CaptureSettings');
+            catch
+                return
+            end
+            if ~isstruct(s) || ~isscalar(s)
+                return
+            end
+            map = {'PreDelay', 'CapturePreDelay'; 'PostDelay', 'CapturePostDelay'; ...
+                   'Repeats', 'CaptureRepeats'};
+            for k = 1:size(map, 1)
+                if isfield(s, map{k, 1})
+                    try
+                        obj.(map{k, 2}) = s.(map{k, 1});
+                    catch ME
+                        stimgen.util.vprintf(3, 'StimPlayer: not restoring %s: %s', ...
+                            map{k, 2}, ME.message);
+                    end
+                end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function save_capture_settings_(obj)
+            % save_capture_settings_() - Remember the capture timing for the next session.
+            % Written only when the user changes it in the settings dialog,
+            % never from the property setters, so a script driving the player
+            % does not rewrite somebody's preferences.
+            try
+                setpref('StimPlayer', 'CaptureSettings', struct( ...
+                    'PreDelay',  obj.CapturePreDelay, ...
+                    'PostDelay', obj.CapturePostDelay, ...
+                    'Repeats',   obj.CaptureRepeats));
+            catch ME
+                stimgen.util.vprintf(1, 1, 'StimPlayer: could not save capture settings: %s', ME.message);
             end
         end
 
@@ -762,6 +997,13 @@ classdef StimPlayer < handle
                     end
                 end
             end
+
+            % Capture follows the same lock -- a session paused is still a
+            % session holding the hardware -- but decides the rest for
+            % itself: unlocking must not enable it on a player with nothing
+            % to record through.
+            obj.CaptureLocked_ = lockState;
+            obj.sync_capture_controls_;
         end
 
         % -----------------------------------------------------------------
@@ -1419,6 +1661,22 @@ classdef StimPlayer < handle
                         "Lower the stimulus Sound Level so the calibrated drive voltage fits the output range.";
                 case "stimgen:StimPlayer:PreviewDuringRun"
                     messageText = "The hardware is presenting the bank right now. Stop the session, then preview through hardware.";
+                case "stimgen:StimPlayer:CaptureDuringRun"
+                    messageText = "A session is holding the hardware (running or paused). Stop it, then capture.";
+                case "stimgen:StimPlayer:NoCaptureHardware"
+                    messageText = "Capture needs hardware that can play and record at once, with a microphone on its input. " + ...
+                        "Set CaptureAdapter to a stimgen.calibration.HwAdapter -- for example " + ...
+                        "stimgen.calibration.WindowsSoundCardAdapter -- or a function returning one, " + ...
+                        "or open StimPlayer from a host application that supplies a calibration adapter.";
+                case "stimgen:StimPlayer:BadCaptureAdapter"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "CaptureAdapter has to be something capture can play and record through.";
+                case "stimgen:StimPlayer:CaptureVoltageOutOfRange"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "Lower the stimulus Sound Level so the calibrated drive voltage fits the output range.";
+                case "stimgen:StimPlayer:EmptyCaptureSignal"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "Check the stimulus parameters: nothing was generated to play.";
                 case "stimgen:util:filterRateMismatch"
                     messageText = string(ME.message) + newline + newline + ...
                         "An equalization filter only corrects the frequencies it was designed for at the sample rate it was designed at. Redesign the filter for this rate in the calibration GUI (Design Filter, ""Design sample rate"" field) -- the measurement itself does not have to be repeated -- or set the sample rate back to the one the calibration was designed at.";

@@ -363,6 +363,12 @@ mOpenCalibrationGui = uimenu(mCalibrationMenu, 'Text', 'Open Calibration &GUI', 
 mTools = uimenu(f, 'Text', '&Tools');
 mInspectStim = uimenu(mTools, 'Text', '&Inspect Stimulus', 'Accelerator', 'I', ...
     'MenuSelectedFcn', @(~,~) obj.open_stim_inspector());
+% Enabled by sync_capture_controls_ once there is hardware to record through.
+mCaptureStim = uimenu(mTools, 'Text', 'Ca&pture Selected Stimulus', 'Accelerator', 'M', ...
+    'Separator', 'on', 'Enable', 'off', ...
+    'MenuSelectedFcn', @(~,~) obj.capture_stim());
+mCaptureSettings = uimenu(mTools, 'Text', 'Capture Se&ttings...', ...
+    'MenuSelectedFcn', @(~,~) obj.edit_capture_settings());
 mExportSignal = uimenu(mTools, 'Text', '&Export Signal to Workspace', 'Separator', 'on', ...
     'MenuSelectedFcn', @(~,~) export_signal_to_workspace_(obj));
 mExportAll = uimenu(mTools, 'Text', 'Export &All Signals to Workspace', ...
@@ -419,6 +425,11 @@ h = uipushtool(tb, 'Tooltip', tip('PlayTool'), ...
     'ClickedCallback', @obj.play_preview);
 obj.handles.PlayTool = h;
 
+h = uipushtool(tb, 'Tooltip', tip('CaptureNoHardware'), 'Enable', 'off', ...
+    'Icon', stimgen.util.toolbar_icon('microphone'), ...
+    'ClickedCallback', @(~,~) obj.capture_stim());
+obj.handles.CaptureStimTool = h;
+
 movegui(f, 'onscreen');
 
 obj.refresh_combo_controls_;
@@ -433,6 +444,8 @@ obj.handles.RecentBanksMenu        = mRecentBanks;
 obj.handles.RecentCalibrationsMenu = mRecentCalibrations;
 obj.handles.CalibrationGuiMenu = mOpenCalibrationGui;
 obj.handles.InspectStimMenu   = mInspectStim;
+obj.handles.CaptureStimMenu     = mCaptureStim;
+obj.handles.CaptureSettingsMenu = mCaptureSettings;
 obj.handles.ExportSignalMenu  = mExportSignal;
 obj.handles.ExportAllMenu     = mExportAll;
 obj.handles.ExportObjsMenu    = mExportObjs;

@@ -10,7 +10,7 @@ function icon = toolbar_icon(name)
 %   name - one of "open", "save", "protocol", "calibration", "connect",
 %          "disconnect", "help", "add", "duplicate", "remove", "play", "inspect",
 %          "refresh", "transfer", "background", "ghost", "voltage", "logx",
-%          "camera", "summary", "wiki"
+%          "camera", "summary", "wiki", "microphone"
 %
 % Returns:
 %   icon - 24-by-24-by-3 double array in [0,1] (NaN = transparent)
@@ -19,7 +19,7 @@ arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
         "calibration","connect","disconnect","help","add","duplicate","remove","play", ...
         "inspect","refresh","transfer","background","ghost","voltage","logx", ...
-        "camera","summary","wiki"])}
+        "camera","summary","wiki","microphone"])}
 end
 
 N = 24;
@@ -152,6 +152,19 @@ switch name
         boltCol = [12 7 11  9 12 17 12 16];
         boltRow = [ 4 13 13 20 20 11 11  4];
         mask = inpolygon(col, row, boltCol, boltRow);
+
+    case "microphone" % capsule in a cradle on a stand -- play and record
+        % The capsule is a stadium (a disc swept along a short vertical
+        % segment) and the cradle a thick U around its lower half, so both
+        % keep their shape when uitoolbar resamples the icon to 16 px.
+        cx = 12.5;
+        dCap = hypot(col - cx, max(0, max(row - 11, 6 - row)));
+        capsule = dCap <= 3.6;
+        dCup = hypot(col - cx, max(0, row - 11));
+        cradle = dCup >= 5.2 & dCup <= 6.8 & row >= 9;
+        stem = row >= 17 & row <= 20 & col >= 12 & col <= 13;
+        base = row >= 20 & row <= 21 & col >= 8 & col <= 17;
+        mask = capsule | cradle | stem | base;
 
     case "camera" % camera body with lens -- capture the window
         bump = row>=5 & row<=8  & col>=8 & col<=15;
