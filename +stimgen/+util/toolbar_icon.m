@@ -8,7 +8,7 @@ function icon = toolbar_icon(name)
 %
 % Parameters:
 %   name - one of "open", "save", "protocol", "calibration", "connect",
-%          "disconnect", "help", "add", "remove", "play", "inspect",
+%          "disconnect", "help", "add", "duplicate", "remove", "play", "inspect",
 %          "refresh", "transfer", "background", "ghost", "voltage", "logx",
 %          "camera", "summary", "wiki"
 %
@@ -17,7 +17,7 @@ function icon = toolbar_icon(name)
 
 arguments
     name (1,1) string {mustBeMember(name, ["open","save","protocol", ...
-        "calibration","connect","disconnect","help","add","remove","play", ...
+        "calibration","connect","disconnect","help","add","duplicate","remove","play", ...
         "inspect","refresh","transfer","background","ghost","voltage","logx", ...
         "camera","summary","wiki"])}
 end
@@ -89,6 +89,12 @@ switch name
         horiz = row>=11 & row<=13 & col>=5  & col<=20;
         vert  = row>=5  & row<=20 & col>=11 & col<=13;
         mask = horiz | vert;
+
+    case "duplicate" % two overlapping sheets, the front one solid
+        back  = row>=4  & row<=15 & col>=4  & col<=15;
+        backI = row>=6  & row<=13 & col>=6  & col<=13;
+        front = row>=9  & row<=20 & col>=9  & col<=20;
+        mask = (back & ~backI) | front;
 
     case "remove" % minus sign
         mask = row>=11 & row<=13 & col>=5 & col<=20;

@@ -48,6 +48,7 @@ classdef StimPlayer < handle
         create(obj)
         open_stim(obj, stimObj, varargin)
         add_stim(obj, src, event)
+        duplicate_stim(obj, src, event)
         remove_stim(obj, src, event)
         on_bank_selection_changed(obj, src, event)
         update_signal_plot(obj)
@@ -740,12 +741,12 @@ classdef StimPlayer < handle
                 targetState = 'off';
             end
 
-            fields = {'AddBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
+            fields = {'AddBtn','DuplicateBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
                 'ISIField','FsField','OrderDD','OutputDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
                 'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
-                'AddStimTool','RemoveStimTool'};
+                'AddStimTool','DuplicateStimTool','RemoveStimTool'};
             for i = 1:numel(fields)
                 f = fields{i};
                 if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))

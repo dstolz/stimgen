@@ -109,6 +109,7 @@
   "StimPlayer": {
     "StimTypeDD": "Stimulus class to create with Add Stim. Lists all classes in stimgen package.",
     "AddBtn": "Add selected stimulus type to the bank.",
+    "DuplicateBtn": "Add a copy of selected stimulus below it, with the same settings, reps and calibration.",
     "RemoveBtn": "Delete selected stimulus from the bank.",
     "BankList": "Bank stimuli. Select one to edit, preview, or step variants. Run presents all.",
     "BankLabel": "Name shown in list and as workspace export field name.",
@@ -134,6 +135,7 @@
     "SaveBankTool": "Save Bank",
     "CalibrationGuiTool": "Open Calibration GUI",
     "AddStimTool": "Add Stimulus",
+    "DuplicateStimTool": "Duplicate Stimulus",
     "RemoveStimTool": "Remove Stimulus",
     "InspectStimTool": "Inspect Stimulus (detailed plots and metrics)",
     "PlayTool": "Play Selected"

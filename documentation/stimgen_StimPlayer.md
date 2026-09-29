@@ -106,6 +106,8 @@ Important controls:
 - `StimTypeDD`: chooses which concrete `stimgen.StimType` subclass to add
 - `Add Stim`: instantiates the selected stimulus type and wraps it in a new
   `stimgen.StimPlay`
+- `Duplicate`: adds a copy of the currently selected bank item directly below
+  it — see below
 - `Remove`: deletes the currently selected bank item
 - `BankList`: selects the item shown in the editor panel
 - `RepsField`: updates the repetition target for the selected bank item
@@ -127,6 +129,19 @@ current sample rate, constructs a `StimPlay`, assigns a default name such as
 `Tone_1`, and then selects it so the editor panel is rebuilt immediately. A
 calibration loaded earlier from the Calibration menu is applied to the new item
 as well, so the whole bank always shares one calibration state.
+
+`duplicate_stim()` copies the selected item into a new one inserted directly
+below it, named `<name>_copy` (then `_copy2`, `_copy3`, … if taken) and
+selected so it can be edited straight away. It carries the same settings a
+saved bank does — the base `StimType` properties plus every `UserProperties`
+entry — along with the item's `Reps`, `ISI` and selection order, and opens on
+the variant combination the source was showing. The copy is a newly constructed
+object given those values rather than a `copy()` of the original, which would
+share the original's property listeners and editor widgets. The calibration
+object is shared, not cloned, keeping the bank on one calibration state.
+Presentation counters start from zero. Like a `.spl` round trip, anything not
+listed in `UserProperties` (for example a `CapturedSignal`'s recorded waveform)
+is not carried over.
 
 ### Sample rate
 
@@ -240,10 +255,10 @@ and the status label reports the missing path. An empty list shows a disabled
 
 A toolbar above the signal plot gives one-click access to the most common
 actions, each a duplicate of an existing menu item or button: Load Protocol,
-Load Bank, Save Bank, Open Calibration GUI, Add Stimulus, Remove Stimulus,
-Inspect Stimulus and Play Selected. Toolbar buttons that edit the bank
-(Load/Save Bank/Protocol, Open Calibration GUI, Add/Remove Stimulus) are
-disabled during playback by `lock_bank_controls_`, the same as their
+Load Bank, Save Bank, Open Calibration GUI, Add Stimulus, Duplicate Stimulus,
+Remove Stimulus, Inspect Stimulus and Play Selected. Toolbar buttons that edit
+the bank (Load/Save Bank/Protocol, Open Calibration GUI, Add/Duplicate/Remove
+Stimulus) are disabled during playback by `lock_bank_controls_`, the same as their
 menu/button counterparts. Inspect Stimulus and Play Selected are not, since
 neither edits the bank.
 

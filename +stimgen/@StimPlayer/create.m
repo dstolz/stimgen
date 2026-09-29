@@ -69,18 +69,30 @@ obj.handles.TypeDropdown = h;
 
 R = R + 1;
 
-% Add / Remove buttons
-h = uibutton(bg, 'Text', 'Add Stim');
-h.Layout.Row          = R;
+% Add / Duplicate / Remove buttons, in a row of their own so three fit
+% across a panel whose other rows are two columns wide.
+btnGrid = uigridlayout(bg, [1 3]);
+btnGrid.Layout.Row    = R;
+btnGrid.Layout.Column = [1 2];
+btnGrid.ColumnWidth   = {'1x', '1x', '1x'};
+btnGrid.Padding       = [0 0 0 0];
+btnGrid.ColumnSpacing = 4;
+
+h = uibutton(btnGrid, 'Text', 'Add Stim');
 h.Layout.Column       = 1;
 h.FontWeight          = 'bold';
 h.ButtonPushedFcn     = @obj.add_stim;
 h.Tooltip             = tip('AddBtn');
 obj.handles.AddBtn    = h;
 
-h = uibutton(bg, 'Text', 'Remove');
-h.Layout.Row          = R;
-h.Layout.Column       = 2;
+h = uibutton(btnGrid, 'Text', 'Duplicate');
+h.Layout.Column          = 2;
+h.ButtonPushedFcn        = @obj.duplicate_stim;
+h.Tooltip                = tip('DuplicateBtn');
+obj.handles.DuplicateBtn = h;
+
+h = uibutton(btnGrid, 'Text', 'Remove');
+h.Layout.Column       = 3;
 h.ButtonPushedFcn     = @obj.remove_stim;
 h.Tooltip             = tip('RemoveBtn');
 obj.handles.RemoveBtn = h;
@@ -385,6 +397,11 @@ h = uipushtool(tb, 'Tooltip', tip('AddStimTool'), 'Separator', 'on', ...
     'Icon', stimgen.util.toolbar_icon('add'), ...
     'ClickedCallback', @obj.add_stim);
 obj.handles.AddStimTool = h;
+
+h = uipushtool(tb, 'Tooltip', tip('DuplicateStimTool'), ...
+    'Icon', stimgen.util.toolbar_icon('duplicate'), ...
+    'ClickedCallback', @obj.duplicate_stim);
+obj.handles.DuplicateStimTool = h;
 
 h = uipushtool(tb, 'Tooltip', tip('RemoveStimTool'), ...
     'Icon', stimgen.util.toolbar_icon('remove'), ...
