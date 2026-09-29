@@ -246,35 +246,18 @@ end
 
 % ------------------------------------------------------------------------ %
 function b = band_levels_(pxx, f, df, frac, fMin, fMax, toSpl)
-% Integrate the PSD over IEC 61260 base-ten fractional-octave bands.
-G    = 10 ^ (3 / 10);
-kLo  = ceil(frac  * log(fMin / 1000) / log(G));
-kHi  = floor(frac * log(fMax / 1000) / log(G));
-fc   = 1000 .* G .^ ((kLo:kHi) ./ frac);
-half = G ^ (1 / (2 * frac));
-flo  = fc ./ half;
-fhi  = fc .* half;
-
-% A band reaching past Nyquist, or below where the FFT can resolve it, would
-% report the part of itself that was measured as though it were the whole.
-keep = flo >= fMin & fhi <= fMax;
-fc = fc(keep); flo = flo(keep); fhi = fhi(keep);
-
-n   = numel(fc);
-lvl = nan(1, n);
-for k = 1:n
-    m = f >= flo(k) & f < fhi(k);
-    if ~any(m)
-        continue
-    end
-    lvl(k) = toSpl(sqrt(max(sum(pxx(m)) * df, realmin)));
-end
-
-ok = isfinite(lvl);
+% Integrate the PSD over IEC 61260 base-ten fractional-octave bands, as dB SPL.
+%
+% The band arithmetic is stimgen.util.band_levels, shared with
+% stimgen.StimInspector so a band means the same thing in both; only the
+% conversion to a level happens here, through the engine's own scale. Bands
+% reaching past Nyquist, below where the FFT can resolve them, or holding no
+% bin at all are dropped there rather than reported as partial measurements.
+p = stimgen.util.band_levels(pxx, f, df, frac, fMin, fMax);
 b = struct( ...
-    'frequency', fc(ok), ...
-    'level_db',  lvl(ok), ...
-    'edges',     [flo(ok); fhi(ok)], ...
+    'frequency', p.frequency, ...
+    'level_db',  toSpl(sqrt(max(p.power, realmin))), ...
+    'edges',     p.edges, ...
     'fraction',  frac);
 end
 
