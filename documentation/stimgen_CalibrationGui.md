@@ -79,6 +79,17 @@ signal path and nowhere near the same size — a drive of a volt or two returns
 millivolts at the microphone — so each gets its own scale, and the drive
 voltage stays a number rather than a shape.
 
+Both scales are set by the **stimulus**, not by the conduction-delay probe
+click at the head of a Calibrate Tones or Test Tones record. The click plays at
+the full excitation voltage whatever level the bursts after it are driven at,
+so scaled to it a low-level test would flatten every burst against the zero
+line. The click is still drawn, and when it runs off the axis the subtitle says
+so (`delay probe 0.84 V (off scale)`) so it is not mistaken for clipping; the
+peak, RMS and headroom in the subtitle are the stimulus's too. The engine marks
+the probe's samples in `Engine.ResponseProbeSpan`, carried to renderers as
+`LiveUpdate.ProbeSpan`. **Measure Conduction Delay** marks nothing, because
+there the click *is* the measurement, and its record is scaled to it.
+
 Frequency axes are ticked at the 1-2-5 points of each decade and labelled in
 **kHz**, so every tick reads as a number a rig is set to instead of as a power
 of ten. The click LUT shares that axis where it is drawn beside a frequency

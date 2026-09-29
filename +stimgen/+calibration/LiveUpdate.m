@@ -18,7 +18,13 @@ classdef LiveUpdate < event.EventData
     %   Response     - microphone response recorded for it (V)
     %   Span         - [first last] sample index into Response that the
     %                  measurement was computed over; [] means the whole record
-    %   Markers      - frequencies of interest (Hz), e.g. [f0 2*f0 3*f0]
+    %   ProbeSpan    - [first last] sample index into Response (and Excitation)
+    %                  occupied by a conduction-delay probe embedded ahead of
+    %                  the stimulus; [] when the record carries none. Not part
+    %                  of what is being measured, so a waveform renderer
+    %                  scales to the samples outside it. Empty for the
+    %                  "latency" stage, whose whole record is the probe
+    %   Markers     - frequencies of interest (Hz), e.g. [f0 2*f0 3*f0]
     %   MarkerLabels - one label per marker
     %   Table        - partial LUT: x, measurement, spl_db, voltage, sd_db.
     %                  NaN at points not yet measured
@@ -54,6 +60,7 @@ classdef LiveUpdate < event.EventData
         Excitation   (1,:) double
         Response     (1,:) double
         Span         (1,:) double
+        ProbeSpan    (1,:) double
         Markers      (1,:) double
         MarkerLabels (1,:) string
         Table        (1,1) struct
@@ -84,7 +91,8 @@ classdef LiveUpdate < event.EventData
                 opts.Excitation   (1,:) double = []
                 opts.Response     (1,:) double = []
                 opts.Span         (1,:) double = []
-                opts.Markers      (1,:) double = []
+                opts.ProbeSpan    (1,:) double = []
+                opts.Markers     (1,:) double = []
                 opts.MarkerLabels (1,:) string = string.empty
                 opts.Table        (1,1) struct = stimgen.calibration.LiveUpdate.default_table()
                 opts.XLabel       (1,1) string = ""
@@ -106,7 +114,8 @@ classdef LiveUpdate < event.EventData
             obj.Excitation   = opts.Excitation;
             obj.Response     = opts.Response;
             obj.Span         = opts.Span;
-            obj.Markers      = opts.Markers;
+            obj.ProbeSpan    = opts.ProbeSpan;
+            obj.Markers     = opts.Markers;
             obj.MarkerLabels = opts.MarkerLabels;
             obj.Table        = opts.Table;
             obj.XLabel       = opts.XLabel;

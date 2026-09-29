@@ -156,6 +156,9 @@ try
                          'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
                 end
             end
+            % Marked so the waveform panel scales to the bursts rather than
+            % to the click, which plays at the full excitation voltage.
+            obj.ResponseProbeSpan = obj.probe_response_span_(regionEnd, lag, numel(response));
 
             for k = 1:numel(idx)
                 obj.throw_if_cancelled_();

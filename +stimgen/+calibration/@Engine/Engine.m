@@ -194,6 +194,16 @@ classdef Engine < handle
         ExcitationSignal (1,:) double = []
         ResponseSignal   (1,:) double = []
         ResponseTHD      (1,1) double = nan
+
+        % [first last] samples of ResponseSignal that belong to a
+        % conduction-delay probe embedded in the record rather than to the
+        % stimulus being measured; [] when the record carries none. Set by
+        % calibrate_tones/test_tones once each record's delay is known, and
+        % cleared by every other assignment to ResponseSignal (see its set
+        % method), so it can never describe a record it was not measured on.
+        % A renderer scales to the samples outside it: the probe plays at
+        % the excitation voltage and can dwarf a quiet burst after it.
+        ResponseProbeSpan (1,:) double = []
     end
 
     properties (SetAccess = protected, SetObservable)
@@ -320,6 +330,18 @@ classdef Engine < handle
             obj.ToneLutRedirectWarned_ = false; %#ok<MCSUP>
         end
 
+        function set.ResponseSignal(obj, y)
+            % A new record has no probe until the method that embedded one
+            % says so, which it does after this assignment. Clearing here
+            % rather than at each call site means a record from any other
+            % measurement -- the standalone delay probe included, whose
+            % whole record IS the probe and should be scaled to it -- can
+            % never inherit the previous tone record's span.
+            % Engine is a handle class; see set.ToneLutSource on MCSUP.
+            obj.ResponseSignal = y;
+            obj.ResponseProbeSpan = []; %#ok<MCSUP>
+        end
+
         function plot_reset(obj)
             % Clear the attached monitors' panels.
             %
@@ -431,6 +453,7 @@ classdef Engine < handle
             args.Fs         = obj.Fs;
             args.Excitation = obj.ExcitationSignal;
             args.Response   = obj.ResponseSignal;
+            args.ProbeSpan  = obj.ResponseProbeSpan;
             args.Context    = obj.live_context_();
             args.Elapsed    = obj.run_elapsed_();
 
@@ -575,6 +598,7 @@ classdef Engine < handle
         [y, schedule] = build_tone_sequence_(obj, freqs, burstDur, gapDur) % Assemble one gated tone-burst train.
         [y, xClick, schedule, regionEnd] = add_click_probe_(obj, seq, schedule, maxLagN) % Prepend a delay probe click to a tone train.
         [info, diagnostics] = click_latency_(obj, xClick, y, maxLagN, regionEnd) % Latency of a click's response within its own record.
+        span = probe_response_span_(obj, regionEnd, lag, nResponse) % Samples of a record that belong to its embedded delay probe.
         [lag, atBound, curve] = align_response_(obj, x, y, maxLag) % Bulk acquisition delay by cross-correlation.
         [exBurst, rsBurst, rsSteady, steadySpan] = extract_burst_(obj, x, response, s, lag) % Cut one scheduled burst from an excitation/response pair.
         [name, lut] = resolve_tone_lut_(obj) % Which LUT serves tone lookups, and its contents.

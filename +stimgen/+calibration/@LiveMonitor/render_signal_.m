@@ -17,6 +17,16 @@ function render_signal_(obj, d)
 % response pushed past the analysis window by acquisition delay -- and that is
 % only visible when the measured span is drawn on the waveform itself.
 %
+% A tone record opens with the conduction-delay probe click (d.ProbeSpan),
+% played at the full excitation voltage whatever level the bursts after it
+% are at. It is drawn, but the axes are scaled -- and the peak, RMS and
+% headroom in the caption computed -- over the rest of the record, which is
+% what is being measured; scaled to the click, a test at low levels would
+% flatten every burst against the zero line. The caption says when the click
+% runs off the axis, so a trace leaving the panel is not mistaken for
+% clipping. The standalone delay probe marks no span, because there the
+% click is the measurement.
+%
 % Every object is created with line()/patch(), which add to the axes without
 % clearing them, so this panel can share axes with a host GUI's own plots.
 
@@ -56,9 +66,11 @@ hResp = obj.gobj_('sig_resp', @() line(ax, NaN, NaN, ...
     Color=[0.10 0.25 0.60], Marker='none', LineWidth=0.75, DisplayName='response'));
 set(hResp, XData=t, YData=yv);
 
-peak = max(abs(y));
-rms_ = sqrt(mean(y.^2));
+sig  = signal_mask_(d, numel(y));
+peak = max(abs(y(sig)));
+rms_ = sqrt(mean(y(sig).^2));
 yl   = max(peak * 1.15, eps);
+probePeak = max([abs(y(~sig)), 0]);
 
 % Clipping limits are only worth the ink when the record is within ~12 dB of
 % them; drawn otherwise they flatten the waveform against the axis.
@@ -77,7 +89,7 @@ end
 % right-hand ruler, which is only a second scale over the same span.
 x = d.Excitation;
 if numel(x) == numel(y) && any(x)
-    render_excitation_(obj, ax, x, fs, yl);
+    render_excitation_(obj, ax, x, fs, yl, sig);
 else
     obj.drop_('sig_exc');
     obj.drop_('sig_exc_fill');
@@ -118,7 +130,7 @@ ylabel(ax, 'response (V)');
 % The title states only what the panel is (and the one red word that must
 % not be missed); the numbers live in the subtitle, whose smaller type is
 % what keeps a metrics-laden caption inside the panel.
-dcTxt = dc_text_(d.Metrics, peak);
+dcTxt = [dc_text_(d.Metrics, peak), probe_text_(probePeak, yl)];
 
 if d.Metrics.clipping
     stimgen.calibration.LiveMonitor.caption_(ax, 'Response  \bfCLIPPING\rm', ...
@@ -132,9 +144,13 @@ end
 end
 
 % ------------------------------------------------------------------------ %
-function render_excitation_(obj, ax, x, fs, yl)
+function render_excitation_(obj, ax, x, fs, yl, sig)
 % What was played, as a shaded area under its own outline, read off a
 % right-hand ruler carrying the volts it was actually played at.
+%
+% Scaled over the samples in sig for the same reason the response is: the
+% probe click is played at the excitation voltage, and a Test Tones record
+% drives its bursts at whatever the LUT asks, often far below it.
 %
 % The drive and the response are volts on both sides of the rig and nowhere
 % near the same size, so one pair of limits cannot serve both. The trace is
@@ -155,7 +171,12 @@ function render_excitation_(obj, ax, x, fs, yl)
 % segmentation against.
 [tx, xv] = obj.waveform_xy_(x, fs);
 
-xPeak = max(abs(xv));
+xPeak = max([abs(x(sig)), 0]);
+if xPeak == 0
+    % Nothing driven outside the probe (a record that is all probe would
+    % not have marked one, so this is a silent train): scale to what is.
+    xPeak = max(abs(xv));
+end
 xl    = max(xPeak * 1.15, eps);
 k     = yl / xl;                     % volts of drive per volt of axis
 
@@ -221,6 +242,38 @@ elseif isfield(m, 'dc_removed_v') && isfinite(m.dc_removed_v)
         volt_text_(m.dc_removed_v));
 elseif isfield(m, 'dc_v') && isfinite(m.dc_v) && abs(m.dc_v) > 0.01 * max(peak, eps)
     s = sprintf('  ·  DC %s', volt_text_(m.dc_v));
+else
+    s = '';
+end
+end
+
+% ------------------------------------------------------------------------ %
+function sig = signal_mask_(d, n)
+% Samples of the record that are the stimulus under measurement: all of
+% them unless the payload marks an embedded delay probe. A span that cannot
+% be placed, or that would leave nothing to scale to, is ignored rather
+% than trusted -- the fallback is only the old scaling, never an empty axis.
+sig = true(1, n);
+p = d.ProbeSpan;
+if numel(p) ~= 2 || any(~isfinite(p))
+    return
+end
+a = max(round(p(1)), 1);
+b = min(round(p(2)), n);
+if a > b || (b - a + 1) >= n
+    return
+end
+sig(a:b) = false;
+end
+
+% ------------------------------------------------------------------------ %
+function s = probe_text_(probePeak, yl)
+% Subtitle clause for a probe click that runs off the axis. Said only when
+% it does: a trace leaving the panel otherwise reads as the clipping this
+% panel exists to warn about, and the click's size is worth knowing when
+% the delay reading looks wrong.
+if probePeak > yl
+    s = sprintf('  ·  delay probe %s (off scale)', volt_text_(probePeak));
 else
     s = '';
 end

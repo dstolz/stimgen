@@ -313,6 +313,10 @@ try
                              'segmentation may be off. Increase GapDuration.'], gapDur * 1e3);
                     end
                 end
+                % Marked so the waveform panel scales to the bursts: the
+                % click plays at the excitation voltage, which a test at low
+                % levels can put tens of dB above every burst in the record.
+                obj.ResponseProbeSpan = obj.probe_response_span_(regionEnd, lag, numel(response));
 
                 for k = 1:numel(idx)
                     obj.throw_if_cancelled_();
