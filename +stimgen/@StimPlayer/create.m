@@ -27,6 +27,9 @@ grid(ax, 'on');
 box(ax, 'on');
 xlabel(ax, 'time (ms)');
 ylabel(ax, 'amplitude');
+% Titles carry stimulus names and parameter summaries (Tone_8000, dB_SPL):
+% literal text, so TeX must not read the underscores as subscripts.
+ax.Title.Interpreter = 'none';
 obj.handles.SignalAx   = ax;
 obj.handles.SignalLine = line(ax, nan, nan, 'Color', [0.2 0.4 0.8]);
 
