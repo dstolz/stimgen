@@ -27,12 +27,10 @@ function [info, diagnostics] = measure_conduction_delay(obj, options)
 %                   (default 0.05)
 %   ClickDuration - (1,1) double click length in seconds (default 100e-6);
 %                   clamped up to one sample at the current rate. Leave it
-%                   there: the estimator reads the arrival's onset by
-%                   removing the probe's own correlation width, which is
-%                   exact only while the probe is short against the response
-%                   it excites. A click of a millisecond or more rings
-%                   against itself, and the reading drifts late by a
-%                   fraction of its length.
+%                   there: the onset is read from the leading edge of the
+%                   response's first lobe (see click_latency_), and a click
+%                   of a millisecond or more excites a response whose first
+%                   lobe is shaped by the click as much as by the speaker.
 %   NumClicks     - (1,1) double clicks in the probe train (default 1).
 %                   More clicks buy signal in a noisy room, but a delay
 %                   near the click spacing aliases; leave at 1 unless the

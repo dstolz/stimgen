@@ -368,14 +368,27 @@ autocorrelation is a single sharp peak; estimating the delay from the tone
 train itself (which is what earlier versions did) gives the correlation a
 quasi-periodic ridge to wander along, and every analysis window then lands
 early by the unaccounted delay — visibly including pre-response silence in
-the waveform panel's measured span. The delay is read as the correlation's
-*first arrival*, not its largest peak: the correlation at negative lags —
-measured just before the excitation played, so noise by definition — sets a
-detection threshold with its largest peak, and the chosen lag is the first
-causal sample that rises above it. Picking the correlation's maximum instead
-would follow the strongest return, which speaker ringing or a room reflection
-can place after the direct arrival, overstating the delay and the distance
-derived from it. The probe rides in the very record it
+the waveform panel's measured span. The arrival is located by the
+correlation's *first arrival*, not its largest peak: the correlation at
+negative lags — measured just before the excitation played, so noise by
+definition — sets a detection threshold with its largest peak, and the first
+causal run that rises above it is the direct arrival. Picking the
+correlation's maximum instead would follow the strongest return, which speaker
+ringing or a room reflection can place after the direct arrival, overstating
+the delay and the distance derived from it. The delay itself is then read off
+the response waveform at that arrival: a line is fit to the leading edge of
+the response's first lobe (between 20% and 80% of the lobe's peak) and the
+delay is where that line crosses the pre-click noise floor (3× the robust
+standard deviation of the samples recorded before the click played). A
+threshold crossing — on the correlation or on the waveform — dates a
+gradually rising response by wherever it happens to clear the threshold,
+which reads late by a fraction of the rise; the extrapolated edge does not,
+and it resolves the delay below one sample (`delay_s` is sub-sample,
+`delay_samples` the nearest whole sample the segmentation uses). The
+Conduction Delay panel draws that fitted edge over the probe response. Note
+that the correlation curve rises one click-width *before* the response does,
+by construction — at lag L it already overlaps samples up to L plus the
+click's length — so its toe is not the onset. The probe rides in the very record it
 corrects because acquisition latency is only guaranteed *within* a record:
 it can differ with record length and buffer size, so a delay measured on
 one record cannot be assumed for another. Each measurement lands in the

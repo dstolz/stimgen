@@ -641,7 +641,8 @@ classdef LiveMonitor < handle
                         UniformOutput=false), wt];
                 case "latency"
                     keys = [{'lat_corr', 'lat_pick', 'lat_pick_txt', ...
-                        'lat_bound', 'lat_probe', 'lat_floor', 'lat_legend'}, wt];
+                        'lat_bound', 'lat_probe', 'lat_floor', 'lat_edge', ...
+                        'lat_legend'}, wt];
                 otherwise
                     % A stimulus panel, or the combined one. All four own the
                     % same shapes -- a live sweep, a committed table, and the

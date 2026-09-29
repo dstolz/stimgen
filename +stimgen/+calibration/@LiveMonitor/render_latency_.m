@@ -12,13 +12,17 @@ function render_latency_(obj, lat)
 %     click train, and the reading should be repeated before it is used;
 %   - the detection threshold the arrival had to rise above: the largest
 %     peak of the correlation at negative lags, which is what the correlation
-%     looks like before the excitation has played. The delay marks the first
-%     causal sample above this line -- the direct arrival's onset -- not the
-%     correlation's maximum, which ringing or a reflection can pull later;
+%     looks like before the excitation has played. The first causal run
+%     above this line locates the direct arrival -- not the correlation's
+%     maximum, which ringing or a reflection can pull later;
 %   - the probe-region response on the same lag axis, so the arrival the
 %     correlation is pointing at is visible as a waveform rather than
 %     inferred. Both share the axis because it is anchored to the click
-%     onset: lag 0 is the moment the click was played;
+%     onset: lag 0 is the moment the click was played. Note the correlation
+%     rises a click-width before the response does, by construction;
+%   - the onset fit: the line through the leading edge of the response's
+%     first lobe, drawn from where it crosses the pre-click noise floor --
+%     which is the measured delay -- up to the lobe's peak;
 %   - the detection floor (10x the region's robust noise) the response peak
 %     had to clear, on the response's own axis;
 %   - the chosen delay and the search bound as vertical rules. A correlation
@@ -176,6 +180,18 @@ if isfinite(floorV) && floorV > 0
             YData=[floorV floorV NaN -floorV -floorV]);
 else
     obj.drop_('lat_floor');
+end
+
+% The leading edge the delay was read from, extended down to the pre-click
+% noise floor it crosses at the delay. Guarded by isfield because an
+% archived diagnostics struct may predate it.
+if isfield(lat, 'onset_fit_ms') && all(isfinite(lat.onset_fit_ms))
+    hE = obj.gobj_('lat_edge', @() line(ax, NaN, NaN, LineStyle='-', ...
+        Marker='o', MarkerIndices=1, MarkerSize=4, ...
+        Color=[0.85 0.35 0.05], LineWidth=1.25, DisplayName='onset fit'));
+    set(hE, XData=lat.onset_fit_ms, YData=lat.onset_fit_v);
+else
+    obj.drop_('lat_edge');
 end
 
 yl = max([abs(v), floorV * 1.2, eps]);
