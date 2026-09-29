@@ -78,6 +78,7 @@
     "Polarity": "Alternate clicks: flips each click within the train. Alternate presentations: flips the whole train on every other presentation (use this for a single click). Either cancels stimulus artifact in averaged responses.",
     "OnsetDelay": "Leading silence in ms. Train shifts within Duration, not added to it.",
     "Truncate": "Cut at Duration instead of zero-padding. Train ends early if clicks don't fit a whole interval.",
+    "SoundLevel": "Target level in dB peSPL: the click's peak, read as the rms of a sine with the same peak (the click table is built that way). Vectorizable for one variant per level. Requires loaded calibration.",
     "Duration": "Total train length in ms. Incomplete clicks are dropped; remainder zero-padded unless Truncate is on."
   },
 

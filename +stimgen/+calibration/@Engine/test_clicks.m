@@ -49,7 +49,7 @@ function results = test_clicks(obj, durs, levels, options)
 % Parameters:
 %   durs   - (1,:) double test click durations in seconds (default:
 %            geometric midpoints of the LUT durations, at most 10 of them)
-%   levels - (1,:) double requested levels in dB SPL (default:
+%   levels - (1,:) double requested levels in dB peSPL (default:
 %            NormativeValue - [20 10 0])
 %
 % Name-Value Parameters:
@@ -89,7 +89,7 @@ function results = test_clicks(obj, durs, levels, options)
 % Example:
 %   eng.calibrate_clicks();
 %   r = eng.test_clicks();
-%   fprintf('worst LUT error %.2f dB at %.1f us / %g dB SPL\n', ...
+%   fprintf('worst LUT error %.2f dB at %.1f us / %g dB peSPL\n', ...
 %       r.worst.error_db, r.worst.duration*1e6, r.worst.level_db);
 %
 % See also: stimgen.calibration.Engine/calibrate_clicks,
@@ -220,7 +220,7 @@ try
         tbl = obj.empty_table_(nD);
         tbl.x = durs(:).';
 
-        stimgen.util.vprintf(1, 'Click LUT test: level %d/%d, %g dB SPL, %d point(s)', ...
+        stimgen.util.vprintf(1, 'Click LUT test: level %d/%d, %g dB peSPL, %d point(s)', ...
             li, nL, levelDb, nnz(playable(:, li)));
 
         for i = 1:nD
@@ -234,7 +234,7 @@ try
 
             for rep = 1:nReps
                 obj.throw_if_cancelled_();
-                stimgen.util.vprintf(2, '[%d/%d] Click test: %.2f us at %g dB SPL, %.4f V', ...
+                stimgen.util.vprintf(2, '[%d/%d] Click test: %.2f us at %g dB peSPL, %.4f V', ...
                     rep, nReps, durs(i)*1e6, levelDb, drive(i, li));
 
                 m = obj.measure_(y, "peak");

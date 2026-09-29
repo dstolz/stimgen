@@ -156,6 +156,13 @@ classdef ClickTrain < stimgen.StimType
             % Only the caption is retitled here: the ClickTrain section of the
             % tooltip catalog already overrides the inherited Duration text.
             base.Duration.label = 'Train Duration (ms)';
+            % The click table is built from each click's peak, as the rms of a
+            % sine with the same peak, so a click's level is peak-equivalent.
+            % The unit goes in the label because the field is vectorizable and
+            % renders as an expression, which ignores format.
+            unit = stimgen.util.level_unit("peak");
+            base.SoundLevel.label  = sprintf('Sound Level (%s)', unit);
+            base.SoundLevel.format = ['%.1f ' unit];
             m = stimgen.StimType.merge_prop_meta(m, base);
         end
     end

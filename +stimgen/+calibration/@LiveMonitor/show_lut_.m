@@ -41,7 +41,7 @@ end
 
 yyaxis(ax, 'left');
 ax.YLimMode = 'auto';
-ylabel(ax, 'level (dB SPL)');
+ylabel(ax, sprintf('level (%s)', spec.unit));
 grid(ax, 'on');
 
 if isempty(S)
@@ -116,7 +116,7 @@ switch panel
     case "click"
         spec = struct('field', "click", 'xfield', "duration", 'xscale', 1e6, ...
             'xlabel', 'click duration (\mus)', 'isFrequency', false, ...
-            'name', 'Click', 'trace', 'click LUT', 'color', [0.75 0.30 0.10]);
+            'name', 'Click', 'trace', 'click LUT (peSPL)', 'color', [0.75 0.30 0.10]);
     case "swept_sine"
         spec = struct('field', "swept_sine", 'xfield', "frequency", 'xscale', 1, ...
             'xlabel', 'frequency (Hz)', 'isFrequency', true, ...
@@ -126,6 +126,7 @@ switch panel
             'xlabel', 'frequency (Hz)', 'isFrequency', true, ...
             'name', 'Tone', 'trace', 'tone LUT', 'color', [0.10 0.25 0.60]);
 end
+spec.unit = stimgen.calibration.LiveMonitor.panel_level_unit_(panel);
 end
 
 % ------------------------------------------------------------------------ %
@@ -202,7 +203,7 @@ if spec.isFrequency
 else
     span = sprintf('%d durations, %.3g–%.3g ms', numel(x), min(x)/1e3, max(x)/1e3);
 end
-span = sprintf('%s  ·  %.1f–%.1f dB SPL', span, min(y), max(y));
+span = sprintf('%s  ·  %.1f–%.1f %s', span, min(y), max(y), spec.unit);
 
 detail = stimgen.calibration.LiveMonitor.calibration_stamp_(eng);
 switch spec.field

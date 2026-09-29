@@ -794,6 +794,19 @@ classdef LiveMonitor < handle
                 char(datetime(t, Format='dd-MMM-yyyy HH:mm')));
         end
 
+        function u = panel_level_unit_(panel)
+            % The level unit a stimulus panel's table is measured in. The
+            % click table is built from the peak of each click, as the rms
+            % of a sine with the same peak, so its levels are dB peSPL; the
+            % others are rms and read in dB SPL. panel is a stimulus panel
+            % (see stage_panel), so a click LUT test lands here too.
+            if panel == "click"
+                u = stimgen.util.level_unit("peak");
+            else
+                u = stimgen.util.level_unit("rms");
+            end
+        end
+
         function s = stage_name_(stage)
             % Human-readable name for a run stage.
             switch stage

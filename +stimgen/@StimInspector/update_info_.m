@@ -166,10 +166,13 @@ end
 
 % --- What was asked for, measured the way its calibration was ----------
 if ~isempty(m)
+    % Measured the way its table was: a click at its peak, so in dB peSPL.
     if acoustic
         measured = m.level_db;
+        mUnit    = m.level_unit;
     else
         measured = m.level_dbv;
+        mUnit    = m.level_unit_dbv;
     end
     requested = num_(m.requested_db, '%.2f');
     if isfinite(m.requested_db) && ~m.calibrated
@@ -177,8 +180,8 @@ if ~isempty(m)
     end
     rows = [rows; {
         '— Against the request —',  ''; ...
-        'Requested (dB SPL)',       requested; ...
-        ['Measured (' dbU ')'],     num_(measured, '%.2f'); ...
+        ['Requested (' m.level_unit ')'], requested; ...
+        ['Measured (' mUnit ')'],   num_(measured, '%.2f'); ...
         'Measured as',              char(m.level_reference); ...
         'Error (dB)',               num_(m.error_db, '%+.2f')}];
 end

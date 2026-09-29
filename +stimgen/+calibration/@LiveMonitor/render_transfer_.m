@@ -62,7 +62,9 @@ render_pending_rug_(obj, ax, k, xd, valid, T);
 render_current_(obj, ax, k, xd, T, d);
 render_normative_(obj, ax, k, xd, d);
 
-ylabel(ax, 'level (dB SPL)');
+% A click sweep is measured at the peak (peSPL); everything else at the rms.
+unit = stimgen.calibration.LiveMonitor.panel_level_unit_(panel);
+ylabel(ax, sprintf('level (%s)', unit));
 if obj.LogX
     set(ax, XScale='log');
 else
@@ -88,7 +90,7 @@ end
 
 grid(ax, 'on');
 xlabel(ax, stimgen.calibration.LiveMonitor.frequency_ticks_(ax, char(d.XLabel)));
-[head, sub] = transfer_caption_(d, T, valid);
+[head, sub] = transfer_caption_(d, T, valid, unit);
 stimgen.calibration.LiveMonitor.caption_(ax, head, sub);
 
 hLeg = obj.gobj_(k('legend'), @() legend(ax, Location='southwest', ...
@@ -204,7 +206,7 @@ ax.YAxis(2).Color = [0.20 0.55 0.25];
 end
 
 % ------------------------------------------------------------------------ %
-function [head, sub] = transfer_caption_(d, T, valid)
+function [head, sub] = transfer_caption_(d, T, valid, unit)
 % Title: what is running and how far along. Subtitle: the timing and the span
 % the curve has covered so far -- the numbers, in the smaller type that keeps
 % them inside the panel.
@@ -233,8 +235,8 @@ end
 
 if nnz(valid) >= 2
     lvl = T.spl_db(valid);
-    span = sprintf('%.1f–%.1f dB SPL (%.1f dB span)', ...
-        min(lvl), max(lvl), max(lvl) - min(lvl));
+    span = sprintf('%.1f–%.1f %s (%.1f dB span)', ...
+        min(lvl), max(lvl), unit, max(lvl) - min(lvl));
 else
     span = 'measuring...';
 end

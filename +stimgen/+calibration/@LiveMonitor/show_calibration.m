@@ -62,11 +62,13 @@ end
 
 % The unit in each name is the axis's, not the table's: all three are drawn
 % against one x whose ticks are written in kHz, and a click duration read on
-% that scale is milliseconds.
+% that scale is milliseconds. The click table is also the one level measured
+% at the peak, so its name says peSPL where the y label cannot say it for one
+% curve alone.
 specs = { ...
     'tone',       'frequency', 1,    '-', [0.10 0.25 0.60], 'tone (kHz)'; ...
     'swept_sine', 'frequency', 1,    '-', [0.20 0.55 0.25], 'swept sine (kHz)'; ...
-    'click',      'duration',  1e6,  '-', [0.75 0.30 0.10], 'click (ms)'};
+    'click',      'duration',  1e6,  '-', [0.75 0.30 0.10], 'click (ms, dB peSPL)'};
 
 yyaxis(ax, 'left');
 % show_background leaves this axis on a manual ylim sized to the noise
@@ -100,7 +102,7 @@ for k = 1:size(specs, 1)
     end
 end
 
-ylabel(ax, 'level (dB SPL)');
+ylabel(ax, level_label_(C));
 if obj.LogX
     set(ax, XScale='log');
 else
@@ -131,6 +133,22 @@ stimgen.calibration.LiveMonitor.caption_(ax, ...
 hLeg = obj.gobj_('transfer_lut_legend', @() legend(ax, Location='southwest', ...
     AutoUpdate='off', FontSize=8));
 hLeg.Visible = 'on';
+end
+
+% ------------------------------------------------------------------------ %
+function s = level_label_(C)
+% One y axis for every table, but the click table is peak-equivalent: say so
+% whenever it is on the axis, and say nothing extra when it is the only one.
+has = @(key) isfield(C, key) && ~isempty(C.(key));
+peakUnit = stimgen.util.level_unit("peak");
+rmsUnit  = stimgen.util.level_unit("rms");
+if has('click') && (has('tone') || has('swept_sine'))
+    s = sprintf('level (%s; click %s)', rmsUnit, peakUnit);
+elseif has('click')
+    s = sprintf('level (%s)', peakUnit);
+else
+    s = sprintf('level (%s)', rmsUnit);
+end
 end
 
 % ------------------------------------------------------------------------ %

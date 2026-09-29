@@ -249,6 +249,15 @@ read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into
 schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
 is not 94.
 
+**A level measured at the peak is labelled dB peSPL.** The click table (and anything
+`level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)
+is built from `max(abs(y))/sqrt(2)`: peak-equivalent SPL, baseline-to-peak. It is not comparable
+to an rms dB SPL, so every axis, caption, table row and status line showing such a level takes its
+unit from `stimgen.util.level_unit(mode)` (`'dB peSPL'` / `'dB SPL'`) rather than hard-coding
+`"dB SPL"`. `level_as_calibrated` returns it as `level_unit`; LiveMonitor's click panel uses
+`panel_level_unit_`; `ClickTrain` retitles its Sound Level field. A new display of a click level
+goes through the same helper.
+
 **Frequency weighting is not a bilinear IIR.** `stimgen.util.weighting_db` is the curve (for
 spectra and band levels); `stimgen.util.sound_levels` applies the IEC 61672-1 A/C networks to
 a *waveform* by evaluating the analog transfer function on the record's zero-padded FFT grid,

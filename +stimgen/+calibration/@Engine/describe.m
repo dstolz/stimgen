@@ -195,8 +195,8 @@ out(end+1,1) = sprintf('%s -- %d point(s), %s to %s %s', title, numel(x), ...
     xFmt(min(x)), xFmt(max(x)), xUnit);
 
 spl = t.spl_db(:);
-out(end+1,1) = field_("  Level measured", sprintf('%.1f to %.1f dB SPL (median %.1f)', ...
-    min(spl), max(spl), median(spl, 'omitnan')));
+out(end+1,1) = field_("  Level measured", sprintf('%.1f to %.1f %s (median %.1f)', ...
+    min(spl), max(spl), level_unit_(fieldName), median(spl, 'omitnan')));
 
 v = t.voltage(:);
 out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V at the normative level', ...
@@ -209,6 +209,17 @@ if isfield(t, 'refinement') && ~isempty(t.refinement)
     out(end+1,1) = field_("  Refinement", refinement_(t.refinement));
 end
 out(end+1,1) = "";
+end
+
+% -------------------------------------------------------------------------
+function u = level_unit_(fieldName)
+% The click table and its test are measured at the peak (peSPL); every other
+% table at the rms.
+if startsWith(string(fieldName), "click")
+    u = stimgen.util.level_unit("peak");
+else
+    u = stimgen.util.level_unit("rms");
+end
 end
 
 % -------------------------------------------------------------------------
@@ -336,8 +347,9 @@ out(end+1,1) = sprintf('%s -- %s, worst error %.2f dB against a %.2f dB toleranc
 out(end+1,1) = field_("  Spread", sprintf('%.2f dB RMS, %.2f dB bias', ...
     r.rms_error_db, r.bias_db));
 if isfinite(r.worst.error_db)
-    out(end+1,1) = field_("  Worst point", sprintf('%.2f dB at %s %s, %.10g dB SPL requested', ...
-        r.worst.error_db, xFmt(r.worst.(xField)), xUnit, r.worst.level_db));
+    out(end+1,1) = field_("  Worst point", sprintf('%.2f dB at %s %s, %.10g %s requested', ...
+        r.worst.error_db, xFmt(r.worst.(xField)), xUnit, r.worst.level_db, ...
+        level_unit_(fieldName)));
 end
 % One struct of parallel arrays, not an array of structs: the count is the
 % length of a column, not numel of the record.

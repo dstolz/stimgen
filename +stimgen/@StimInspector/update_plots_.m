@@ -53,7 +53,8 @@ end % update_plots_
 
 function plot_waveform_(obj, y, fs, M)
 % Time-domain waveform with its analytic envelope, plus the envelope in dB.
-% As sound: pressure in pascals over the envelope in dB SPL, with the noise
+% As sound: pressure in pascals over the envelope in dB peSPL (the envelope
+% is an amplitude, read as the rms of a sine with that peak), with the noise
 % floor drawn across it when the capture recorded one.
 
 axWave = obj.handles.AxWave;
@@ -64,7 +65,7 @@ cla(axEnv);
 acoustic = obj.Scale.Acoustic;
 if acoustic
     ylabel(axWave, 'pressure (Pa)');
-    ylabel(axEnv, 'dB SPL');
+    ylabel(axEnv, stimgen.util.level_unit("peak"));
 else
     ylabel(axWave, 'amplitude');
     ylabel(axEnv, 'dB');
@@ -130,7 +131,9 @@ end
 if acoustic
     % The envelope of a sinusoid is its amplitude, so dividing by sqrt(2)
     % puts the curve on the rms scale an SPL is defined on: a steady tone's
-    % envelope reads its own level.
+    % envelope reads its own level. Being a peak read as a sine's rms, it is
+    % peak-equivalent SPL, and labelled so -- a transient's envelope reads
+    % well above its rms level.
     envDb = obj.to_db_(env / sqrt(2) / k);
     [te, ye] = decimate_for_plot_(t, envDb, obj.MaxPlotPoints);
     line(axEnv, te, ye, 'Color', [0.85 0.33 0.10]);
@@ -153,7 +156,7 @@ if acoustic
     if isfinite(top)
         ylim(axEnv, [lo, top + 5]);
     end
-    title(axEnv, 'Envelope (dB SPL, as a sine''s rms)');
+    title(axEnv, 'Envelope (dB peSPL: amplitude as a sine''s rms)');
     return
 end
 

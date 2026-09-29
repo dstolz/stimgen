@@ -39,8 +39,11 @@ function m = level_as_calibrated(y, fs, req, micSens, spectral)
 %     level_reference  (1,1) string, the measurement in words
 %     measurement_v    the measurement itself (V): spectral rms, peak or rms
 %     rms_v            its rms equivalent (V)
-%     level_db         dB SPL of rms_v; NaN without a sensitivity
+%     level_db         dB SPL of rms_v (dB peSPL for "peak"); NaN
+%                      without a sensitivity
 %     level_dbv        dB re 1 V of rms_v
+%     level_unit       unit of level_db, from stimgen.util.level_unit
+%     level_unit_dbv   unit of level_dbv, likewise
 %     requested_db     the level asked for; NaN when unknown
 %     calibrated       the requested level is a real dB SPL
 %     error_db         level_db - requested_db when both are real; else NaN
@@ -112,6 +115,8 @@ m = struct( ...
     'rms_v',           rmsV, ...
     'level_db',        levelDb, ...
     'level_dbv',       20 * log10(max(rmsV, realmin)), ...
+    'level_unit',      stimgen.util.level_unit(mode), ...
+    'level_unit_dbv',  stimgen.util.level_unit(mode, true), ...
     'requested_db',    requested, ...
     'calibrated',      calibrated, ...
     'error_db',        errorDb);
@@ -125,7 +130,7 @@ switch mode
     case "specfreq"
         text = string(sprintf('spectral rms at %.4g Hz', anchorHz));
     case "peak"
-        text = "peak, as rms equivalent";
+        text = "peak, as rms equivalent (peSPL)";
     otherwise
         text = "broadband rms";
 end

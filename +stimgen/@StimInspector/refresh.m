@@ -131,16 +131,19 @@ end
 
 parts = {head};
 if ~isempty(m)
+    % Measured the way its table was: a click at its peak, so in dB peSPL.
     if obj.Scale.Acoustic
         measured = m.level_db;
+        mUnit    = m.level_unit;
     else
         measured = m.level_dbv;
+        mUnit    = m.level_unit_dbv;
     end
     if isfinite(m.error_db)
         parts{end+1} = sprintf('%.1f %s as calibrated (%s), %+.1f dB from the %.1f requested', ...
-            measured, unit, m.level_reference, m.error_db, m.requested_db);
+            measured, mUnit, m.level_reference, m.error_db, m.requested_db);
     elseif isfinite(measured)
-        parts{end+1} = sprintf('%.1f %s as calibrated (%s)', measured, unit, m.level_reference);
+        parts{end+1} = sprintf('%.1f %s as calibrated (%s)', measured, mUnit, m.level_reference);
     end
 end
 if ~isempty(N)

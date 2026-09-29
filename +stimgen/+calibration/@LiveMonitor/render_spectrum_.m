@@ -223,11 +223,13 @@ end
 function s = spectrum_subtitle_(d, floorVal, info)
 % Summarize the measurement in the subtitle: the level the LUT will record,
 % plus whichever of SNR/THD the stage actually estimated. Those three are dB
-% SPL and dB ratios whatever the axis is showing; only the floor follows the
-% units.
+% SPL (dB peSPL for a click, whose table is built from the peak) and dB ratios
+% whatever the axis is showing; only the floor follows the units.
 parts = {};
 if isfinite(d.Metrics.spl_db)
-    parts{end+1} = sprintf('%.1f dB SPL', d.Metrics.spl_db);
+    unit = stimgen.calibration.LiveMonitor.panel_level_unit_( ...
+        stimgen.calibration.LiveMonitor.stage_panel(d.Stage));
+    parts{end+1} = sprintf('%.1f %s', d.Metrics.spl_db, unit);
 end
 if isfinite(d.Metrics.snr_db)
     parts{end+1} = sprintf('SNR %.0f dB', d.Metrics.snr_db);
