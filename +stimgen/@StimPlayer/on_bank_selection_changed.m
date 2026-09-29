@@ -188,7 +188,15 @@ function set_prop_(obj, stimObj, src, event)
 % value as a MATLAB expression via evalPropertyExpression before assignment.
 % Widget values are in display units (ms for time properties) and are divided
 % by the propMeta display scale before being written to the property.
-isNumExpr = isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
+
+% An edit still pending when its panel is torn down (a bank rebuilt or
+% reloaded, the window closed) commits on the destroyed widget, and the
+% stimulus it was editing may be gone with it. There is nothing left to
+% write to, and the recovery path below would fault on the same handles.
+if ~isvalid(obj) || ~isvalid(src) || ~isvalid(stimObj)
+    return
+end
+isNumExpr =isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
 sc = stimgen.StimType.display_scale(stimObj.get_prop_meta(), src.Tag);
 try
     value = event.Value;
@@ -258,7 +266,11 @@ end
 
 function update_name_(obj, idx, src)
 % update_name_(obj, idx, newName) - Update the Name of bank item idx.
-if idx < 1 || idx > numel(obj.StimPlayObjs)
+% Same pending-edit-on-a-destroyed-widget case as set_prop_.
+if ~isvalid(obj) || ~isvalid(src)
+    return
+end
+if idx < 1|| idx > numel(obj.StimPlayObjs)
     return
 end
 
