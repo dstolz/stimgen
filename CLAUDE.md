@@ -204,9 +204,11 @@ this for their own controls and toolbars, as does `@SpotCheck/build_ui_.m`. An u
 than erroring, so a missing tooltip never blocks a GUI. The file is cached and re-read on change,
 so edits take effect without `clear functions`.
 
-**Class discovery is filename-based.** `StimType.list()` globs `*.m` in `+stimgen/` and filters out
-a hardcoded exclusion list plus anything containing `Calib`. A new stimulus file in that folder is
-automatically offered in GUI dropdowns. The glob reaches only loose files, so a `StimType` subclass
+**Class discovery globs filenames, then checks the class.** `StimType.list()` globs `*.m` in
+`+stimgen/`, drops a hardcoded exclusion list plus anything containing `Calib`, and keeps only what
+`meta.class` says is a concrete subclass of `StimType` — so a helper class such as `LogSink` or
+`HardwareHost` dropped into that folder is never offered as a stimulus. A new stimulus file in that
+folder is automatically offered in GUI dropdowns. The glob reaches only loose files, so a `StimType` subclass
 that must *not* be offered as a stimulus goes in a class folder rather than onto the exclusion
 list — that is why `stimgen.CapturedSignal` lives in `@CapturedSignal/` despite being a single
 short file. Self-excluding by construction beats a name someone has to remember to add.
