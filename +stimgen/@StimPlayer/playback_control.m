@@ -123,17 +123,34 @@ switch action
         end
 
     case {'pause', 'resume'}
+        % A pause holds the session; it does not stop it. The timer keeps
+        % running and timer_runtimefcn presents nothing while Paused_ is
+        % set, so the rep counts, presentation log, variant cursors, the
+        % buffer already loaded for the next trial and the hardware
+        % connection all survive. Stopping the timer instead would run
+        % timer_stopfcn (unlock the bank, release the hardware) and a
+        % restart would run timer_startfcn (reset every count).
         try
-            if ~isempty(obj.Timer) && isvalid(obj.Timer)
-                if strcmp(obj.Timer.Running, 'on')
-                    stop(obj.Timer);
-                    src.Text = 'Resume';
-                    obj.set_status_("Playback paused.");
-                else
-                    start(obj.Timer);
-                    src.Text = 'Pause';
-                    obj.set_status_("Playback resumed.");
-                end
+            if isempty(obj.Timer) || ~isvalid(obj.Timer) || ~strcmp(obj.Timer.Running, 'on')
+                return  % no session to hold or release
+            end
+            if action == "pause" && ~obj.Paused_
+                obj.Paused_ = true;
+                obj.PauseStartedAt_ = obj.timeSinceStart;
+                h.PauseBtn.Text = 'Resume';
+                obj.set_status_(sprintf('Playback paused after %d of %d presentations.', ...
+                    obj.presented_count_(), obj.total_count_()));
+            elseif action == "resume" && obj.Paused_
+                % Shift the last trigger time by the length of the pause, so
+                % the interval in progress when Pause was pressed resumes
+                % with the time it had left rather than counting the pause
+                % against it (which would trigger at once on resume).
+                % StimOrderTime keeps real elapsed time, pause included.
+                pausedFor = obj.timeSinceStart - obj.PauseStartedAt_;
+                obj.lastTrigTime = obj.lastTrigTime + pausedFor;
+                obj.Paused_ = false;
+                h.PauseBtn.Text = 'Pause';
+                obj.set_status_(sprintf('Playback resumed after a %.1f s pause.', pausedFor));
             end
         catch ME
             obj.report_gui_error_(ME, "Pause Error", ...

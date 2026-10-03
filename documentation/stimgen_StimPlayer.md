@@ -501,6 +501,23 @@ At run time the class:
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
 
+### Pause and resume
+
+**Pause** (or `playback_control("Pause")`) holds a running session; it does
+not stop it. The timer keeps running and `timer_runtimefcn` returns at once
+while the private `Paused_` flag is set, so nothing is presented, but nothing
+is torn down either: the rep counts, the presentation log, each item's variant
+cursor, the buffer already loaded for the next trial and the hardware
+connection all survive, and the bank stays locked. **Resume**
+(`playback_control("Resume")`) shifts `lastTrigTime` forward by the length of
+the pause, so the interval that was in progress when Pause was pressed
+continues with the time it had left. `StimOrderTime` is real elapsed time and
+therefore includes the pause.
+
+A pause is still a session holding the hardware: hardware preview, capture
+and protocol loading stay refused until the session is stopped. `"Pause"`
+while already paused and `"Resume"` while running are no-ops.
+
 ### Alternating polarity
 
 A stimulus whose `alternates_polarity()` is true (a `Tone` with

@@ -19,6 +19,7 @@ try
     obj.PolarityCount_ = {};
 
     obj.trialCount_ = 0;
+    obj.Paused_     = false;
 
     % Select the first stimulus
     obj.nextSPOIdx = obj.select_next_idx;

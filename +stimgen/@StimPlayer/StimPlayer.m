@@ -210,6 +210,9 @@ classdef StimPlayer < handle
         CaptureLocked_ (1,1) logical = false % True while a session holds the bank (lock_bank_controls_)
 
         PolarityCount_ = {}                  % Per bank item: presentations so far of each variant
+
+        Paused_ (1,1) logical = false        % True while a running session is held by Pause
+        PauseStartedAt_ (1,1) double = 0     % timeSinceStart when the current pause began
     end
 
     % --- Dependent ---
@@ -1530,13 +1533,25 @@ classdef StimPlayer < handle
             if ~isfield(h,'Counter') || ~isvalid(h.Counter)
                 return
             end
-            if isempty(obj.StimPlayObjs)
-                h.Counter.Text = '0 / 0';
-                return
+            h.Counter.Text = sprintf('%d / %d', obj.presented_count_(), obj.total_count_());
+        end
+
+        % -----------------------------------------------------------------
+        function n = presented_count_(obj)
+            % n = presented_count_() - Presentations so far, summed over the bank.
+            n = 0;
+            if ~isempty(obj.StimPlayObjs)
+                n = sum(arrayfun(@(sp) sp.StimPresented, obj.StimPlayObjs));
             end
-            presented = sum(arrayfun(@(sp) sp.StimPresented, obj.StimPlayObjs));
-            total     = sum(arrayfun(@(sp) sp.StimTotal,     obj.StimPlayObjs));
-            h.Counter.Text = sprintf('%d / %d', presented, total);
+        end
+
+        % -----------------------------------------------------------------
+        function n = total_count_(obj)
+            % n = total_count_() - Presentations a full run makes, summed over the bank.
+            n = 0;
+            if ~isempty(obj.StimPlayObjs)
+                n = sum(arrayfun(@(sp) sp.StimTotal, obj.StimPlayObjs));
+            end
         end
 
         % -----------------------------------------------------------------

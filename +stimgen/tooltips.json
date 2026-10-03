@@ -132,7 +132,7 @@
     "CapturePostDelay": "Silence after the stimulus, in ms. Must exceed the rig round-trip latency (converter plus acoustic path) or the response cannot be located.",
     "CaptureRepeats": "Acquisitions to average. Each is aligned on its own delay first; averaging lowers the noise on the recording.",
     "RunBtn": "Start session: connect protocol, reset counters, present bank. Press again to stop.",
-    "PauseBtn": "Hold run without resetting. Press again to resume.",
+    "PauseBtn": "Hold the run between presentations, keeping counts, log and hardware connection. Press again to resume; the interval in progress continues with the time it had left.",
     "ProtocolStatusLabel": "Loaded protocol and hardware connection state. Falls back to speaker preview if protocol/params missing.",
     "ComputingLamp": "On while generating stimulus signal. GUI briefly unresponsive.",
     "StatusLabel": "Most recent action or error.",

@@ -1,11 +1,19 @@
 function timer_runtimefcn(obj, src, ~)
 % timer_runtimefcn(obj, src) - Main playback loop; called every timer period.
 % Waits until the ISI has elapsed, triggers the current buffer, advances
-% the bank selection, and pre-loads the next buffer.
+% the bank selection, and pre-loads the next buffer. Does nothing while the
+% session is paused.
 
 try
     if obj.nextSPOIdx < 1
         return  % all reps done; waiting for timer_stopfcn to fire
+    end
+
+    % Held by Pause: the timer keeps ticking so nothing is torn down, but
+    % nothing is presented. Resume shifts lastTrigTime by the pause length
+    % (see playback_control), so the ISI check below picks up where it was.
+    if obj.Paused_
+        return
     end
 
     isi = obj.currentISI;
