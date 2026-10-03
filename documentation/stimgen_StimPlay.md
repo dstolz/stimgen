@@ -22,28 +22,16 @@ They also need to know:
 `StimPlay` centralizes that state so playback GUIs do not each have to solve
 the same bookkeeping problem.
 
-## Single-object and multi-object behavior
+## Wrapped stimulus
 
-`StimPlay` supports two shapes of wrapped stimulus.
-
-### Single-object stimulus
-
-For a normal stimulus such as `stimgen.Tone` or `stimgen.Noise`, `StimObj`
-is the presentable object. `CurrentStimObj` simply returns that same object.
-
-### Multi-object stimulus
-
-For a stimulus whose `IsMultiObj` property is true, the real presentable
-objects live in `StimObj.MultiObjects`.
-
-In that case, `StimPlay` uses `StimIdx` to select one child object at a time
-and exposes the selected child through `CurrentStimObj`.
-
-That is how one multi-object definition can behave like many presentable
-stimuli during playback. (For most sweep-style needs, prefer the variant
-selection built into `stimgen.StimType` — vectorized properties with
-`VariantSelectionMode` — described in
-[stimgen_StimType.md](stimgen_StimType.md).)
+`StimObj` is the presentable `StimType` object (for example a `stimgen.Tone`
+or `stimgen.Noise`); `CurrentStimObj` returns `StimObj(StimIdx)`, which for
+the usual single object is that object itself. A family of related stimuli
+is expressed with the variant selection built into `stimgen.StimType` —
+vectorized properties with `VariantSelectionMode` — described in
+[stimgen_StimType.md](stimgen_StimType.md). (An older `IsMultiObj` /
+`MultiObjects` mechanism was never implemented by any class and has been
+removed.)
 
 ## Key properties
 
@@ -52,8 +40,8 @@ selection built into `stimgen.StimType` — vectorized properties with
 - `ISI`: scalar or two-element range in seconds (GUIs enter it in ms)
 - `SelectionType`: `"Serial"` or `"Shuffle"`
 - `RepsPresented`: per-stimulus presentation counts
-- `StimIdx`: current child index inside the wrapped stimulus
-- `StimOrder`: logged order of internal child selections
+- `StimIdx`: index into `StimObj` of the current stimulus
+- `StimOrder`: logged order of those selections
 
 Useful dependent properties:
 

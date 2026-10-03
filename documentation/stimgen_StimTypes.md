@@ -78,7 +78,7 @@ whatever was stored.
 ## Noise
 
 Gaussian noise band-limited between `HighPass` and `LowPass` with an FIR bandpass
-filter (`FilterOrder` taps).
+filter of order `FilterOrder` (`FilterOrder` + 1 taps).
 
 - [+stimgen/Noise.m](../+stimgen/Noise.m)
 
@@ -86,12 +86,12 @@ filter (`FilterOrder` taps).
 | --- | --- | --- |
 | `HighPass` | yes | Hz, filter low cutoff |
 | `LowPass` | yes | Hz, filter high cutoff |
-| `FilterOrder` | no | FIR order used by `designfilt` |
+| `FilterOrder` | no | FIR order used by `designfilt` (default 40); editable in the GUI and saved with the stimulus |
 
 `LowPass` must exceed `HighPass`; a violation raises
 `stimgen:Noise:InvalidBand`. The digital filter is rebuilt on every `update_signal`
 via `update_digFilter` and cached on the object as `digFilter`, not recomputed
-per-sample. `Noise` is also the superclass for `AMnoise` and `AttackModNoise`, which
+per-sample, so a new `FilterOrder` takes effect on the next waveform. `Noise` is also the superclass for `AMnoise` and `AttackModNoise`, which
 reuse its carrier generation (`temporarilyDisableSignalMods` guards the base class's
 own normalize/calibrate/gate calls while the carrier is only an intermediate signal).
 
@@ -107,11 +107,13 @@ own normalize/calibrate/gate calls while the carrier is only an intermediate sig
 | `AMRate` | yes | Hz |
 | `OnsetPhase` | yes | degrees, modulator phase at t=0 |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) — useful for verifying envelope shape |
-| `ApplyViemeisterCorrection` | no | scales the modulator so average power matches the unmodulated carrier |
 
-Inherits `HighPass`/`LowPass`/`FilterOrder` from `Noise`. `ApplyViemeisterCorrection`
-keeps loudness roughly constant across `AMDepth` values by compensating for the power
-lost to modulation (Viemeister 1979).
+Inherits `HighPass`/`LowPass`/`FilterOrder` from `Noise`. The modulated waveform is
+rms-normalized before calibration, so the rms of the delivered waveform does not depend
+on `AMDepth`; no separate power compensation is needed. (An earlier `ApplyViemeisterCorrection`
+option scaled the envelope by a constant that this normalization divided straight back
+out, so it never changed the output; it has been removed, and older banks that still
+carry it load with the field ignored.)
 
 ## AttackModNoise
 
@@ -122,15 +124,22 @@ lost to modulation (Viemeister 1979).
 
 | Property | Vectorizable | Meaning |
 | --- | --- | --- |
-| `AMDepth` | yes | modulation depth, 0–1 (kept for `ApplyViemeisterCorrection`; the envelope shape itself is set by `Z`) |
 | `AMRate` | yes | Hz, sets the modulation period `1/AMRate` |
 | `Z` | yes | -1–1, envelope shape: negative ramps up (attack), positive damps down (decay) |
-| `AddOnOffperiods` | no | prepend/append a partial period so the envelope starts and ends near zero crossing |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) |
-| `ApplyViemeisterCorrection` | no | same power-compensation as `AMnoise` |
 
-Unlike `AMnoise`, `OnsetPhase` here is scalar and not exposed in `UserProperties` —
-the envelope's phase is fixed by construction (`Z` sign), not by a phase offset.
+There is no depth parameter: the envelope always runs from zero to its peak, with its
+shape set by `Z`. The `AMDepth` and `ApplyViemeisterCorrection` properties this class
+used to carry fed only a constant factor that rms normalization removed, so neither
+changed the output; both have been removed, and an older bank that still lists them
+loads with those fields ignored. (A vectorized `AMDepth` in such a bank made variants
+that were identical waveforms; it no longer adds variants.)
+
+Unlike `AMnoise`, there is no `OnsetPhase`: the envelope's phase is fixed by
+construction (one period of the `Z`-shaped envelope, repeated from t = 0). The unused `OnsetPhase`
+and the broken `AddOnOffperiods` option (it doubled the envelope's length, so it either
+errored against the carrier or returned a waveform twice `Duration` long) have been
+removed.
 
 ## FMtone
 
@@ -144,7 +153,11 @@ integration, not a simple phase wobble).
 | `CarrierFrequency` | yes | Hz, center frequency |
 | `ModulationFrequency` | yes | Hz, modulator rate; `0` collapses to a pure tone at `CarrierFrequency` |
 | `ModulationDepth` | yes | Hz, peak deviation of instantaneous frequency |
-| `OnsetPhase` | yes | radians (not degrees, unlike `Tone`/`AMnoise`) |
+| `OnsetPhase` | yes | degrees, carrier phase at t=0 (same convention as `Tone`/`AMnoise`) |
+
+`OnsetPhase` used to be in radians. It is now degrees like every other stimulus, so a
+saved non-zero `FMtone` `OnsetPhase` from an older bank is reinterpreted (1 rad is
+read as 1°); the default of 0 is unaffected.
 
 `CalibrationType` is `"filter"` rather than `"tone"` — an FM tone sweeps a band, so it
 is calibrated like broadband material (equalizer/filter LUT) rather than looked up at

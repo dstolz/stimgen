@@ -218,7 +218,8 @@ edit therefore must not use it, or merely looking at a stimulus would step it.
 The inspector avoids this by construction:
 
 - the time base comes from `numel(Signal)` and `Fs`, never from `StimType.Time`
-  (which reads `Duration` through the variant selector)
+  (which no longer reselects, but describes the nominal `Duration` rather than
+  the samples actually present)
 - `Fs` is non-vectorizable, so reading it directly is safe
 - the parameter table shows **raw** property values, listing vectorized
   properties in full and tagging them `(variant)`; the active combination is

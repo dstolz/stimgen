@@ -27,7 +27,6 @@ classdef ClickTrain < stimgen.StimType
 
     
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "click";
         Normalization   = "absmax"
     end
@@ -138,7 +137,7 @@ classdef ClickTrain < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for ClickTrain GUI properties.
             m = struct();
-            m.Rate          = struct('label', 'Rate',                'format', '%.1f Hz',  'limits', [0.1 1e6], ...
+            m.Rate          = struct('label', 'Rate (Hz)',           'format', '%.1f Hz',  'limits', [0.1 1e6], ...
                 'tooltip', stimgen.util.tooltip(obj, 'Rate'));
             m.ClickDuration = struct('label', 'Click Duration (ms)', 'format', '%.4f ms',  'limits', [0.001 1000], ...
                                      'scale', 1000, ...

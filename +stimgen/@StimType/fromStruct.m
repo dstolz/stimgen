@@ -8,7 +8,9 @@ function obj = fromStruct(S, calibration)
 % The base-class set is stimgen.StimType.CoreProperties, the same list
 % toStruct writes; the subclass's own set is S.UserProperties, assigned in
 % order (SoundFile relies on that order). Fields missing from an older
-% struct keep the class default.
+% struct keep the class default; a saved name the class no longer has as a
+% property (one removed since the struct was written) is skipped with a
+% debug-level log line.
 %
 % Calibration is held OFF while the object is rebuilt and switched to the
 % saved setting last. Every observable property assigned below regenerates
@@ -65,7 +67,15 @@ if isfield(S, 'UserProperties')
     for k = 1:numel(S.UserProperties)
         pname = char(S.UserProperties(k));
         if strcmp(pname, 'ApplyCalibration'), continue; end   % restored last
-        if isprop(obj, pname) && isfield(S, pname)
+        if ~isprop(obj, pname)
+            % A property the class no longer has, e.g. the removed
+            % ApplyViemeisterCorrection in an older bank. Skipped, not an
+            % error, so old banks still load.
+            stimgen.util.vprintf(2, 'fromStruct: %s has no property "%s"; saved value ignored.', ...
+                cls, pname);
+            continue
+        end
+        if isfield(S, pname)
             obj.(pname) = S.(pname);
         end
     end

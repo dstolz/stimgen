@@ -15,14 +15,11 @@ classdef AMnoise < stimgen.Noise
 %         AMExponential (1,1) double
         
         EnvelopeOnly (1,1) logical = false;
-        
-        ApplyViemeisterCorrection (1,1) logical = true;
     end
     
     
 
     properties (Constant)
-        %IsMultiObj      = false;
         %CalibrationType = "noise"; % defined in stimgen.Noise superclass
         %Normalization = "rms"; % defined in stimgen.Noise superclass
     end
@@ -33,7 +30,7 @@ classdef AMnoise < stimgen.Noise
             % Defaults first, caller's pairs last, so a caller's value wins.
             obj = obj@stimgen.Noise( ...
                 'DisplayName', 'AM Noise', ...
-                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","OnsetPhase","EnvelopeOnly","ApplyViemeisterCorrection"], ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","FilterOrder","AMDepth","AMRate","OnsetPhase","EnvelopeOnly"], ...
                 'Duration', 1, ...   % override a default StimType value
                 varargin{:});
         end
@@ -69,10 +66,10 @@ classdef AMnoise < stimgen.Noise
             am = cos(2.*pi.*amRate.*obj.Time+deg2rad(onsetPhase));
             am = (am + 1)./2;
             am = am .* amDepth + 1 - amDepth;
-            
-            if obj.ApplyViemeisterCorrection
-                am = am .* sqrt(1/(amDepth^2/2+1));
-            end
+
+            % No power compensation for AMDepth here: any scalar applied to
+            % the envelope is divided back out by the rms normalization
+            % below, so the output rms is already independent of depth.
             
             if obj.EnvelopeOnly
                 obj.Signal = am;
@@ -92,16 +89,14 @@ classdef AMnoise < stimgen.Noise
         function m = propMeta(obj)
             % propMeta() - Display metadata for AMnoise GUI properties.
             m = struct();
-            m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',     'limits', [0 1], ...
+            m.AMDepth    = struct('label', 'AM Depth (0-1)',        'format', '%.2f',     'limits', [0 1], ...
                 'tooltip', stimgen.util.tooltip(obj, 'AMDepth'));
-            m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz',  'limits', [0.1 500], ...
+            m.AMRate     = struct('label', 'AM Rate (Hz)',          'format', '%.1f Hz',  'limits', [0.1 500], ...
                 'tooltip', stimgen.util.tooltip(obj, 'AMRate'));
-            m.OnsetPhase = struct('label', 'Onset Phase',           'format', '%.1f deg', ...
+            m.OnsetPhase = struct('label', 'Onset Phase (deg)',     'format', '%.1f deg', ...
                 'tooltip', stimgen.util.tooltip(obj, 'OnsetPhase'));
             m.EnvelopeOnly               = struct('label', 'Envelope Only', ...
                 'tooltip', stimgen.util.tooltip(obj, 'EnvelopeOnly'));
-            m.ApplyViemeisterCorrection  = struct('label', 'Viemeister Correction', ...
-                'tooltip', stimgen.util.tooltip(obj, 'ApplyViemeisterCorrection'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.Noise(obj));
         end
     end

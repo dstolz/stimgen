@@ -30,7 +30,6 @@ classdef Tone < stimgen.StimType
     
     
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "tone";
         Normalization   = "absmax";
     end
@@ -94,9 +93,9 @@ classdef Tone < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for Tone GUI properties.
             m = struct();
-            m.Frequency    = struct('label', 'Frequency',     'format', '%.1f Hz',  'limits', [100 40000], ...
+            m.Frequency    = struct('label', 'Frequency (Hz)', 'format', '%.1f Hz',  'limits', [100 40000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'Frequency'));
-            m.OnsetPhase   = struct('label', 'Onset Phase',   'format', '%.1f deg', ...
+            m.OnsetPhase   = struct('label', 'Onset Phase (deg)', 'format', '%.1f deg', ...
                 'tooltip', stimgen.util.tooltip(obj, 'OnsetPhase'));
             m.Polarity     = struct('label', 'Polarity', 'widget', 'dropdown', ...
                 'items',     {{'+ Positive', '+/- Alternate', '- Negative'}}, ...

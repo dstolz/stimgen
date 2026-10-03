@@ -6,13 +6,13 @@ function c = list
 % it is a concrete subclass of StimType. Filtering on the class rather than on a
 % list of names is what keeps the package's other classes (StimPlay, HardwareHost,
 % LogSink, ...) out of the stimulus dropdowns without anyone having to remember
-% to add them to an exclusion list.
+% to add them to an exclusion list. There is no name-based exclusion at all:
+% StimType itself and StimCalibration live in class folders the glob does not
+% reach, and every other loose file is judged by its class alone.
 r = which('stimgen.StimType');
 pth = fileparts(fileparts(r)); % up from @StimType to +stimgen
 d = dir(fullfile(pth,'*.m'));
 f = {d.name};
-f(ismember(f,{'StimType.m','StimPlay.m','donotsavedatafcn.m','multiTone.m','HardwareHost.m'})) = [];
-f(contains(f,'Calib')) = [];
 c = cellfun(@(a) a(1:end-2),f,'uni',0);
 
 base = ?stimgen.StimType;

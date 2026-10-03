@@ -27,7 +27,6 @@ classdef SweptSine < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false
         CalibrationType = "swept_sine"
         Normalization   = "absmax"
     end
@@ -109,9 +108,9 @@ classdef SweptSine < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for SweptSine GUI properties.
             m = struct();
-            m.StartFrequency = struct('label', 'Start Freq',  'format', '%.1f Hz', 'limits', [10 40000], ...
+            m.StartFrequency = struct('label', 'Start Freq (Hz)', 'format', '%.1f Hz', 'limits', [10 40000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'StartFrequency'));
-            m.StopFrequency  = struct('label', 'Stop Freq',   'format', '%.1f Hz', 'limits', [10 40000], ...
+            m.StopFrequency  = struct('label', 'Stop Freq (Hz)',  'format', '%.1f Hz', 'limits', [10 40000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'StopFrequency'));
             m.ChirpType      = struct('label', 'Chirp Type', 'widget', 'dropdown', ...
                                       'items', ["log-sine", "linear"], ...

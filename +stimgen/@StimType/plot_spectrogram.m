@@ -27,7 +27,9 @@ end
 fsValue = double(obj.get_selected_property_value_("Fs"));
 [~, ~, ~, ps] = spectrogram(obj.Signal, window, overlap, nfft, fsValue, 'power');
 freqVec = linspace(0, fsValue/2, size(ps,1));
-durationValue = double(obj.get_selected_property_value_("Duration"));
+% Read without reselecting: outside a variant cycle selected_value would
+% advance the order whenever Duration is vectorized.
+durationValue = obj.active_duration_();
 timeVec = linspace(0, durationValue * 1e3, size(ps,2)); % ms
 
 h = imagesc(ax, timeVec, freqVec, 10*log10(ps));

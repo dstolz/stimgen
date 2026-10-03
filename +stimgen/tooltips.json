@@ -40,30 +40,28 @@
 
   "Noise": {
     "HighPass": "Lower edge of the noise band in Hz. Must be below Low Pass Fc. Vectorizable.",
-    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable."
+    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable.",
+    "FilterOrder": "Order of the FIR band-pass filter (order + 1 taps). Higher = steeper band edges, longer filter. Scalar only."
   },
 
   "AMnoise": {
     "AMDepth": "Depth 0–1. 0 = unmodulated, 1 = envelope to zero. Vectorizable.",
     "AMRate": "Modulation frequency in Hz. Vectorizable.",
     "OnsetPhase": "Modulator phase in degrees. Default 180 starts at envelope minimum.",
-    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape.",
-    "ApplyViemeisterCorrection": "Normalize RMS power as Depth changes, keeping depth and level independent."
+    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape."
   },
 
   "AttackModNoise": {
     "Z": "Asymmetry: positive = damped (fast onset, slow decay), negative = ramped (slow onset, fast offset), 0 = symmetric. Magnitude controls sharpness.",
-    "AMDepth": "Depth 0–1. Shape from Z; depth only feeds Viemeister correction.",
     "AMRate": "Envelope repetition rate in Hz. Vectorizable.",
-    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape.",
-    "ApplyViemeisterCorrection": "Normalize RMS power as Depth changes, keeping depth and level independent."
+    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape."
   },
 
   "FMtone": {
     "CarrierFrequency": "Center frequency in Hz. Vectorizable.",
     "ModulationFrequency": "Sweep rate in Hz. 0 = unmodulated. Vectorizable.",
     "ModulationDepth": "Peak deviation ±Hz from carrier. 0 = unmodulated. Vectorizable.",
-    "OnsetPhase": "Starting phase in radians (not degrees)."
+    "OnsetPhase": "Starting phase of the carrier in degrees. 0 = zero crossing, 90 = positive peak. Vectorizable."
   },
 
   "SweptSine": {
@@ -105,7 +103,8 @@
     "Channel": "Channel to extract. 0 = mix all to mono.",
     "CalibrationMode": "Filtered = spectrum equalized (best broadband); Direct = no EQ, level at Anchor Freq (preserves shape); None = normalize only.",
     "AnchorFrequency": "Calibration reference for level in Direct mode. 0 = spectral centroid.",
-    "LevelReference": "Statistic for Sound Level: rms (continuous), peak (transients)."
+    "LevelReference": "Statistic for Sound Level: rms (continuous), peak (transients).",
+    "SoundLevel": "Target level: dB SPL with rms Level Reference, dB peSPL (peak read as the rms of a sine with the same peak) with peak. Vectorizable for one variant per level. Requires loaded calibration."
   },
 
   "StimPlayer": {

@@ -89,7 +89,6 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     end
 
     properties (Abstract, Constant)
-        IsMultiObj      (1,1) logical
         CalibrationType (1,1) string % "noise","tone","click"
         Normalization   (1,1) string {mustBeMember(Normalization,["absmax","max","min","rms"])}
     end
@@ -149,13 +148,6 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
             obj.create_listeners;
         end
 
-        function set.Calibration(obj,calObj)
-            obj.Calibration = calObj;
-            if obj.IsMultiObj
-                arrayfun(@(x) set(x,'Calibration',calObj), obj.MultiObjects);
-            end
-        end
-
         function s = get.StrProps(obj)
             pr = obj.UserProperties;
             s = string();
@@ -165,15 +157,18 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         end
 
         function t = get.Time(obj)
-            durationValue = double(obj.get_selected_property_value_("Duration"));
-            fsValue = double(obj.get_selected_property_value_("Fs"));
+            % Sample times at exactly 1/Fs spacing, starting at 0. Duration
+            % is read through active_duration_, which never advances the
+            % variant selection (see that method).
+            durationValue = obj.active_duration_();
+            fsValue = double(obj.Fs);   % non-vectorizable: always scalar
             nSamples = max(1, round(fsValue * durationValue));
-            t = linspace(0, durationValue - 1./fsValue, nSamples);
+            t = (0:nSamples-1) ./ fsValue;
         end
 
         function n = get.N(obj)
-            durationValue = double(obj.get_selected_property_value_("Duration"));
-            fsValue = double(obj.get_selected_property_value_("Fs"));
+            durationValue = obj.active_duration_();
+            fsValue = double(obj.Fs);   % non-vectorizable: always scalar
             n = round(fsValue * durationValue);
         end
 
@@ -272,6 +267,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         context = build_expression_context_(obj, targetPropName)                  % Numeric property context for eval
         expressionText = rewrite_qualified_property_refs_(obj, expressionText)    % Replace Class.Prop refs with bare Prop
         tf = is_variant_policy_property_(obj, propName)                           % True for variant-policy property names
+        d = active_duration_(obj)                                                  % Duration of the active combination, without reselecting
         on_gui_changed(obj, propName, value)                                       % Hook: called after GUI widget change
         m = propMeta(obj)                                                          % Return GUI display metadata struct
     end % methods (protected external)

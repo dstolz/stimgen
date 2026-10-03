@@ -7,22 +7,15 @@ classdef AttackModNoise < stimgen.Noise
     % damped modulation envelope controlled by Z and AMRate.
     
     properties (SetObservable,AbortSet)
-        AMDepth (1,:) double {mustBeGreaterThanOrEqual(AMDepth,0),mustBeLessThanOrEqual(AMDepth,1)} = 1; % [0 1]
         AMRate  (1,:) double {mustBePositive,mustBeFinite} = 5; % Hz
-        OnsetPhase (1,1) double = 0; % degrees
         
         Z     (1,:) double {mustBeGreaterThanOrEqual(Z,-1),mustBeLessThanOrEqual(Z,1)} = .4; % note that this gets converted to ramped/damped z = [1 2]
         
-        AddOnOffperiods (1,1) logical = false;
-        
         EnvelopeOnly (1,1) logical = false;
-        
-        ApplyViemeisterCorrection (1,1) logical = true;
     end
     
     
     properties (Constant)
-        %IsMultiObj      = false;
         %CalibrationType = "noise"; % defined in stimgen.Noise superclass
         %Normalization = "rms"; % defined in stimgen.Noise superclass
     end
@@ -33,7 +26,7 @@ classdef AttackModNoise < stimgen.Noise
             % Defaults first, caller's pairs last, so a caller's value wins.
             obj = obj@stimgen.Noise( ...
                 'DisplayName', 'Attack Modulated Noise', ...
-                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","AMDepth","AMRate","Z","EnvelopeOnly","ApplyViemeisterCorrection"], ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","FilterOrder","AMRate","Z","EnvelopeOnly"], ...
                 'Duration', 1, ...   % override a default StimType value
                 varargin{:});
         end
@@ -61,7 +54,6 @@ classdef AttackModNoise < stimgen.Noise
                 
             end
 
-            amDepth = double(obj.selected_value("AMDepth"));
             amRate = double(obj.selected_value("AMRate"));
             z = double(obj.selected_value("Z"));
 
@@ -75,21 +67,14 @@ classdef AttackModNoise < stimgen.Noise
 
             am = am ./ max(am);
             
-            nperiods = ceil(obj.Duration/period);
+            % The active combination's Duration: obj.Duration may be a
+            % vector of variants.
+            nperiods = ceil(double(obj.selected_value("Duration"))/period);
             
             am = repmat(am,1,nperiods);
             
             am(obj.N+1:end) = [];
             am(end+1:obj.N) = 0;
-            
-            if obj.AddOnOffperiods
-                [~,i] = max(am);
-                am = [am(i+1:end) am am(1:i)];
-            end
-
-            if obj.ApplyViemeisterCorrection
-                am = am .* sqrt(1/(amDepth^2/2+1));
-            end
             
             if obj.EnvelopeOnly
                 obj.Signal = am;
@@ -111,14 +96,10 @@ classdef AttackModNoise < stimgen.Noise
             m = struct();
             m.Z          = struct('label', 'Z (Ramp/Damp)',         'format', '%.3f',    'limits', [-1 1], ...
                 'tooltip', stimgen.util.tooltip(obj, 'Z'));
-            m.AMDepth    = struct('label', 'AM Depth',              'format', '%.2f',    'limits', [0 1], ...
-                'tooltip', stimgen.util.tooltip(obj, 'AMDepth'));
-            m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz', 'limits', [0.1 500], ...
+            m.AMRate     = struct('label', 'AM Rate (Hz)',          'format', '%.1f Hz', 'limits', [0.1 500], ...
                 'tooltip', stimgen.util.tooltip(obj, 'AMRate'));
             m.EnvelopeOnly              = struct('label', 'Envelope Only', ...
                 'tooltip', stimgen.util.tooltip(obj, 'EnvelopeOnly'));
-            m.ApplyViemeisterCorrection = struct('label', 'Viemeister Correction', ...
-                'tooltip', stimgen.util.tooltip(obj, 'ApplyViemeisterCorrection'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.Noise(obj));
         end
     end

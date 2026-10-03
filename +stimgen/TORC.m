@@ -126,7 +126,6 @@ classdef TORC < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "filter";
         Normalization   = "rms";
     end
@@ -409,7 +408,7 @@ classdef TORC < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for TORC GUI properties.
             m = struct();
-            m.LowFrequency        = struct('label','Low Frequency (f0)','format','%.1f Hz','limits',[1 40000], ...
+            m.LowFrequency        = struct('label','Low Frequency f0 (Hz)','format','%.1f Hz','limits',[1 40000], ...
                                            'tooltip',stimgen.util.tooltip(obj,'LowFrequency'),'order',10);
             m.Bandwidth           = struct('label','Bandwidth (oct)',   'format','%.2f oct','limits',[0.1 12], ...
                                            'tooltip',stimgen.util.tooltip(obj,'Bandwidth'),'order',20);

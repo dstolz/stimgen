@@ -56,7 +56,6 @@ classdef SoundFile < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false;
         % "filter" routes compute_adjusted_voltage to the tone LUT, which is
         % what both Filtered and Direct modes need. apply_calibration is
         % overridden below, so this constant only names the LUT family.
@@ -747,7 +746,24 @@ classdef SoundFile < stimgen.StimType
             % offered as an editable field.
             base = rmfield(base, 'Duration');
 
+            % A peak-referenced level is peak-equivalent SPL, not rms SPL, so
+            % the unit follows LevelReference. It goes in the label because
+            % SoundLevel is vectorizable and renders as an expression field,
+            % which ignores format; on_gui_changed retitles it on a switch.
+            unit = stimgen.util.level_unit(obj.LevelReference);
+            base.SoundLevel.label  = sprintf('Sound Level (%s)', unit);
+            base.SoundLevel.format = ['%.1f ' unit];
+
             m = stimgen.StimType.merge_prop_meta(m, base);
+        end
+
+
+        function on_gui_changed(obj, propName, ~)
+            % Retitle the Sound Level field when LevelReference changes its
+            % unit (dB SPL for rms, dB peSPL for peak).
+            if strcmp(propName, 'LevelReference')
+                obj.refresh_gui_widget('SoundLevel');
+            end
         end
 
     end % methods (Access = protected)
