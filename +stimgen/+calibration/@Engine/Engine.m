@@ -252,6 +252,16 @@ classdef Engine < handle
             'peak_v', nan, 'noise_v', nan, 'corr', nan, ...
             'at_bound', false, 'valid', false, 'measuredOn', NaT, ...
             'temperature_c', nan, 'speed_of_sound_ms', nan, 'path_m', nan)
+
+        % Where the run in progress has got to, published per measurement
+        % whether or not ShowLivePlots is on, so a host can keep a progress
+        % line ("Tone 12/40") without paying for -- or asking the operator to
+        % turn on -- the live plots. stage is the LiveUpdate stage name;
+        % index/total the point, repeat/repeatTotal the pass, fraction the
+        % share of the whole run done (NaN when unknown). Observable for that
+        % host; nothing here reads it back. Not persisted.
+        RunProgress (1,1) struct = struct('stage', "", 'phase', "", ...
+            'index', 0, 'total', 0, 'repeat', 0, 'repeatTotal', 0, 'fraction', nan)
     end
 
     properties (Access = private)
@@ -556,6 +566,7 @@ classdef Engine < handle
             % once per run and the sweep carries on. LiveMonitor.update guards
             % its own rendering the same way, so a plotting bug is one log
             % line rather than a per-measurement warning storm.
+            obj.note_progress_(stage, phase, varargin{:});
             if ~obj.ShowLivePlots, return; end
             try
                 notify(obj, 'LiveUpdate', obj.live_snapshot_(stage, phase, varargin{:}));
@@ -566,6 +577,37 @@ classdef Engine < handle
                         'A LiveUpdate listener failed; live plotting may be incomplete for this run.');
                     stimgen.util.vprintf(0, 1, ME);
                 end
+            end
+        end
+
+        function note_progress_(obj, stage, phase, varargin)
+            % note_progress_(obj, stage, phase, Name, Value, ...)
+            % Publish RunProgress from the progress fields of a LiveUpdate
+            % argument list (Index, Total, Repeat, RepeatTotal, Progress);
+            % every other name is ignored. Called by emit_live_ ahead of its
+            % ShowLivePlots gate, and directly by the sweeps' per-measurement
+            % updates, which sit inside that gate. Never throws: progress is
+            % worth less than the measurement it reports on.
+            try
+                p = struct('stage', string(stage), 'phase', string(phase), ...
+                    'index', 0, 'total', 0, 'repeat', 0, 'repeatTotal', 0, ...
+                    'fraction', nan);
+                map = {'Index', 'index'; 'Total', 'total'; 'Repeat', 'repeat'; ...
+                       'RepeatTotal', 'repeatTotal'; 'Progress', 'fraction'};
+                for k = 1:2:numel(varargin) - 1
+                    name = varargin{k};
+                    if ~(ischar(name) || (isstring(name) && isscalar(name)))
+                        continue
+                    end
+                    hit = strcmp(map(:, 1), char(name));
+                    v = varargin{k + 1};
+                    if any(hit) && isnumeric(v) && isscalar(v)
+                        p.(map{hit, 2}) = double(v);
+                    end
+                end
+                obj.RunProgress = p;
+            catch ME
+                stimgen.util.vprintf(3, 'RunProgress update skipped: %s', ME.message);
             end
         end
 

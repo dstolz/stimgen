@@ -709,6 +709,16 @@ event for every measurement, carrying a
 waveform just acquired, the span of it that was measured, the partial lookup table, and
 the scalar metrics for that point.
 
+Progress is published separately and always, live plots or not: the observable
+`eng.RunProgress` struct (`stage`, `phase`, `index`/`total` point, `repeat`/`repeatTotal`
+pass, `fraction` of the run done) is updated per measurement by every sweep and test, so a
+host can show "Tone 12/40" without paying for the plots. `CalibrationGui` appends it to its
+status line:
+
+```matlab
+addlistener(eng, 'RunProgress', 'PostSet', @(~,~) disp(eng.RunProgress));
+```
+
 `stimgen.calibration.LiveMonitor` renders that stream into the waveform and spectrum
 panels and the transfer curve as it fills in:
 
@@ -884,7 +894,7 @@ prefer a `LiveMonitor`.
 | `DacAttenuation` | 0 dB | dB of attenuation on the output stage, on exactly the same terms as `AdcGain`: recorded, never applied. Saved in the `.esgc` file |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
-| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere the package computes; `CalibrationGui` is the one place it is entered and shown in Fahrenheit |
+| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere it is entered or shown, `CalibrationGui` included |
 | `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `Notes` | `""` | Free text about this calibration in the operator's own words — the speaker, the microphone, the placement, whatever the tables cannot state for themselves. Never parsed and never read into a calculation. Saved in the `.esgc` file, restored with it, kept by `reset_calibration`, and printed at the top of `describe`. Entered in the GUI's Notes box |

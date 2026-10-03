@@ -253,6 +253,9 @@ try
                     h.responseClippingLikely || h.excitationClippingLikely;
 
                 captureNum = captureNum + 1;
+                obj.note_progress_("click_test", "measure", 'Index', i, 'Total', nD, ...
+                    'Repeat', rep, 'RepeatTotal', nReps, ...
+                    'Progress', captureNum / totalCaptures);
                 if obj.ShowLivePlots
                     % Running average rather than the finished point: on a
                     % many-pass run that is the difference between a curve

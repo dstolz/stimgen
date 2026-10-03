@@ -109,6 +109,11 @@ try
             % Publish the running average rather than waiting for the point to
             % finish: on a many-pass run that is the difference between a curve
             % that grows steadily and one that stalls for seconds at a time.
+            % Progress is published regardless of live plots; points are
+            % measured point-major, every pass of one before the next.
+            obj.note_progress_("click", "measure", 'Index', i, 'Total', n, ...
+                'Repeat', rep, 'RepeatTotal', repeatCount, ...
+                'Progress', ((i - 1) * repeatCount + rep) / (n * repeatCount));
             if obj.ShowLivePlots
                 mAvg = mean(clickMeasAll(1:rep, i), 'omitnan');
                 [splRep, voltRep] = obj.compute_spl_voltage_(mAvg, "peak");

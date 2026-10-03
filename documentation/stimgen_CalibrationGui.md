@@ -402,7 +402,7 @@ terms, and holds what the [delay probe](#measuring-it-on-its-own) is run with:
 |---|---|
 | Largest Delay to Search (ms) | the GUI — no engine property holds it |
 | Clicks in Probe Train | the GUI |
-| Ambient Temperature (°F) | `Engine.AmbientTemperature`, in Celsius — see [Ambient temperature](#ambient-temperature) |
+| Ambient Temperature (°C) | `Engine.AmbientTemperature` — see [Ambient temperature](#ambient-temperature) |
 
 These were an `inputdlg` the Measure Conduction Delay button raised on every
 press. They are asked once here instead, so the button measures when it is
@@ -604,7 +604,7 @@ sessions:
 |---|---|
 | Largest Delay to Search (ms) | Upper bound of the correlation search, 50 ms by default. A rig whose delay exceeds it cannot be measured at all, which is the one thing a failed probe asks to have raised |
 | Clicks in Probe Train | 1 by default. More clicks buy signal in a noisy room, but a delay near the click spacing aliases — raise it only when one click's response is too weak to find |
-| [Ambient Temperature (°F)](#ambient-temperature) | The air temperature the delay is turned into a distance through |
+| [Ambient Temperature (°C)](#ambient-temperature) | The air temperature the delay is turned into a distance through |
 
 The probe is the one measurement worth repeating back to back — move the
 microphone, measure again — which is why nothing stands between the button and
@@ -666,22 +666,22 @@ the rig, and the readout it writes is replaced by the next run's.
 ## Ambient Temperature
 
 The Ambient Temperature field (Options > Conduction Delay Settings...) is
-entered in **degrees Fahrenheit** and sets `Engine.AmbientTemperature`, and
+entered in **degrees Celsius** and sets `Engine.AmbientTemperature`, and
 through it `Engine.SpeedOfSound`:
 
 $$c = 331.3\sqrt{1 + \frac{T}{273.15}}\ \text{m/s}$$
 
-which is 343.2 m/s at the 68 °F (20 °C) default — the value that was hardcoded
+which is 343.2 m/s at the 20 °C default — the value that was hardcoded
 before this was settable, so a rig that never touches it keeps the numbers it
 always reported.
 
-The GUI is the only place Fahrenheit appears: it converts on the way in and out,
-and `Engine.AmbientTemperature`, the `.esgc` file, and the `temperature_c` field
-of a conduction-delay reading are all Celsius. So is the
-`StimCalibrationGui.AmbientTemperature` preference, which is the engine value
-verbatim — a preference written before this change is read back unchanged. Every
-temperature the window *displays* — the field, the delay probe's dialog and
-status line, and the probe panel's title — is Fahrenheit.
+One unit everywhere: the field, the delay probe's dialog and status line, the
+probe panel's title, `Engine.describe`, the log, `Engine.AmbientTemperature`, the
+`.esgc` file and the `temperature_c` field of a conduction-delay reading are all
+Celsius. (The window used to enter and display Fahrenheit while the engine and
+its reports used Celsius; the stored value was always Celsius, so nothing saved
+changes meaning.) The `StimCalibrationGui.AmbientTemperature` preference is the
+engine value verbatim, in Celsius, as it always was.
 
 Every distance this package derives from a time of flight is computed at that
 speed, and nothing else is:
@@ -692,8 +692,8 @@ speed, and nothing else is:
   response ([swept sine](stimgen_SweptSineCalibration.md))
 
 No measured level depends on it, and neither does any delay or arrival time —
-only the distance those times are read as. Sound gains about 0.34 m/s per
-degree F, so a setting 10 °F away from the room puts about 1% of error on a
+only the distance those times are read as. Sound gains about 0.6 m/s per
+degree C, so a setting 6 °C away from the room puts about 1% of error on a
 distance; that is worth setting for a rig where the mic distance is being
 checked against a tape measure, and not worth agonizing over otherwise.
 Humidity is not modelled: at room temperature it contributes a few tenths of a
@@ -702,7 +702,7 @@ percent, less than the thermometer's own error.
 The temperature is saved in the `.esgc` file, because the reflection distances
 in a saved analysis were computed with it — loading the file without it would
 restate them at whatever the loading rig happens to be set to. A file written
-before this setting existed loads at 20 °C (68 °F), which is what its distances
+before this setting existed loads at 20 °C, which is what its distances
 were computed at.
 
 ## Recorded hardware gain
@@ -863,10 +863,10 @@ Engine setting.
 
 ## Calibration Parameter Dialogs
 
-When Calibrate Tones, Calibrate Clicks, or Calibrate Swept Sine is invoked, the GUI prompts for measurement parameters via an input dialog. The previous values are remembered as MATLAB preferences between sessions.
+Every run that takes parameters — Measure Background, Calibrate Tones, Calibrate Clicks, Calibrate Swept Sine, Test Tones, Test Clicks and Design Filter — asks for them in a small modal window **before** the run starts. The fields are typed: numbers are numeric edit fields with limits (an out-of-range entry is refused as it is typed), fixed choices are dropdowns, and only a list of numbers is a text field, accepting numbers or a MATLAB expression. OK checks every field, and anything the run would refuse is reported in red in the window, which stays open to be corrected; Cancel or Escape runs nothing. Only then does the window enter the busy state, so a typo is never reported as a red Calibration Error after the button has been pressed. (These replaced six free-text `inputdlg` prompts that were raised inside the busy state.) Each field's tooltip says what it takes. The values are remembered as MATLAB preferences between sessions; a stored value a field would not accept falls back to the default.
 
 For tones and clicks, the dialog collects:
-- Frequency vector in Hz / click-duration vector in **milliseconds** (as a comma-separated or `linspace`/`logspace` expression)
+- Frequency vector in Hz / click-duration vector in **milliseconds** (as a comma-separated or `linspace`/`logspace` expression). Duplicates are dropped by the engine, with a warning, before anything is played
 - Repeat count (default 1). For clicks this is averages per point; for tones it is passes over the pregenerated burst train, which amounts to the same thing per frequency
 - With **Iterative Level Refinement** checked, two more fields: the refinement's maximum test passes (default 3) and its target accuracy in dB (default 1). See [Iterative Level Refinement](#iterative-level-refinement)
 
@@ -881,6 +881,10 @@ The repeat count is passed directly to `Engine.calibrate_tones`, `Engine.calibra
 
 Leaving the click-duration vector blank uses the `Engine` default, an octave series from 0.01 ms to 5.12 ms. It is specified in duration rather than sample counts, so the same sweep is requested regardless of the rig's sample rate. Durations that do not reach one sample at the current `Fs` cannot be rendered and are dropped before the sweep starts, with the skipped values logged; a vector in which none are resolvable raises `stimgen:calibration:Engine:unresolvableClickDurations`.
 
+## Progress Line
+
+While a run is in progress the status line names it and, after it, how far it has got — `Running tone calibration...  Tone 12/40, pass 1/3 (28%)` — updated per measurement **whether or not Show Engine Live Plots is on**, so a multi-minute sweep with live plots off is not a static line. It reads `Engine.RunProgress`, an observable property every sweep and test updates per measurement independently of `ShowLivePlots` (which still gates the costlier `LiveUpdate` payloads). A refinement's passes show as `Tone test` progress, since that is what each pass runs.
+
 ## Measure Background
 
 Measure Background records the rig with nothing presented and characterizes what
@@ -890,7 +894,7 @@ measuring the floor every later measurement sits on top of. Run it after Measure
 Reference, with the calibrator off the microphone: without a reference the levels
 are volts wearing a dB SPL label.
 
-A dialog collects the record duration (default 2 s), how many records to take
+A parameter window collects the record duration (default 2 s), how many records to take
 (default 3), and how far a spectral peak must stand above the local floor to be
 called tonal (default 6 dB). All three are remembered between sessions. The run
 is cancellable with Stop.
@@ -1009,7 +1013,7 @@ draws measured level against click duration in µs, one requested level at a tim
 
 ## Filter Design Dialog
 
-Design Filter prompts for the equalizer design options before running, and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
+Design Filter asks for the equalizer design options before running, in the same kind of typed window (the source, design method, interpolation and frequency scale are dropdowns), and remembers them as preferences the same way. Each field maps onto one `Engine.design_filter` argument — see `stimgen_calibration.md` for what they do:
 
 | Field | Argument | Default |
 |---|---|---|
@@ -1021,9 +1025,9 @@ Design Filter prompts for the equalizer design options before running, and remem
 | Fractional-octave smoothing | `SmoothingOctaves` | `0` |
 | Maximum correction depth | `MaxCorrectionDb` | `Inf` |
 | Frequency range | `FrequencyRange` (empty = LUT span) | empty |
-| Design sample rate | `SampleRate` (empty or 0 = hardware rate) | empty |
+| Design sample rate | `SampleRate` (0 = hardware rate) | 0 |
 
-**Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The prompt names the attached hardware's rate so leaving it empty is the obvious choice; with no adapter attached the field is required, which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
+**Design sample rate** is how a calibration measured on one rig produces a filter for another. The LUT is in Hz and volts and holds at any rate, but the taps fitted to it only realize the designed response at the rate they were cut for — run a 200 kHz design at 100 kHz and every correction lands an octave low. The field's label names the attached hardware's rate so leaving it at 0 is the obvious choice; with no adapter attached a rate is required (OK refuses 0), which is what makes offline redesign of a loaded `.esgc` possible. See [Changing The Design Sample Rate](stimgen_calibration.md#changing-the-design-sample-rate).
 
 Designing for a rate other than the attached adapter's is reported in red on the status line, and the **Sample Rate** display then reads e.g. `100000 Hz (filter designed at 200000 Hz)` in red for as long as the mismatch stands — including after loading a `.esgc` whose filter was cut elsewhere. Test Filter refuses such a filter rather than reporting the rate error as a design failure.
 

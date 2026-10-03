@@ -188,6 +188,15 @@ try
                 % the waveform panel could not show which burst a level came
                 % from -- and mis-segmentation is the failure this sweep is
                 % most prone to.
+                %
+                % Trains are measured train-major, not point-major, so the
+                % progress is stated outright rather than inferred from the
+                % point index. RunProgress is published whether or not live
+                % plots are on: a host shows "point i of n" either way.
+                done = (b - 1) * repeatCount + (rep - 1) + k / numel(idx);
+                obj.note_progress_("tone", "measure", 'Index', i, 'Total', n, ...
+                    'Repeat', rep, 'RepeatTotal', repeatCount, ...
+                    'Progress', done / (numel(trainStarts) * repeatCount));
                 if obj.ShowLivePlots
                     mAvg = mean(toneMeasAll(1:rep, i), 'omitnan');
                     [splRep, voltRep] = obj.compute_spl_voltage_(mAvg, "specfreq");
@@ -196,10 +205,6 @@ try
                     tone_data.voltage(i)     = voltRep;
                     tone_data.sd_db          = obj.level_sd_db_(toneMeasAll);
 
-                    % Trains are measured train-major, not point-major, so the
-                    % payload has to state its own progress rather than let it
-                    % be inferred from the point index.
-                    done = (b - 1) * repeatCount + (rep - 1) + k / numel(idx);
                     obj.emit_live_("tone", "measure", 'Table', tone_data, ...
                         'Span', steadySpan, ...
                         'Markers', freqs(i) .* [1 2 3], ...

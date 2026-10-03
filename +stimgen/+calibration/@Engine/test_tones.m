@@ -340,6 +340,9 @@ try
                         h.responseClippingLikely || h.excitationClippingLikely;
 
                     captureNum = captureNum + 1;
+                    obj.note_progress_("tone_test", "measure", 'Index', i, 'Total', nF, ...
+                        'Repeat', rep, 'RepeatTotal', nReps, ...
+                        'Progress', captureNum / totalCaptures);
                     if obj.ShowLivePlots
                         tbl.measurement(i) = m;
                         tbl.spl_db(i)      = mean(measSplAll(1:rep, i, li), 'omitnan');

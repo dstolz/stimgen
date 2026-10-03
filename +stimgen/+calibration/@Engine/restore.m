@@ -1,4 +1,4 @@
-function restore(obj, s)
+function restore(obj, s, options)
 % restore(obj, s)
 % Restore engine state from a serialized struct.
 %

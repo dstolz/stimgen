@@ -37,10 +37,10 @@ classdef CalibrationGui < handle
     % Conduction Delay Settings holds what the delay probe searches with and
     % the room's Ambient Temperature its result is read as a distance
     % through -- the probe runs straight from its button, asking nothing.
-    % Temperature is entered and displayed in degrees Fahrenheit throughout
-    % this window; the Engine holds it -- and an .esgc file records it -- in
-    % Celsius. Excitation Settings holds the drive voltage every sweep plays
-    % at and the per-edge rise/fall time every tone burst is gated with --
+    % Temperature is entered and displayed in degrees Celsius, the unit the
+    % Engine holds it in and an .esgc file records, as is every other
+    % display of it. Excitation Settings holds the drive voltage every sweep
+    % plays at and the per-edge rise/fall time every tone burst is gated with --
     % both apply to whichever sweep runs next, like the two windows above,
     % rather than to a step of their own.
     %
@@ -266,7 +266,7 @@ classdef CalibrationGui < handle
         DelayDialog_
         DelayMaxField
         DelayClicksField
-        AmbientTempField        % degrees F on screen, Celsius on the Engine
+        AmbientTempField        % degrees Celsius, the unit the Engine holds
         DelayMaxMs_ (1,1) double = 50
         DelayNumClicks_ (1,1) double = 1
 
@@ -279,6 +279,7 @@ classdef CalibrationGui < handle
         % (Engine.DataRevision moved, or the reference was re-measured) and
         % cleared by a save or a load; closing or loading over it asks first.
         Busy_ (1,1) logical = false
+        BusyMessage_ (1,:) char = ''   % the running action's status line, which progress is appended to
         CloseRequested_ (1,1) logical = false
         Dirty_ (1,1) logical = false
 
@@ -286,6 +287,7 @@ classdef CalibrationGui < handle
         % updates the moment a click probe lands rather than waiting for the
         % run to finish. Rebound whenever the engine is swapped (run_load_).
         DelayListener_
+        ProgressListener_   % on Engine.RunProgress; rebound with DelayListener_
 
         % Buttons
         BtnReference
@@ -386,6 +388,7 @@ classdef CalibrationGui < handle
             % Same reason: the engine must not keep calling back into a
             % label that died with the figure.
             delete(obj.DelayListener_);
+            delete(obj.ProgressListener_);
             % The settings windows are owned by this object, not by
             % the main figure, so they do not die with either on their own.
             if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
@@ -931,11 +934,11 @@ classdef CalibrationGui < handle
             % A rig fact rather than a probe parameter, and here rather than
             % with the other rig facts because this is the window it is read
             % on: a delay is only a distance once the air it crossed has a
-            % temperature. Entered in Fahrenheit and converted on the way to
-            % the Engine, which works in Celsius because the speed-of-sound
-            % formula and the .esgc file do.
-            obj.AmbientTempField = numeric_row_(g, 4, 'Ambient Temperature (°F)', ...
-                fahrenheit_(obj.AmbientTempLimitsC), '%.1f', ...
+            % temperature. In degrees Celsius, the unit the Engine, the .esgc
+            % file, describe() and the log all use -- one unit everywhere, so
+            % no reading has to be converted to be compared with another.
+            obj.AmbientTempField = numeric_row_(g, 4, 'Ambient Temperature (°C)', ...
+                obj.AmbientTempLimitsC, '%.1f', ...
                 stimgen.util.tooltip('CalibrationGui', 'AmbientTemperature'));
 
             % What the prompt used to say on its way past. It is instruction
@@ -971,7 +974,7 @@ classdef CalibrationGui < handle
             % be open.
             try
                 obj.Engine.set_configuration( ...
-                    AmbientTemperature=celsius_(obj.AmbientTempField.Value));
+                    AmbientTemperature=obj.AmbientTempField.Value);
                 obj.set_status_('Ambient temperature applied.', false);
             catch ME
                 obj.set_status_(sprintf('Parameter update failed: %s', ME.message), true);
@@ -992,7 +995,7 @@ classdef CalibrationGui < handle
             % headless script -- and a uieditfield throws on a Value outside
             % its own Limits.
             obj.AmbientTempField.Value = min(max( ...
-                fahrenheit_(obj.Engine.AmbientTemperature), ...
+                obj.Engine.AmbientTemperature, ...
                 obj.AmbientTempField.Limits(1)), obj.AmbientTempField.Limits(2));
         end
 
@@ -1748,19 +1751,18 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_measure_background_(), ...
-                'Recording background...', true);
-        end
-
-        function run_measure_background_(obj)
-            [duration, nRecords, promDb, wasCancelled] = obj.prompt_background_parameters_();
+            [p, wasCancelled] = obj.prompt_background_parameters_();
             if wasCancelled
                 obj.set_status_('Background measurement cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_measure_background_(p), ...
+                'Recording background...', true);
+        end
 
-            r = obj.Engine.measure_background(duration, nRecords, ...
-                TonalProminenceDb=promDb);
+        function run_measure_background_(obj, p)
+            r = obj.Engine.measure_background(p.duration, p.records, ...
+                TonalProminenceDb=p.prominence);
 
             % Drawn, then brought to the front: the band curve is the result
             % of the step just run, and the operator is about to read an
@@ -1781,55 +1783,38 @@ classdef CalibrationGui < handle
             uialert(obj.Figure, background_report_(r), 'Background Noise', Icon=icon);
         end
 
-        function [duration, nRecords, promDb, wasCancelled] = prompt_background_parameters_(obj)
-            % Collect the capture parameters. The first prompt carries the
-            % physical prerequisites: unlike a sweep, this measurement is only
-            % meaningful when the rig is in the state an experiment runs in,
-            % and nothing else in the dialog can say so.
-            durationPref = obj.get_pref_('backgroundDurationS', '2');
-            recordsPref  = obj.get_pref_('backgroundRecords', '3');
-            promPref     = obj.get_pref_('backgroundProminenceDb', '6');
+        function [p, wasCancelled] = prompt_background_parameters_(obj)
+            % Collect the capture parameters, before the busy state: a typed
+            % window that will not close on a value the engine would refuse,
+            % so a typo is corrected in place rather than surfacing as a red
+            % Calibration Error after the button has been pressed. The
+            % physical prerequisites head it: unlike a sweep, this
+            % measurement is only meaningful when the rig is in the state an
+            % experiment runs in, and nothing else in the window can say so.
+            tip = @(k) stimgen.util.tooltip('CalibrationGui', k);
+            specs = [ ...
+                param_spec_("duration", "Recording Duration (s)", "numeric", ...
+                    pref_number_(obj.get_pref_('backgroundDurationS', '2'), 2, [0 3600], true), ...
+                    Limits=[0 3600], LowerOpen=true, Format='%.4g', ...
+                    Tip=tip('DlgBackgroundDuration')), ...
+                param_spec_("records", "Number of Records", "integer", ...
+                    pref_number_(obj.get_pref_('backgroundRecords', '3'), 3, [1 1000], false), ...
+                    Limits=[1 1000], Format='%d', Tip=tip('DlgBackgroundRecords')), ...
+                param_spec_("prominence", "Tonal Peak Prominence (dB)", "numeric", ...
+                    pref_number_(obj.get_pref_('backgroundProminenceDb', '6'), 6, [0 200], true), ...
+                    Limits=[0 200], LowerOpen=true, Format='%.3g', ...
+                    Tip=tip('DlgBackgroundProminence'))];
+            intro = ['Nothing is played during this measurement. Take the acoustic ' ...
+                'calibrator off the microphone, put the microphone where it sits ' ...
+                'during an experiment, and leave the rig running as it normally does.'];
 
-            prompts = {
-                ['Nothing is played during this measurement. Take the acoustic ' ...
-                 'calibrator off the microphone, put the microphone where it sits ' ...
-                 'during an experiment, and leave the rig running as it normally ' ...
-                 'does. Recording duration (s, >0):'], ...
-                'Number of records (positive integer). Their spectra are averaged, and the spread of their levels reports how steady the background is:', ...
-                'Tonal peak prominence (dB above the local noise floor). Peaks below this are not reported:'
-            };
-            defaults = {durationPref, recordsPref, promPref};
-            answer = inputdlg(prompts, 'Measure Background', [3 90; 2 90; 2 90], defaults);
-
-            if isempty(answer)
-                duration = 2;
-                nRecords = 3;
-                promDb = 6;
-                wasCancelled = true;
-                return
+            [p, ok] = parameter_dialog_(obj.Figure, 'Measure Background', intro, specs);
+            wasCancelled = ~ok;
+            if ok
+                obj.set_pref_('backgroundDurationS', sprintf('%.15g', p.duration));
+                obj.set_pref_('backgroundRecords', sprintf('%d', p.records));
+                obj.set_pref_('backgroundProminenceDb', sprintf('%.15g', p.prominence));
             end
-
-            durationText = strtrim(string(answer{1}));
-            duration = str2double(durationText);
-            if isnan(duration) || ~isfinite(duration) || duration <= 0
-                error('stimgen:calibration:CalibrationGui:badDuration', ...
-                    'Recording duration must be a positive number of seconds.');
-            end
-
-            recordsText = strtrim(string(answer{2}));
-            nRecords = obj.parse_positive_integer_(recordsText, 'number of records');
-
-            promText = strtrim(string(answer{3}));
-            promDb = str2double(promText);
-            if isnan(promDb) || ~isfinite(promDb) || promDb <= 0
-                error('stimgen:calibration:CalibrationGui:badProminence', ...
-                    'Tonal peak prominence must be a positive number of decibels.');
-            end
-
-            obj.set_pref_('backgroundDurationS', char(durationText));
-            obj.set_pref_('backgroundRecords', char(recordsText));
-            obj.set_pref_('backgroundProminenceDb', char(promText));
-            wasCancelled = false;
         end
 
         function on_measure_delay_(obj)
@@ -1884,22 +1869,18 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_tones_(), 'Running tone calibration...', true);
-        end
-
-        function run_calibrate_tones_(obj)
             [freqs, repeatCount, refine, wasCancelled] = obj.prompt_vector_parameter_( ...
-                'toneFreqs', ...
-                'toneRepeats', ...
-                'Tone frequencies (Hz), e.g. 500:250:32000 or 500.*2.^(0:.5:5). Leave empty to use default log sweep.', ...
-                'Tone Calibration', ...
-                '', ...
-                1, ...
-                obj.IterativeCheck.Value);
+                'toneFreqs', 'toneRepeats', "Tone Frequencies (Hz)", ...
+                'DlgToneFrequencies', 'Tone Calibration', obj.IterativeCheck.Value);
             if wasCancelled
                 obj.set_status_('Tone calibration cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_calibrate_tones_(freqs, repeatCount, refine), ...
+                'Running tone calibration...', true);
+        end
+
+        function run_calibrate_tones_(obj, freqs, repeatCount, refine)
             obj.focus_sweep_panel_("tone");
             if isempty(freqs)
                 obj.Engine.calibrate_tones([], repeatCount);
@@ -1931,22 +1912,18 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_clicks_(), 'Running click calibration...', true);
-        end
-
-        function run_calibrate_clicks_(obj)
             [durs, repeatCount, refine, wasCancelled] = obj.prompt_vector_parameter_( ...
-                'clickDurationsMs', ...
-                'clickRepeats', ...
-                'Click durations (ms), e.g. 0.01 0.02 0.04 or 0.01.*2.^(0:9). Leave empty for the default 0.01..5.12 ms octave series. Durations below one sample at the current Fs are skipped.', ...
-                'Click Calibration', ...
-                '', ...
-                1, ...
-                obj.IterativeCheck.Value);
+                'clickDurationsMs', 'clickRepeats', "Click Durations (ms)", ...
+                'DlgClickDurations', 'Click Calibration', obj.IterativeCheck.Value);
             if wasCancelled
                 obj.set_status_('Click calibration cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_calibrate_clicks_(durs, repeatCount, refine), ...
+                'Running click calibration...', true);
+        end
+
+        function run_calibrate_clicks_(obj, durs, repeatCount, refine)
             obj.focus_sweep_panel_("click");
             if isempty(durs)
                 obj.Engine.calibrate_clicks([], repeatCount);
@@ -1979,15 +1956,16 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_calibrate_swept_sine_(), 'Running swept sine calibration...', true);
-        end
-
-        function run_calibrate_swept_sine_(obj)
             [duration, freqs, repeatCount, wasCancelled] = obj.prompt_swept_sine_parameters_();
             if wasCancelled
                 obj.set_status_('Swept sine calibration cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_calibrate_swept_sine_(duration, freqs, repeatCount), ...
+                'Running swept sine calibration...', true);
+        end
+
+        function run_calibrate_swept_sine_(obj, duration, freqs, repeatCount)
             obj.focus_sweep_panel_("swept_sine");
             if isempty(freqs)
                 obj.Engine.calibrate_swept_sine(duration, [], repeatCount);
@@ -2020,19 +1998,20 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_test_tones_(), 'Testing tone lookup table...', true);
-        end
-
-        function run_test_tones_(obj)
-            % Verify the tone LUT empirically: Engine.test_tones plays discrete
-            % tones at the drive voltages the table asks for and compares the
-            % levels that come back to the ones requested. Stored in
-            % CalibrationData.toneTest by the engine.
             [freqs, levels, repeatCount, wasCancelled] = obj.prompt_tone_test_parameters_();
             if wasCancelled
                 obj.set_status_('Tone LUT test cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_test_tones_(freqs, levels, repeatCount), ...
+                'Testing tone lookup table...', true);
+        end
+
+        function run_test_tones_(obj, freqs, levels, repeatCount)
+            % Verify the tone LUT empirically: Engine.test_tones plays discrete
+            % tones at the drive voltages the table asks for and compares the
+            % levels that come back to the ones requested. Stored in
+            % CalibrationData.toneTest by the engine.
             obj.focus_sweep_panel_("tone_test");
 
             % The plots are deliberately left showing the test's own curve
@@ -2058,8 +2037,8 @@ classdef CalibrationGui < handle
 
             if ~r.passed
                 uialert(obj.Figure, sprintf(['%s\n\nLevels are not being reproduced within ' ...
-                    'tolerance. A uniform bias usually means the reference measurement or ' ...
-                    'Normative Value moved since the sweep; errors at scattered frequencies ' ...
+                    'tolerance. A uniform bias usually means the reference measurement ' ...
+                    'moved since the sweep; errors at scattered frequencies ' ...
                     'mean the table is too sparse to interpolate through -- recalibrate tones ' ...
                     'with a finer frequency list.'], msg), ...
                     'Tone LUT Test Failed', Icon='warning');
@@ -2070,19 +2049,20 @@ classdef CalibrationGui < handle
             if ~obj.apply_controls_to_engine_()
                 return
             end
-            obj.with_busy_state_(@() obj.run_test_clicks_(), 'Testing click lookup table...', true);
-        end
-
-        function run_test_clicks_(obj)
-            % Verify the click LUT empirically: Engine.test_clicks plays clicks
-            % at the drive voltages the table asks for and compares the levels
-            % that come back to the ones requested. Stored in
-            % CalibrationData.clickTest by the engine.
             [durs, levels, repeatCount, wasCancelled] = obj.prompt_click_test_parameters_();
             if wasCancelled
                 obj.set_status_('Click LUT test cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_test_clicks_(durs, levels, repeatCount), ...
+                'Testing click lookup table...', true);
+        end
+
+        function run_test_clicks_(obj, durs, levels, repeatCount)
+            % Verify the click LUT empirically: Engine.test_clicks plays clicks
+            % at the drive voltages the table asks for and compares the levels
+            % that come back to the ones requested. Stored in
+            % CalibrationData.clickTest by the engine.
             obj.focus_sweep_panel_("click_test");
 
             % Prompt is in ms; Engine.test_clicks takes seconds. The plots are
@@ -2109,8 +2089,8 @@ classdef CalibrationGui < handle
 
             if ~r.passed
                 uialert(obj.Figure, sprintf(['%s\n\nLevels are not being reproduced within ' ...
-                    'tolerance. A uniform bias usually means the reference measurement or ' ...
-                    'Normative Value moved since the sweep; errors at scattered durations ' ...
+                    'tolerance. A uniform bias usually means the reference measurement ' ...
+                    'moved since the sweep; errors at scattered durations ' ...
                     'mean the table is too sparse to interpolate through -- recalibrate ' ...
                     'clicks with a finer duration list. Very short clicks are the first to ' ...
                     'fail on SNR, since they put little energy into the room.'], msg), ...
@@ -2119,15 +2099,15 @@ classdef CalibrationGui < handle
         end
 
         function on_design_filter_(obj)
-            obj.with_busy_state_(@() obj.run_design_filter_(), 'Designing filter...');
-        end
-
-        function run_design_filter_(obj)
             [source, opts, wasCancelled] = obj.prompt_filter_parameters_();
             if wasCancelled
                 obj.set_status_('Filter design cancelled.', false);
                 return
             end
+            obj.with_busy_state_(@() obj.run_design_filter_(source, opts), 'Designing filter...');
+        end
+
+        function run_design_filter_(obj, source, opts)
             args = namedargs2cell(opts);
             obj.Engine.design_filter(source, args{:});
             D = obj.Engine.CalibrationData.filterDesign;
@@ -2742,6 +2722,26 @@ classdef CalibrationGui < handle
             delete(obj.DelayListener_);
             obj.DelayListener_ = addlistener(obj.Engine, 'ConductionDelay', ...
                 'PostSet', @(~,~) obj.refresh_conduction_delay_label_());
+            % And its RunProgress, for the status line's "Tone 12/40": the
+            % only sign of life a multi-minute sweep gives with live plots
+            % off, since the engine publishes it either way.
+            delete(obj.ProgressListener_);
+            obj.ProgressListener_ = addlistener(obj.Engine, 'RunProgress', ...
+                'PostSet', @(~,~) obj.on_run_progress_());
+        end
+
+        function on_run_progress_(obj)
+            % Append the engine's progress to the running action's status
+            % line. Only while an action is running -- a script driving the
+            % same engine outside this window has its own console -- and not
+            % once a close is pending, whose message has to stay readable.
+            if ~obj.Busy_ || obj.CloseRequested_ || ~obj.ui_alive_()
+                return
+            end
+            txt = progress_text_(obj.Engine.RunProgress);
+            if strlength(txt) > 0
+                obj.set_status_(sprintf('%s  %s', obj.BusyMessage_, txt), false);
+            end
         end
 
         function refresh_conduction_delay_label_(obj)
@@ -2854,70 +2854,64 @@ classdef CalibrationGui < handle
             end
         end
 
-        function values = parse_numeric_vector_(~, textValue, label)
-            % Delegated to the shared utility so every vector entry in the
-            % package accepts the same syntax.
-            values = stimgen.util.parse_numeric_vector(textValue, char(label));
-        end
-
-        function [values, repeatCount, refine, wasCancelled] = prompt_vector_parameter_(obj, prefName, repeatPrefName, promptText, dlgTitle, defaultValue, repeatDefault, includeRefinement)
-            % With includeRefinement set (the Iterative Level Refinement
-            % toggle), the same dialog also collects the refinement's pass
-            % limit and accuracy target, so the whole run is parameterized in
-            % one place before any hardware moves. refine is [] when the
-            % toggle is off, or a struct with MaxIterations and ToleranceDb.
-            if nargin < 8
-                includeRefinement = false;
+        function [values, repeatCount, refine, wasCancelled] = prompt_vector_parameter_(obj, prefName, repeatPrefName, label, tipKey, dlgTitle, includeRefinement)
+            % [values, repeatCount, refine, wasCancelled] = prompt_vector_parameter_(...)
+            % The parameter window of a tone or click sweep: the list of
+            % points (a typed text field, since a list is entered as numbers
+            % or a MATLAB expression such as 500.*2.^(0:.5:5); empty means the
+            % engine's default series) and the number of averages. With
+            % includeRefinement set (the Iterative Level Refinement toggle) it
+            % also collects the refinement's pass limit and accuracy target,
+            % so the whole run is parameterized in one place before any
+            % hardware moves. Everything is validated before the window
+            % closes, and the window is raised before the busy state.
+            %
+            % values are in the field's own unit (Hz, or ms for clicks);
+            % refine is [] when the toggle is off, or a struct with
+            % MaxIterations and ToleranceDb.
+            arguments
+                obj
+                prefName (1,:) char
+                repeatPrefName (1,:) char
+                label (1,1) string
+                tipKey (1,:) char
+                dlgTitle (1,:) char
+                includeRefinement (1,1) logical = false
             end
-            wasCancelled = false;
+            tip = @(k) stimgen.util.tooltip('CalibrationGui', k);
             refine = [];
-            stored = obj.get_pref_(prefName, defaultValue);
-            repeatStored = obj.get_pref_(repeatPrefName, num2str(repeatDefault));
-
-            prompts = {
-                promptText, ...
-                'Number of averages (positive integer):'
-            };
-            defaults = {stored, repeatStored};
+            specs = [ ...
+                param_spec_("values", label, "text", obj.get_pref_(prefName, ''), ...
+                    Tip=tip(tipKey), Validate=@(t) vector_or_empty_(t, lower(label))), ...
+                param_spec_("repeats", "Number of Averages", "integer", ...
+                    pref_number_(obj.get_pref_(repeatPrefName, '1'), 1, [1 1000], false), ...
+                    Limits=[1 1000], Format='%d', Tip=tip('DlgRepeats'))];
             if includeRefinement
-                prompts(end+1:end+2) = {
-                    ['Refinement: maximum test passes (positive integer). The table is ' ...
-                     'corrected between passes and always left as the last pass verified it:'], ...
-                    ['Refinement: target accuracy (dB). Passes stop early once every point ' ...
-                     'lands within this of its requested level:']
-                };
-                defaults(end+1:end+2) = {
-                    obj.get_pref_('refineMaxPasses', '3'), ...
-                    obj.get_pref_('refineToleranceDb', '1')
-                };
+                specs = [specs, ...
+                    param_spec_("maxPasses", "Refinement: Maximum Test Passes", "integer", ...
+                        pref_number_(obj.get_pref_('refineMaxPasses', '3'), 3, [1 100], false), ...
+                        Limits=[1 100], Format='%d', Tip=tip('DlgRefineMaxPasses')), ...
+                    param_spec_("tolerance", "Refinement: Target Accuracy (dB)", "numeric", ...
+                        pref_number_(obj.get_pref_('refineToleranceDb', '1'), 1, [0 60], true), ...
+                        Limits=[0 60], LowerOpen=true, Format='%.3g', ...
+                        Tip=tip('DlgRefineTolerance'))];
             end
-            answer = inputdlg(prompts, dlgTitle, repmat([1 90], numel(prompts), 1), defaults);
-            if isempty(answer)
+
+            [v, ok, raw] = parameter_dialog_(obj.Figure, dlgTitle, '', specs);
+            wasCancelled = ~ok;
+            if ~ok
                 values = [];
-                repeatCount = repeatDefault;
-                wasCancelled = true;
+                repeatCount = 1;
                 return
             end
-
-            raw = strtrim(string(answer{1}));
-            repeatRaw = strtrim(string(answer{2}));
-            obj.set_pref_(prefName, char(raw));
-            obj.set_pref_(repeatPrefName, char(repeatRaw));
-            values = obj.parse_numeric_vector_(raw, lower(dlgTitle));
-            repeatCount = obj.parse_positive_integer_(repeatRaw, 'number of averages');
-
+            values = v.values;
+            repeatCount = v.repeats;
+            obj.set_pref_(prefName, raw.values);
+            obj.set_pref_(repeatPrefName, sprintf('%d', repeatCount));
             if includeRefinement
-                passesRaw = strtrim(string(answer{3}));
-                tolRaw    = strtrim(string(answer{4}));
-                maxPasses = obj.parse_positive_integer_(passesRaw, 'maximum test passes');
-                tolDb = str2double(tolRaw);
-                if isnan(tolDb) || ~isfinite(tolDb) || tolDb <= 0
-                    error('stimgen:calibration:CalibrationGui:badTolerance', ...
-                        'Refinement target accuracy must be a positive number of decibels.');
-                end
-                obj.set_pref_('refineMaxPasses', char(passesRaw));
-                obj.set_pref_('refineToleranceDb', char(tolRaw));
-                refine = struct('MaxIterations', maxPasses, 'ToleranceDb', tolDb);
+                refine = struct('MaxIterations', v.maxPasses, 'ToleranceDb', v.tolerance);
+                obj.set_pref_('refineMaxPasses', sprintf('%d', v.maxPasses));
+                obj.set_pref_('refineToleranceDb', sprintf('%.15g', v.tolerance));
             end
         end
 
@@ -2951,87 +2945,49 @@ classdef CalibrationGui < handle
         end
 
         function [duration, freqs, repeatCount, wasCancelled] = prompt_swept_sine_parameters_(obj)
-            % The dialog works in milliseconds; the returned duration is in
+            % The window works in milliseconds; the returned duration is in
             % seconds, as Engine.calibrate_swept_sine expects. The pref key
             % carries a Ms suffix so pre-ms values are not reinterpreted.
-            durationPref = obj.get_pref_('sweptSineDurationMs', '1000');
-            freqsPref = obj.get_pref_('sweptSineFreqs', '');
-            repeatsPref = obj.get_pref_('sweptSineRepeats', '4');
+            tip = @(k) stimgen.util.tooltip('CalibrationGui', k);
+            specs = [ ...
+                param_spec_("durationMs", "Sweep Duration (ms)", "numeric", ...
+                    pref_number_(obj.get_pref_('sweptSineDurationMs', '1000'), 1000, [0 600000], true), ...
+                    Limits=[0 600000], LowerOpen=true, Format='%.6g', ...
+                    Tip=tip('DlgSweptDuration')), ...
+                param_spec_("freqs", "Analysis Frequencies (Hz)", "text", ...
+                    obj.get_pref_('sweptSineFreqs', ''), Tip=tip('DlgSweptFrequencies'), ...
+                    Validate=@(t) vector_or_empty_(t, 'swept sine frequencies')), ...
+                param_spec_("repeats", "Number of Averages", "integer", ...
+                    pref_number_(obj.get_pref_('sweptSineRepeats', '4'), 4, [1 1000], false), ...
+                    Limits=[1 1000], Format='%d', Tip=tip('DlgRepeats'))];
 
-            prompts = {
-                'Swept sine duration (ms, >0):', ...
-                'Swept sine frequencies (Hz). Leave empty to use default log sweep:', ...
-                'Number of averages (positive integer):'
-            };
-            defaults = {durationPref, freqsPref, repeatsPref};
-            answer = inputdlg(prompts, 'Swept Sine Calibration', [1 90; 1 90; 1 90], defaults);
-
-            if isempty(answer)
+            [v, ok, raw] = parameter_dialog_(obj.Figure, 'Swept Sine Calibration', '', specs);
+            wasCancelled = ~ok;
+            if ~ok
                 duration = 1;
                 freqs = [];
                 repeatCount = 4;
-                wasCancelled = true;
                 return
             end
-
-            durationText = strtrim(string(answer{1}));
-            durationMs = str2double(durationText);
-            if isnan(durationMs) || ~isfinite(durationMs) || durationMs <= 0
-                error('stimgen:calibration:CalibrationGui:badDuration', ...
-                    'Swept sine duration must be a positive number of milliseconds.');
-            end
-            duration = durationMs / 1e3;
-
-            freqsText = strtrim(string(answer{2}));
-            freqs = obj.parse_numeric_vector_(freqsText, 'swept sine frequencies');
-
-            repeatsText = strtrim(string(answer{3}));
-            repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
-
-            obj.set_pref_('sweptSineDurationMs', char(durationText));
-            obj.set_pref_('sweptSineFreqs', char(freqsText));
-            obj.set_pref_('sweptSineRepeats', char(repeatsText));
-            wasCancelled = false;
+            duration    = v.durationMs / 1e3;
+            freqs       = v.freqs;
+            repeatCount = v.repeats;
+            obj.set_pref_('sweptSineDurationMs', sprintf('%.15g', v.durationMs));
+            obj.set_pref_('sweptSineFreqs', raw.freqs);
+            obj.set_pref_('sweptSineRepeats', sprintf('%d', repeatCount));
         end
 
         function [freqs, levels, repeatCount, wasCancelled] = prompt_tone_test_parameters_(obj)
             % Collect the frequency/level grid for the tone LUT test. Both
             % lists default to empty, which hands the choice to Engine.test_tones:
             % the midpoints between LUT points, at NormativeValue and 10/20 dB
-            % below it. Those defaults are the interesting ones, so the dialog
+            % below it. Those defaults are the interesting ones, so the window
             % opens ready to run.
-            freqsPref   = obj.get_pref_('toneTestFreqs', '');
-            levelsPref  = obj.get_pref_('toneTestLevels', '');
-            repeatsPref = obj.get_pref_('toneTestRepeats', '2');
-
-            prompts = {
-                'Test frequencies (Hz), e.g. 1000 2000 4000. Leave empty to probe midway between the calibrated points, where the table is interpolating:', ...
-                'Requested levels (dB SPL), e.g. 50 60 70. Leave empty for the normative value and 10/20 dB below it:', ...
-                'Number of averages (positive integer):'
-            };
-            defaults = {freqsPref, levelsPref, repeatsPref};
-            answer = inputdlg(prompts, 'Test Tone Lookup Table', [1 90; 1 90; 1 90], defaults);
-
-            if isempty(answer)
-                freqs = [];
-                levels = [];
-                repeatCount = 2;
-                wasCancelled = true;
-                return
-            end
-
-            freqsText  = strtrim(string(answer{1}));
-            levelsText = strtrim(string(answer{2}));
-            repeatsText = strtrim(string(answer{3}));
-
-            freqs       = obj.parse_numeric_vector_(freqsText, 'test frequencies');
-            levels      = obj.parse_numeric_vector_(levelsText, 'requested levels');
-            repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
-
-            obj.set_pref_('toneTestFreqs', char(freqsText));
-            obj.set_pref_('toneTestLevels', char(levelsText));
-            obj.set_pref_('toneTestRepeats', char(repeatsText));
-            wasCancelled = false;
+            [freqs, levels, repeatCount, wasCancelled] = obj.prompt_test_grid_( ...
+                'Test Tone Lookup Table', 'tone', ...
+                "Test Frequencies (Hz)", 'DlgTestToneFrequencies', ...
+                "Requested Levels (dB SPL)", 'DlgTestToneLevels', ...
+                'toneTestFreqs', 'toneTestLevels', 'toneTestRepeats');
         end
 
         function [durs, levels, repeatCount, wasCancelled] = prompt_click_test_parameters_(obj)
@@ -3040,180 +2996,133 @@ classdef CalibrationGui < handle
             % Engine.test_clicks: the midpoints between LUT points, at
             % NormativeValue and 10/20 dB below it. Durations are in
             % milliseconds here, as they are for the click sweep itself.
-            dursPref    = obj.get_pref_('clickTestDurationsMs', '');
-            levelsPref  = obj.get_pref_('clickTestLevels', '');
-            repeatsPref = obj.get_pref_('clickTestRepeats', '2');
+            [durs, levels, repeatCount, wasCancelled] = obj.prompt_test_grid_( ...
+                'Test Click Lookup Table', 'click', ...
+                "Test Click Durations (ms)", 'DlgTestClickDurations', ...
+                "Requested Levels (dB peSPL)", 'DlgTestClickLevels', ...
+                'clickTestDurationsMs', 'clickTestLevels', 'clickTestRepeats');
+        end
 
-            prompts = {
-                'Test click durations (ms), e.g. 0.02 0.08 0.32. Leave empty to probe midway between the calibrated durations, where the table is interpolating:', ...
-                'Requested levels (dB peSPL, peak-equivalent), e.g. 50 60 70. Leave empty for the normative value and 10/20 dB below it:', ...
-                'Number of averages (positive integer):'
-            };
-            defaults = {dursPref, levelsPref, repeatsPref};
-            answer = inputdlg(prompts, 'Test Click Lookup Table', [1 90; 1 90; 1 90], defaults);
+        function [points, levels, repeatCount, wasCancelled] = prompt_test_grid_(obj, dlgTitle, what, pointLabel, pointTip, levelLabel, levelTip, pointPref, levelPref, repeatPref)
+            % The window behind both LUT tests: the points, the levels and
+            % the averages, typed and validated before the busy state.
+            tip = @(k) stimgen.util.tooltip('CalibrationGui', k);
+            specs = [ ...
+                param_spec_("points", pointLabel, "text", obj.get_pref_(pointPref, ''), ...
+                    Tip=tip(pointTip), ...
+                    Validate=@(t) vector_or_empty_(t, sprintf('test %s points', what))), ...
+                param_spec_("levels", levelLabel, "text", obj.get_pref_(levelPref, ''), ...
+                    Tip=tip(levelTip), ...
+                    Validate=@(t) vector_or_empty_(t, 'requested levels')), ...
+                param_spec_("repeats", "Number of Averages", "integer", ...
+                    pref_number_(obj.get_pref_(repeatPref, '2'), 2, [1 1000], false), ...
+                    Limits=[1 1000], Format='%d', Tip=tip('DlgRepeats'))];
 
-            if isempty(answer)
-                durs = [];
+            [v, ok, raw] = parameter_dialog_(obj.Figure, dlgTitle, '', specs);
+            wasCancelled = ~ok;
+            if ~ok
+                points = [];
                 levels = [];
                 repeatCount = 2;
-                wasCancelled = true;
                 return
             end
-
-            dursText    = strtrim(string(answer{1}));
-            levelsText  = strtrim(string(answer{2}));
-            repeatsText = strtrim(string(answer{3}));
-
-            durs        = obj.parse_numeric_vector_(dursText, 'test click durations');
-            levels      = obj.parse_numeric_vector_(levelsText, 'requested levels');
-            repeatCount = obj.parse_positive_integer_(repeatsText, 'number of averages');
-
-            obj.set_pref_('clickTestDurationsMs', char(dursText));
-            obj.set_pref_('clickTestLevels', char(levelsText));
-            obj.set_pref_('clickTestRepeats', char(repeatsText));
-            wasCancelled = false;
+            points      = v.points;
+            levels      = v.levels;
+            repeatCount = v.repeats;
+            obj.set_pref_(pointPref, raw.points);
+            obj.set_pref_(levelPref, raw.levels);
+            obj.set_pref_(repeatPref, sprintf('%d', repeatCount));
         end
 
         function [source, opts, wasCancelled] = prompt_filter_parameters_(obj)
             % Collect equalizer design options. Everything except the source is
             % returned as a name-value struct for Engine.design_filter, so the
-            % dialog stays a thin front end to that argument list.
-            source = "auto";
-            opts = struct();
-            wasCancelled = false;
-
+            % window stays a thin front end to that argument list. Choices are
+            % dropdowns and numbers are numeric fields, so only the frequency
+            % range (two numbers or nothing) and the rate/hardware pairing
+            % need checking, and both are checked before the window closes.
+            %
             % The design rate is offered here rather than as a settings field
             % because it belongs to the filter, not to the measurement: the LUT
             % is in Hz and volts and holds at any rate, while the taps fitted to
             % it only realize the designed response at the rate they were cut
-            % for. Naming the hardware rate in the prompt makes an intentional
-            % override obvious and an accidental one unlikely.
-            % Full precision: this prompt is the one place a user is invited
-            % to type a rate, and typing back a %g-rounded 24414.1 for a
-            % 24414.0625 Hz converter designs a filter the rate guard refuses.
+            % for. Naming the hardware rate in the label makes an intentional
+            % override obvious and an accidental one unlikely. Shown at full
+            % precision: typing back a %g-rounded 24414.1 for a 24414.0625 Hz
+            % converter designs a filter the rate guard refuses.
+            tip = @(k) stimgen.util.tooltip('CalibrationGui', k);
             fsHardware = obj.Engine.Fs;
             if fsHardware > 0
-                ratePrompt = sprintf( ...
-                    'Design sample rate (Hz; empty or 0 = hardware rate, %.10g Hz):', fsHardware);
+                rateLabel = sprintf('Design Sample Rate (Hz; 0 = %.10g)', fsHardware);
             else
-                ratePrompt = 'Design sample rate (Hz; required, no adapter attached):';
+                rateLabel = 'Design Sample Rate (Hz; required)';
             end
 
-            prompts = {
-                'LUT source (auto | tone | swept_sine):', ...
-                'Number of coefficients (taps; 0 = auto from LUT size):', ...
-                'Design method (freqsamp | ls):', ...
-                'Interpolation (pchip | linear | spline | makima):', ...
-                'Frequency scale (log | linear):', ...
-                'Fractional-octave smoothing (octaves, e.g. 0.333; 0 = none):', ...
-                'Maximum correction depth (dB below peak; Inf = unlimited):', ...
-                'Frequency range (Hz, "lo hi"; empty = LUT span):', ...
-                ratePrompt
-            };
-            defaults = {
-                obj.get_pref_('filterSource', 'auto'), ...
-                obj.get_pref_('filterNumCoefficients', '0'), ...
-                obj.get_pref_('filterDesignMethod', 'freqsamp'), ...
-                obj.get_pref_('filterInterpolation', 'pchip'), ...
-                obj.get_pref_('filterFrequencyScale', 'log'), ...
-                obj.get_pref_('filterSmoothingOctaves', '0'), ...
-                obj.get_pref_('filterMaxCorrectionDb', 'Inf'), ...
-                obj.get_pref_('filterFrequencyRange', ''), ...
-                obj.get_pref_('filterSampleRate', '')
-            };
+            specs = [ ...
+                param_spec_("source", "LUT Source", "dropdown", ...
+                    pref_choice_(obj.get_pref_('filterSource', 'auto'), ["auto" "tone" "swept_sine"], "auto"), ...
+                    Items=["auto" "tone" "swept_sine"], Tip=tip('DlgFilterSource')), ...
+                param_spec_("nCoef", "Number of Coefficients (0 = auto)", "integer", ...
+                    pref_number_(obj.get_pref_('filterNumCoefficients', '0'), 0, [0 1e6], false), ...
+                    Limits=[0 1e6], Format='%d', Tip=tip('DlgFilterNumCoefficients')), ...
+                param_spec_("designMethod", "Design Method", "dropdown", ...
+                    pref_choice_(obj.get_pref_('filterDesignMethod', 'freqsamp'), ["freqsamp" "ls"], "freqsamp"), ...
+                    Items=["freqsamp" "ls"], Tip=tip('DlgFilterDesignMethod')), ...
+                param_spec_("interpolation", "Interpolation", "dropdown", ...
+                    pref_choice_(obj.get_pref_('filterInterpolation', 'pchip'), ["pchip" "linear" "spline" "makima"], "pchip"), ...
+                    Items=["pchip" "linear" "spline" "makima"], Tip=tip('DlgFilterInterpolation')), ...
+                param_spec_("frequencyScale", "Frequency Scale", "dropdown", ...
+                    pref_choice_(obj.get_pref_('filterFrequencyScale', 'log'), ["log" "linear"], "log"), ...
+                    Items=["log" "linear"], Tip=tip('DlgFilterFrequencyScale')), ...
+                param_spec_("smoothing", "Smoothing (octaves; 0 = none)", "numeric", ...
+                    pref_number_(obj.get_pref_('filterSmoothingOctaves', '0'), 0, [0 10], false), ...
+                    Limits=[0 10], Format='%.4g', Tip=tip('DlgFilterSmoothing')), ...
+                param_spec_("maxCorrection", "Max Correction Depth (dB; Inf = none)", "numeric", ...
+                    pref_number_(obj.get_pref_('filterMaxCorrectionDb', 'Inf'), Inf, [0 Inf], true), ...
+                    Limits=[0 Inf], LowerOpen=true, Format='%.4g', ...
+                    Tip=tip('DlgFilterMaxCorrection')), ...
+                param_spec_("freqRange", "Frequency Range (Hz, lo hi; empty = LUT)", "text", ...
+                    obj.get_pref_('filterFrequencyRange', ''), Tip=tip('DlgFilterFrequencyRange'), ...
+                    Validate=@frequency_range_), ...
+                param_spec_("sampleRate", rateLabel, "numeric", ...
+                    pref_number_(obj.get_pref_('filterSampleRate', '0'), 0, [0 Inf], false), ...
+                    Limits=[0 Inf], Format='%.10g', Tip=tip('DlgFilterSampleRate'))];
 
-            answer = inputdlg(prompts, 'Design Equalization Filter', ...
-                repmat([1 90], numel(prompts), 1), defaults);
-            if isempty(answer)
-                wasCancelled = true;
+            % The one check that needs two fields: no rate typed and none to
+            % fall back on.
+            check = @(v) require_rate_(v.sampleRate, fsHardware);
+
+            [v, ok, raw] = parameter_dialog_(obj.Figure, 'Design Equalization Filter', '', specs, check);
+            wasCancelled = ~ok;
+            source = "auto";
+            opts = struct();
+            if ~ok
                 return
             end
 
-            raw = strtrim(string(answer));
-            source           = obj.parse_choice_(raw(1), ["auto" "tone" "swept_sine"], 'LUT source');
-            nCoef            = obj.parse_nonnegative_integer_(raw(2), 'number of coefficients');
-            designMethod     = obj.parse_choice_(raw(3), ["freqsamp" "ls"], 'design method');
-            interpolation    = obj.parse_choice_(raw(4), ["pchip" "linear" "spline" "makima"], 'interpolation');
-            frequencyScale   = obj.parse_choice_(raw(5), ["log" "linear"], 'frequency scale');
-            smoothingOctaves = obj.parse_nonnegative_scalar_(raw(6), 'smoothing width', 0, false);
-            maxCorrectionDb  = obj.parse_nonnegative_scalar_(raw(7), 'maximum correction depth', Inf, true);
-            if maxCorrectionDb <= 0
-                error('stimgen:calibration:CalibrationGui:badCorrection', ...
-                    'Maximum correction depth must be greater than zero, or Inf for unlimited.');
+            source = string(v.source);
+            opts.DesignMethod     = string(v.designMethod);
+            opts.Interpolation    = string(v.interpolation);
+            opts.FrequencyScale   = string(v.frequencyScale);
+            opts.SmoothingOctaves = v.smoothing;
+            opts.MaxCorrectionDb  = v.maxCorrection;
+            opts.FrequencyRange   = v.freqRange;
+            if v.nCoef > 0
+                opts.NumCoefficients = v.nCoef;
+            end
+            if v.sampleRate > 0
+                opts.SampleRate = v.sampleRate;
             end
 
-            freqRange = obj.parse_numeric_vector_(raw(8), 'frequency range');
-            if ~isempty(freqRange) && numel(freqRange) ~= 2
-                error('stimgen:calibration:CalibrationGui:badFrequencyRange', ...
-                    'Frequency range must be two values, "lo hi", or empty for the LUT span.');
-            end
-
-            sampleRate = obj.parse_nonnegative_scalar_(raw(9), 'design sample rate', 0, false);
-            if sampleRate == 0 && fsHardware <= 0
-                error('stimgen:calibration:CalibrationGui:noSampleRate', ...
-                    ['With no adapter attached there is no hardware rate to fall back on. ' ...
-                     'Enter the sample rate the filter will run at.']);
-            end
-
-            opts.DesignMethod     = designMethod;
-            opts.Interpolation    = interpolation;
-            opts.FrequencyScale   = frequencyScale;
-            opts.SmoothingOctaves = smoothingOctaves;
-            opts.MaxCorrectionDb  = maxCorrectionDb;
-            opts.FrequencyRange   = freqRange;
-            if nCoef > 0
-                opts.NumCoefficients = nCoef;
-            end
-            if sampleRate > 0
-                opts.SampleRate = sampleRate;
-            end
-
-            prefNames = {'filterSource', 'filterNumCoefficients', 'filterDesignMethod', ...
-                         'filterInterpolation', 'filterFrequencyScale', ...
-                         'filterSmoothingOctaves', 'filterMaxCorrectionDb', ...
-                         'filterFrequencyRange', 'filterSampleRate'};
-            for k = 1:numel(prefNames)
-                obj.set_pref_(prefNames{k}, char(raw(k)));
-            end
-        end
-
-        function value = parse_choice_(~, textValue, allowed, label)
-            value = lower(strtrim(string(textValue)));
-            if ~ismember(value, allowed)
-                error('stimgen:calibration:CalibrationGui:badChoice', ...
-                    '%s must be one of: %s.', label, strjoin(allowed, ', '));
-            end
-        end
-
-        function value = parse_nonnegative_integer_(~, textValue, label)
-            value = str2double(strtrim(string(textValue)));
-            if isnan(value) || ~isfinite(value) || value < 0 || value ~= round(value)
-                error('stimgen:calibration:CalibrationGui:badInteger', ...
-                    '%s must be a non-negative integer.', label);
-            end
-        end
-
-        function value = parse_nonnegative_scalar_(~, textValue, label, emptyValue, allowInf)
-            raw = strtrim(string(textValue));
-            if raw == ""
-                value = emptyValue;
-                return
-            end
-            value = str2double(raw);
-            if isnan(value) || value < 0 || (~allowInf && ~isfinite(value))
-                error('stimgen:calibration:CalibrationGui:badScalar', ...
-                    '%s must be a non-negative number.', label);
-            end
-        end
-
-        function value = parse_positive_integer_(~, textValue, label)
-            raw = strtrim(string(textValue));
-            value = str2double(raw);
-            if isnan(value) || ~isfinite(value) || value <= 0 || value ~= round(value)
-                error('stimgen:calibration:CalibrationGui:badInteger', ...
-                    '%s must be a positive integer.', label);
-            end
-            value = round(value);
+            obj.set_pref_('filterSource',           char(source));
+            obj.set_pref_('filterNumCoefficients',  sprintf('%d', v.nCoef));
+            obj.set_pref_('filterDesignMethod',     char(opts.DesignMethod));
+            obj.set_pref_('filterInterpolation',    char(opts.Interpolation));
+            obj.set_pref_('filterFrequencyScale',   char(opts.FrequencyScale));
+            obj.set_pref_('filterSmoothingOctaves', sprintf('%.15g', v.smoothing));
+            obj.set_pref_('filterMaxCorrectionDb',  sprintf('%.15g', v.maxCorrection));
+            obj.set_pref_('filterFrequencyRange',   raw.freqRange);
+            obj.set_pref_('filterSampleRate',       sprintf('%.15g', v.sampleRate));
         end
 
         function value = get_pref_(~, prefName, defaultValue)
@@ -3273,10 +3182,10 @@ classdef CalibrationGui < handle
             % Excitation Voltage, Tone Rise/Fall Time, the ambient
             % temperature, the two recorded hardware gains and the FFT
             % length state their limits literally because their controls
-            % live in an on-demand settings window and do not exist yet. Every value here is in the unit the Engine property holds
-            % -- the temperature preference is Celsius, not the Fahrenheit its
-            % field shows, and the ramp is seconds, not the milliseconds its
-            % field shows.
+            % live in an on-demand settings window and do not exist yet.
+            % Every value here is in the unit the Engine property holds --
+            % the temperature in Celsius (as its field shows it), the ramp in
+            % seconds, not the milliseconds its field shows.
             factory = stimgen.calibration.Engine();
             numericPairs = {
                 'ReferenceLevel',     obj.RefLevelField.Limits
@@ -3530,6 +3439,7 @@ classdef CalibrationGui < handle
                 return
             end
             obj.Busy_ = true;
+            obj.BusyMessage_ = char(busyMessage);
 
             % What the run is judged against for Dirty_: the engine it started
             % on, its data revision, and the sensitivity (which is saved in the
@@ -3654,19 +3564,6 @@ if ~isempty(tip)
 end
 end
 
-% -------------------------------------------------------------------------
-function f = fahrenheit_(c)
-% Celsius to Fahrenheit. The Engine works in Celsius -- the speed-of-sound
-% formula and the .esgc file are both in it -- and this window is the only
-% place the operator's unit applies, so both conversions live here.
-f = c * 9/5 + 32;
-end
-
-% -------------------------------------------------------------------------
-function c = celsius_(f)
-% Fahrenheit to Celsius; inverse of fahrenheit_.
-c = (f - 32) * 5/9;
-end
 
 % -------------------------------------------------------------------------
 function set_checked_(h, tf)
@@ -3873,6 +3770,305 @@ end
 end
 
 % -------------------------------------------------------------------------
+% Run parameter windows. Every run that needs parameters asks for them through
+% parameter_dialog_, BEFORE with_busy_state_: typed fields (numeric edit fields
+% with limits, dropdowns for fixed choices, a text field only for a list of
+% numbers) that will not close on a value the engine would refuse. A typo is
+% then corrected where it was typed instead of surfacing, after the button has
+% been pressed, as a red Calibration Error. They replaced six inputdlg prompts
+% raised inside the busy state.
+
+function s = param_spec_(key, label, kind, value, options)
+% s = param_spec_(key, label, kind, value, Name=Value)
+% One field of a parameter_dialog_.
+%
+% Parameters:
+%   key   - field name of the value in the returned struct
+%   label - caption, units included
+%   kind  - "numeric" | "integer" | "text" | "dropdown"
+%   value - initial value; must lie inside Limits for a numeric kind
+%   Limits    - [lo hi] for a numeric kind (default [-Inf Inf])
+%   LowerOpen - true when lo itself is not allowed (a positive quantity)
+%   Format    - ValueDisplayFormat for a numeric kind
+%   Items     - string choices for a dropdown (also its values)
+%   Tip       - tooltip text, from tooltips.json
+%   Validate  - @(raw) value | error, run on OK; its error text is shown
+%               in the window and the window stays open
+arguments
+    key (1,1) string
+    label (1,1) string
+    kind (1,1) string {mustBeMember(kind, ["numeric", "integer", "text", "dropdown"])}
+    value
+    options.Limits (1,2) double = [-Inf Inf]
+    options.LowerOpen (1,1) logical = false
+    options.Format (1,:) char = '%g'
+    options.Items (1,:) string = strings(1, 0)
+    options.Tip (1,:) char = ''
+    options.Validate = []
+end
+s = struct('key', key, 'label', label, 'kind', kind, 'value', {value}, ...
+    'limits', options.Limits, 'lowerOpen', options.LowerOpen, ...
+    'format', options.Format, 'items', options.Items, 'tip', options.Tip, ...
+    'validate', {options.Validate});
+end
+
+% -------------------------------------------------------------------------
+function [vals, ok, raw] = parameter_dialog_(parent, titleText, introText, specs, check)
+% [vals, ok, raw] = parameter_dialog_(parent, titleText, introText, specs)
+% [vals, ok, raw] = parameter_dialog_(parent, titleText, introText, specs, check)
+% Modal window of typed fields; blocks until OK (with every field valid) or
+% Cancel/Escape/close.
+%
+% Returns:
+%   vals - struct, one field per spec key, validated (Validate's output)
+%   ok   - false when cancelled
+%   raw  - struct of each field's raw widget value, for preferences that
+%          store what was typed (a list expression) rather than its value
+arguments
+    parent
+    titleText (1,:) char
+    introText (1,:) char
+    specs (1,:) struct
+    check = []
+end
+vals = struct();
+raw  = struct();
+ok   = false;
+
+n = numel(specs);
+hasIntro = ~isempty(introText);
+heights = {};
+if hasIntro
+    heights{end+1} = 64;
+end
+heights = [heights, repmat({24}, 1, n), {36}, {26}];
+w = 520;
+h = 16 + sum(cellfun(@double, heights)) + 4 * (numel(heights) - 1);
+pos = [100 100 w h];
+if ~isempty(parent) && isvalid(parent)
+    p = parent.Position;
+    pos(1:2) = [p(1) + (p(3) - w) / 2, p(2) + (p(4) - h) / 2];
+end
+
+fig = uifigure(Name=titleText, Position=pos, Resize='off', WindowStyle='modal');
+fig.CloseRequestFcn = @(~,~) finish_dialog_(fig, false);
+fig.WindowKeyPressFcn = @(~,evt) dialog_key_(fig, evt);
+
+g = uigridlayout(fig, [numel(heights) 2]);
+g.RowHeight = heights;
+g.ColumnWidth = {'1.25x', '1x'};
+g.Padding = [8 8 8 8];
+g.RowSpacing = 4;
+g.ColumnSpacing = 8;
+
+row = 0;
+if hasIntro
+    row = row + 1;
+    intro = uilabel(g, Text=introText, WordWrap='on');
+    intro.Layout.Row = row;
+    intro.Layout.Column = [1 2];
+end
+
+widgets = cell(1, n);
+for k = 1:n
+    sp = specs(k);
+    row = row + 1;
+    lbl = uilabel(g, Text=char(sp.label), HorizontalAlignment='right');
+    lbl.Layout.Row = row;
+    lbl.Layout.Column = 1;
+    switch sp.kind
+        case {"numeric", "integer"}
+            wdg = uieditfield(g, 'numeric', Limits=sp.limits, ...
+                ValueDisplayFormat=sp.format);
+            if sp.lowerOpen
+                wdg.LowerLimitInclusive = 'off';
+            end
+            if sp.kind == "integer"
+                wdg.RoundFractionalValues = 'on';
+            end
+            wdg.Value = double(sp.value);
+        case "text"
+            wdg = uieditfield(g, 'text', Value=char(string(sp.value)));
+        case "dropdown"
+            wdg = uidropdown(g, Items=cellstr(sp.items), ...
+                ItemsData=cellstr(sp.items), Value=char(string(sp.value)));
+    end
+    wdg.Layout.Row = row;
+    wdg.Layout.Column = 2;
+    if ~isempty(sp.tip)
+        lbl.Tooltip = sp.tip;
+        wdg.Tooltip = sp.tip;
+    end
+    widgets{k} = wdg;
+end
+
+row = row + 1;
+errLbl = uilabel(g, Text='', FontColor=[0.7 0 0], WordWrap='on');
+errLbl.Layout.Row = row;
+errLbl.Layout.Column = [1 2];
+
+row = row + 1;
+btns = uigridlayout(g, [1 2]);
+btns.Layout.Row = row;
+btns.Layout.Column = 2;
+btns.Padding = [0 0 0 0];
+btns.ColumnSpacing = 8;
+okBtn = uibutton(btns, Text='OK', ...
+    Tooltip=stimgen.util.tooltip('CalibrationGui', 'DlgOk'), ...
+    ButtonPushedFcn=@(~,~) accept_dialog_(fig, specs, widgets, errLbl, check));
+okBtn.Layout.Column = 1;
+cancelBtn = uibutton(btns, Text='Cancel', ...
+    Tooltip=stimgen.util.tooltip('CalibrationGui', 'DlgCancel'), ...
+    ButtonPushedFcn=@(~,~) finish_dialog_(fig, false));
+cancelBtn.Layout.Column = 2;
+
+uiwait(fig);
+
+if isvalid(fig)
+    d = fig.UserData;
+    delete(fig);
+    if isstruct(d) && isfield(d, 'ok') && d.ok
+        ok   = true;
+        vals = d.vals;
+        raw  = d.raw;
+    end
+end
+end
+
+% -------------------------------------------------------------------------
+function accept_dialog_(fig, specs, widgets, errLbl, check)
+% OK: validate every field, then the whole set; on the first failure say why
+% in the window and leave it open.
+vals = struct();
+raw  = struct();
+for k = 1:numel(specs)
+    sp = specs(k);
+    r = widgets{k}.Value;
+    raw.(sp.key) = r;
+    try
+        if isempty(sp.validate)
+            v = r;
+        else
+            v = sp.validate(r);
+        end
+    catch ME
+        errLbl.Text = sprintf('%s: %s', sp.label, ME.message);
+        return
+    end
+    if sp.kind == "integer"
+        v = round(v);
+    end
+    vals.(sp.key) = v;
+end
+if ~isempty(check)
+    try
+        check(vals);
+    catch ME
+        errLbl.Text = ME.message;
+        return
+    end
+end
+fig.UserData = struct('ok', true, 'vals', vals, 'raw', raw);
+uiresume(fig);
+end
+
+% -------------------------------------------------------------------------
+function finish_dialog_(fig, ok)
+% Cancel, Escape, or the window's own close button.
+fig.UserData = struct('ok', ok);
+uiresume(fig);
+end
+
+% -------------------------------------------------------------------------
+function dialog_key_(fig, evt)
+% Escape cancels. Return is left to the field being typed in, where it
+% commits the value.
+if strcmp(evt.Key, 'escape')
+    finish_dialog_(fig, false);
+end
+end
+
+% -------------------------------------------------------------------------
+function v = pref_number_(text, default, limits, lowerOpen)
+% A stored preference as a number a field will accept, or the default. A
+% numeric edit field throws on a Value outside its Limits, so a hand-edited
+% or stale preference must not reach one unchecked.
+v = str2double(text);
+if ~isfinite(v) && ~(isinf(v) && v > 0 && isinf(limits(2)))
+    v = default;
+elseif v < limits(1) || v > limits(2) || (lowerOpen && v <= limits(1))
+    v = default;
+end
+end
+
+% -------------------------------------------------------------------------
+function v = pref_choice_(text, allowed, default)
+% A stored preference as one of a dropdown's items, or the default.
+v = lower(strtrim(string(text)));
+if ~ismember(v, allowed)
+    v = default;
+end
+end
+
+% -------------------------------------------------------------------------
+function v = vector_or_empty_(text, label)
+% A list field's value: [] when blank (the engine's default applies), else a
+% positive numeric row vector. The parse is the package's shared one.
+v = stimgen.util.parse_numeric_vector(text, char(label));
+end
+
+% -------------------------------------------------------------------------
+function v = frequency_range_(text)
+% The filter's frequency range: empty for the LUT span, else "lo hi".
+v = stimgen.util.parse_numeric_vector(text, 'frequency range');
+if ~isempty(v) && (numel(v) ~= 2 || v(1) >= v(2))
+    error('stimgen:calibration:CalibrationGui:badFrequencyRange', ...
+        'Enter two increasing values, "lo hi", or leave it empty for the LUT span.');
+end
+end
+
+% -------------------------------------------------------------------------
+function require_rate_(sampleRate, fsHardware)
+% A filter needs a rate: typed, or the attached hardware's.
+if sampleRate == 0 && ~(fsHardware > 0)
+    error('stimgen:calibration:CalibrationGui:noSampleRate', ...
+        ['With no adapter attached there is no hardware rate to fall back on. ' ...
+         'Enter the sample rate the filter will run at.']);
+end
+end
+
+% -------------------------------------------------------------------------
+function s = progress_text_(p)
+% s = progress_text_(p)
+% Engine.RunProgress as a few words for the status line: "Tone 12/40, pass
+% 1/3 (28%)". Empty when there is nothing to say yet.
+names = struct('tone', 'Tone', 'click', 'Click', 'swept_sine', 'Swept sine', ...
+    'tone_test', 'Tone test', 'click_test', 'Click test', ...
+    'filter_test', 'Filter test', 'background', 'Background record', ...
+    'reference', 'Reference', 'latency', 'Delay probe');
+stage = char(p.stage);
+if isempty(stage)
+    s = "";
+    return
+end
+if isfield(names, stage)
+    what = names.(stage);
+else
+    what = strrep(stage, '_', ' ');
+end
+s = string(what);
+if p.total > 0 && p.index > 0
+    s = s + sprintf(' %d/%d', round(p.index), round(p.total));
+end
+if p.repeatTotal > 1 && p.repeat > 0
+    s = s + sprintf(', pass %d/%d', round(p.repeat), round(p.repeatTotal));
+end
+if isfinite(p.fraction)
+    s = s + sprintf(' (%d%%)', round(100 * min(max(p.fraction, 0), 1)));
+end
+end
+
+% -------------------------------------------------------------------------
 function s = spectrum_unit_menu_text_(unit)
 % s = spectrum_unit_menu_text_(unit)
 % Menu caption for a LiveMonitor spectrum unit: what the unit is for, with the
@@ -4030,8 +4226,8 @@ function s = conduction_delay_summary_(d)
 % s = conduction_delay_summary_(d)
 % One-line status-bar summary of a standalone conduction delay probe.
 if d.valid
-    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °F).', ...
-        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, fahrenheit_(d.temperature_c));
+    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °C).', ...
+        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, d.temperature_c);
 else
     s = 'Conduction delay could not be measured -- see the report.';
 end
@@ -4051,8 +4247,8 @@ lines = {};
 if d.valid
     lines{end+1} = sprintf('Delay            %.3f ms   (%d samples at %.10g Hz)', ...
         d.delay_s * 1e3, d.delay_samples, d.fs);
-    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °F)', ...
-        d.path_m, d.speed_of_sound_ms, fahrenheit_(d.temperature_c));
+    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °C)', ...
+        d.path_m, d.speed_of_sound_ms, d.temperature_c);
     lines{end+1} = '';
     lines{end+1} = ['The path is an upper bound on the speaker-to-microphone distance, ' ...
         'not a measurement of it: the converters'' round-trip latency is inside the ' ...
@@ -4061,8 +4257,8 @@ if d.valid
         'devices but worth knowing.'];
     lines{end+1} = '';
     lines{end+1} = ['The distance is only as good as the temperature it was ' ...
-        'converted at: the speed of sound moves about 0.34 m/s per °F, so a ' ...
-        'room 10 °F off the Ambient Temperature setting puts a 1% error on ' ...
+        'converted at: the speed of sound moves about 0.6 m/s per °C, so a ' ...
+        'room 6 °C off the Ambient Temperature setting puts a 1% error on ' ...
         'the path. The delay itself does not depend on it.'];
 elseif d.peak_v <= 10 * max(d.noise_v, eps)
     lines{end+1} = 'No click response.';

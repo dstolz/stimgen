@@ -73,7 +73,7 @@ else
     lines(end+1,1) = field_("  AC coupling", "off");
 end
 lines(end+1,1) = field_("  Spectral analysis", spectral_(obj));
-lines(end+1,1) = field_("  Ambient", sprintf('%.1f C, sound travels %.1f m/s', ...
+lines(end+1,1) = field_("  Ambient", sprintf('%.1f °C, sound travels %.1f m/s', ...
     obj.AmbientTemperature, obj.SpeedOfSound));
 if obj.Fs > 0
     lines(end+1,1) = field_("  Sample rate", sprintf('%.10g Hz (from the attached adapter)', obj.Fs));

@@ -144,6 +144,8 @@ try
         % A sweep measures the whole band at once, so a pass fills every point
         % rather than advancing an index. Progress is stated per pass; the
         % point-major default would read it as one point of n.
+        obj.note_progress_("swept_sine", "measure", 'Index', 0, 'Total', n, ...
+            'Repeat', rep, 'RepeatTotal', repeatCount, 'Progress', rep / repeatCount);
         if obj.ShowLivePlots
             for i = 1:n
                 mAvg = mean(measAll(1:rep, i), 'omitnan');
