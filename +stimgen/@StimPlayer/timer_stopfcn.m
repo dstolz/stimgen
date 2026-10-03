@@ -2,7 +2,8 @@ function timer_stopfcn(obj, ~, ~)
 % timer_stopfcn(obj) - Called when the playback timer stops.
 % Resets button states and updates the counter.
 
-obj.Paused_ = false;
+obj.Paused_      = false;
+obj.HardwareRun_ = false;
 obj.update_counter_;
 
 h = obj.handles;

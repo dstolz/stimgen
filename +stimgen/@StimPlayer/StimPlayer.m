@@ -213,7 +213,15 @@ classdef StimPlayer < handle
         PolarityCount_ = {}                  % Per bank item: presentations so far of each variant
 
         Paused_ (1,1) logical = false        % True while a running session is held by Pause
+        HardwareRun_ (1,1) logical = false   % True when the current run started with hardware output
         PauseStartedAt_ (1,1) double = 0     % timeSinceStart when the current pause began
+    end
+
+    % --- Hardware parameter contract ---
+    properties (Constant, Access = private)
+        % Names a host circuit must expose for a hardware Run (StimGenCircuit.rcx).
+        RequiredParams_ = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
+                           'x_Trigger_0','x_Trigger_1'}
     end
 
     % --- Dependent ---
@@ -288,9 +296,7 @@ classdef StimPlayer < handle
             if isempty(obj.Host) || obj.Host.connectionState() == "None"
                 return
             end
-            required = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
-                        'x_Trigger_0','x_Trigger_1'};
-            tf = all(isfield(obj.PARAMS, required));
+            tf = all(isfield(obj.PARAMS, obj.RequiredParams_));
         end
 
         % -----------------------------------------------------------------
@@ -320,11 +326,17 @@ classdef StimPlayer < handle
         % -----------------------------------------------------------------
         function set.PlaybackOutput(obj, value)
             % Route Play / Play All to speakers or to hardware (the host's
-            % calibration route, else CaptureAdapter). Selecting hardware
-            % with neither is refused up front, so the property never claims
-            % a route that cannot play.
+            % calibration route, else CaptureAdapter). Everything that can
+            % refuse the switch runs BEFORE the value is committed -- no
+            % route at all, or a bank that cannot be regenerated at the
+            % hardware's sample rate -- so a refused switch leaves the
+            % property, and the dropdown reverted from it, on the old route.
             if value == "Hardware"
                 obj.require_hardware_route_;
+                % Generate at the rate the converters run at, so the bank is
+                % ready for hardware. Throws (and rolls the rate back) when
+                % an item cannot be generated at that rate.
+                obj.adopt_host_fs_;
             end
             obj.PlaybackOutput = value;
             obj.on_playback_output_changed_;
@@ -657,13 +669,46 @@ classdef StimPlayer < handle
             if isempty(obj.Host)
                 return
             end
-            names = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
-                     'x_Trigger_0','x_Trigger_1'};
+            names = obj.RequiredParams_;
             for k = 1:numel(names)
                 P = obj.Host.findParameter(names{k});
                 if ~isempty(P)
                     obj.PARAMS.(names{k}) = P;
                 end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function reason = hardware_unavailable_reason_(obj)
+            % reason = hardware_unavailable_reason_() - Why a Run would have no hardware output.
+            % "" when HardwareAvailable is true or no host is attached.
+            reason = "";
+            if isempty(obj.Host) || obj.HardwareAvailable
+                return
+            end
+            if ~obj.Host.hasProtocol()
+                reason = "No protocol is loaded, so no hardware is connected.";
+            elseif obj.Host.connectionState() == "None"
+                reason = "The hardware is not connected.";
+            else
+                missing = string(obj.RequiredParams_(~isfield(obj.PARAMS, obj.RequiredParams_)));
+                reason = "The loaded circuit does not expose these parameters: " + ...
+                    strjoin(missing, ", ") + ".";
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function require_run_hardware_(obj)
+            % require_run_hardware_() - Error when a hardware run has lost its hardware.
+            % A run that started with hardware output must not carry on as a
+            % silent dry run because a parameter or the connection went
+            % away: the presentation log would record trials nobody heard.
+            % No-op for a run that started without hardware (confirmed as
+            % a dry run, or offline).
+            if obj.HardwareRun_ && ~obj.HardwareAvailable
+                error('stimgen:StimPlayer:HardwareLost', ...
+                    'Hardware output was lost during the run after %d of %d presentations. %s', ...
+                    obj.presented_count_(), obj.total_count_(), char(obj.hardware_unavailable_reason_()));
             end
         end
 
@@ -783,11 +828,11 @@ classdef StimPlayer < handle
 
         % -----------------------------------------------------------------
         function on_playback_output_changed_(obj)
-            % on_playback_output_changed_() - React to a preview-output switch.
-            % Syncs the dropdown (for programmatic assignment), adopts the
-            % hardware rate when moving onto hardware so the bank is already
-            % generated at the rate the converters run at, and refreshes the
-            % calibration status label, whose meaning depends on the route.
+            % on_playback_output_changed_() - React to a committed preview-output switch.
+            % Syncs the dropdown (for programmatic assignment) and refreshes
+            % the calibration status label, whose meaning depends on the
+            % route. Nothing here may throw: the value is already committed.
+            % (The hardware rate is adopted by set.PlaybackOutput, before.)
 
             h = obj.handles;
             if isfield(h, 'OutputDD') && ~isempty(h.OutputDD) && isvalid(h.OutputDD)
@@ -795,7 +840,6 @@ classdef StimPlayer < handle
             end
 
             if obj.PlaybackOutput == "Hardware"
-                obj.adopt_host_fs_;
                 obj.set_status_("Preview output: calibrated hardware.");
             else
                 obj.set_status_("Preview output: computer speakers.");
@@ -1723,6 +1767,18 @@ classdef StimPlayer < handle
             %   proceed - false when the operator cancelled
             issues = strings(0, 1);
 
+            % A host is attached but the run would drive nothing. Without a
+            % host the player is offline by construction and says so in its
+            % status bar, so that case is not asked about.
+            reason = obj.hardware_unavailable_reason_();
+            if strlength(reason) > 0
+                stimgen.util.vprintf(0, 1, 'StimPlayer: Run has no hardware output: %s', char(reason));
+                issues(end+1, 1) = "No hardware output. " + reason + newline + ...
+                    "This would be a dry run: the timer runs and the presentation log fills, " + ...
+                    "but nothing is played. A hardware Run needs " + ...
+                    strjoin(string(obj.RequiredParams_), ", ") + ".";
+            end
+
             uneven = obj.uneven_reps_report_();
             if ~isempty(uneven)
                 issues(end+1, 1) = "Reps does not divide evenly over the variant combinations:" + newline + ...
@@ -1925,6 +1981,12 @@ classdef StimPlayer < handle
                 case "stimgen:StimPlayer:PreviewVoltageOutOfRange"
                     messageText = string(ME.message) + newline + newline + ...
                         "Lower the stimulus Sound Level so the calibrated drive voltage fits the output range.";
+                case "stimgen:StimPlayer:HardwareLost"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "The session was stopped rather than continued without output. Check the hardware connection and the loaded protocol, then Run again. StimOrder, StimOrderTime, StimPolarity and StimVariant hold the presentations made before the loss.";
+                case "stimgen:StimPlayer:HardwareWriteFailed"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "The next stimulus could not be loaded into the hardware buffer, so the session was stopped rather than trigger a stale buffer. Check the hardware connection, then Run again.";
                 case "stimgen:StimPlayer:PreviewDuringRun"
                     messageText = "The hardware is presenting the bank right now. Stop the session, then preview through hardware.";
                 case "stimgen:StimPlayer:CaptureDuringRun"

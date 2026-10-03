@@ -27,6 +27,12 @@ try
     % Spin until ISI has exactly elapsed
     while obj.timeSinceStart - obj.lastTrigTime < isi, end
 
+    % A run that started with hardware stops if it has lost it (a parameter
+    % gone, the connection dropped) rather than trigger nothing and log the
+    % trial as presented. Checked before logging, so the log holds only
+    % presentations that were triggered.
+    obj.require_run_hardware_;
+
     % The stimulus whose buffer is loaded, and the combination it was
     % generated from. Read before increment, which can move a multi-object
     % bank item's cursor on to another object.

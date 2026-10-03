@@ -404,7 +404,11 @@ Selecting `Calibrated HW` requires a host or a `CaptureAdapter` and raises
 `stimgen:StimPlayer:NoHardwareHost` with neither; the dropdown callback
 reverts the selection so the GUI never displays a route that cannot play.
 Switching onto hardware adopts the host's sample rate (when it reports one)
-so the bank is regenerated at the rate the converters run at; at play time
+so the bank is regenerated at the rate the converters run at. Both happen in
+`set.PlaybackOutput` **before** the value is committed, so a switch refused
+for either reason (including `stimgen:StimPlayer:SampleRateNotSupported`,
+when an item cannot be generated at the hardware rate) leaves the property
+on the old route, agreeing with the reverted dropdown. At play time
 the rate is verified against the hardware and a mismatch raises
 `stimgen:StimPlayer:HardwareRateMismatch` rather than playing a waveform at
 the wrong pitch and duration. Waveforms peaking beyond ±10 V are refused
@@ -547,10 +551,24 @@ parameter names:
 - `x_Trigger_0`
 - `x_Trigger_1`
 
-If any are missing, `Run` still starts the timer, but the player logs that
-hardware output is unavailable. Local preview through `Play Stim` still
-works because that path uses MATLAB audio playback from the underlying
-stimulus object.
+With a host attached, a Run that would have no hardware output -- no
+protocol loaded, the hardware not connected, or any of these parameters
+missing (the dialog names which) -- is never started silently: Run asks
+first, and **Cancel** (the default) leaves everything as it was. Confirming
+starts a dry run: the timer runs and the presentation log fills, but nothing
+is played. Without a host the player is offline by construction (the status
+bar says `HW: speaker preview only`) and Run does not ask.
+
+A run that **started** with hardware output is held to it. Should a
+parameter disappear or the connection drop mid-run, the next trial raises
+`stimgen:StimPlayer:HardwareLost` instead of triggering nothing, and the
+session stops; a failed buffer write likewise raises
+`stimgen:StimPlayer:HardwareWriteFailed` and stops it, rather than letting
+the next trigger play whatever the slot last held. The check comes before a
+trial is logged, so the log holds only presentations that were triggered.
+
+Local preview through `Play` still works without these parameters because
+that path uses MATLAB audio playback, or the host's calibration adapter.
 
 ## Scheduling behavior
 
@@ -617,8 +635,15 @@ each one as a warning.
 exists. Each finding is logged; when there is any, a single dialog lists them
 all and **Cancel** (the default) abandons the run without changing anything:
 
+- a host is attached but the run would have no hardware output -- no
+  protocol, not connected, or the named playback parameters missing (see
+  [Required hardware parameters](#required-hardware-parameters));
 - a bank item whose `Reps` is not a multiple of its combination count under a
   balanced selection mode (see above).
+
+`playback_control("Run")` shows the same dialog, so a host driving the
+session programmatically is asked too. `"Run"` while a session is already
+running is refused rather than restarting it.
 
 ## Saving and loading banks
 

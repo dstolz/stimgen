@@ -40,6 +40,16 @@ switch action
                 return
             end
 
+            % Only reachable programmatically (the button reads "Stop"
+            % during a session). Starting over would stop the running timer
+            % after the hardware below was connected, and its StopFcn would
+            % release that hardware again.
+            if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
+                obj.show_gui_message_("A session is already running. Stop it before starting another.", ...
+                    "Session Running", "warning");
+                return
+            end
+
             % A Play All cycle steps the same variant cursors the timer
             % will; end it before the run takes them over.
             if obj.PlayAllActive_
@@ -55,6 +65,9 @@ switch action
             if ~obj.HardwareAvailable
                 stimgen.util.vprintf(1, 'StimPlayer: hardware parameters not found — timer will run without hardware output.');
             end
+            % Fixed for the whole run: a run that started with hardware and
+            % loses it is stopped (timer_runtimefcn), not continued dry.
+            obj.HardwareRun_ = obj.HardwareAvailable;
 
             % The converter rate belongs to the hardware, so let the host
             % override the bank rate whenever it can report one.
@@ -63,6 +76,7 @@ switch action
             % Last chance to back out: say what this run will do that the
             % operator may not expect, and let them cancel.
             if ~obj.confirm_run_()
+                obj.HardwareRun_ = false;
                 obj.disconnect_interfaces_;
                 obj.update_protocol_status_;
                 obj.set_status_("Run cancelled.");
