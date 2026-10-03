@@ -87,6 +87,9 @@ try
         obj.refresh_combo_controls_;
         obj.update_signal_plot;
         drawnow;
+        if ~obj.PlayAllActive_   % stopped, or a Run took over, during drawnow
+            break
+        end
 
         if isempty(stimObj.Signal)
             obj.set_computing_(true);
@@ -139,7 +142,8 @@ end
 
 function restore_play_all_ui_(obj, activeBtn, prevColor)
 h = obj.handles;
-if isfield(h, 'PlayBtn') && ~isempty(h.PlayBtn) && isvalid(h.PlayBtn)
+% A run started while this cycle was ending holds the lock; leave Play to it.
+if ~obj.CaptureLocked_ && isfield(h, 'PlayBtn') && ~isempty(h.PlayBtn) && isvalid(h.PlayBtn)
     h.PlayBtn.Enable = 'on';
 end
 if isfield(h, 'PlayAllBtn') && ~isempty(h.PlayAllBtn) && isvalid(h.PlayAllBtn)
