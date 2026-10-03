@@ -4,7 +4,7 @@ MATLAB toolbox for auditory stimulus generation, playback, and speaker/microphon
 calibration.
 
 `stimgen` builds precisely parameterized acoustic stimuli (tones, noise, AM/FM,
-swept sines, click trains), manages banks of them for playback, and converts
+swept sines, click trains, TORCs, recorded sound files), manages banks of them for playback, and converts
 requested sound levels into hardware voltages via a measured calibration.
 
 `stimgen` runs standalone, with no dependency on any host application — any host
@@ -73,10 +73,14 @@ stimgen.calibration.CalibrationGui
 | `stimgen.FMtone` | Frequency-modulated tone |
 | `stimgen.SweptSine` | Swept sine (chirp) |
 | `stimgen.ClickTrain` | Click train |
+| `stimgen.TORC` | Temporally orthogonal ripple combination (Klein et al. 2000) |
+| `stimgen.SoundFile` | Playback of a catalog of sound files (vocalizations, natural sounds), one variant per file |
 
 All derive from `stimgen.StimType`, which handles gating, normalization,
 calibration, and variant expansion. To add a stimulus type, subclass
-`stimgen.StimType` and implement `update_signal`.
+`stimgen.StimType` and implement `update_signal`. See
+[`documentation/stimgen_StimTypes.md`](documentation/stimgen_StimTypes.md) and
+[`documentation/stimgen_SoundFile.md`](documentation/stimgen_SoundFile.md).
 
 ## Calibration
 

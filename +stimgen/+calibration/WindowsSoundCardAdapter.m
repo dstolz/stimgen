@@ -68,9 +68,37 @@ classdef WindowsSoundCardAdapter < stimgen.calibration.HwAdapter
             Fs = obj.Fs_;
         end
 
+        function v = full_scale(~)
+            % v = full_scale(obj)
+            % Digital full scale of the sound card's output: +/-1.
+            %
+            % Reported so the Engine judges headroom against the ceiling the
+            % signal actually meets here, not against MaxOutputVoltage (10 V
+            % by default), which made a clipped ExcitationVoltage of 2 read
+            % as 14 dB of headroom.
+            v = 1;
+        end
+
+        function v = input_range(~)
+            % v = input_range(obj)
+            % Digital full scale of the sound card's input: +/-1.
+            v = 1;
+        end
+
         function response = play_and_record(obj, signal)
             % response = play_and_record(obj, signal)
             % Play a mono excitation waveform and record the microphone response.
+            %
+            % A signal beyond the +/-1 full scale is an error, not clamped.
+            % Clamping it -- what this did once, silently -- flattens the tops
+            % of the excitation, so a calibration sweep measures a different,
+            % quieter and distorted signal than the one its table says it
+            % played, and every drive voltage it stores is wrong by the
+            % difference. A warning would leave that table committed; an
+            % error aborts the run, and every Engine run is atomic, so the
+            % previous table survives. Lower ExcitationVoltage (or the
+            % stimulus level) to fit. Only a rounding hair past full scale
+            % (1e-9) is still clipped quietly.
             %
             % Parameters:
             %   signal   - (1,:) double excitation waveform.
@@ -87,7 +115,16 @@ classdef WindowsSoundCardAdapter < stimgen.calibration.HwAdapter
                 return
             end
 
-            playSignal = max(min(signal(:), 1), -1);
+            fullScale = obj.full_scale();
+            peak = max(abs(signal));
+            if peak > fullScale * (1 + 1e-9)
+                error('stimgen:calibration:WindowsSoundCardAdapter:outOfRange', ...
+                    ['The signal peaks at %.4g, beyond the sound card''s %g digital ' ...
+                     'full scale; it would be clipped and the measurement would be ' ...
+                     'wrong. Lower Excitation Voltage to %g or less (or lower the ' ...
+                     'stimulus level).'], peak, fullScale, fullScale);
+            end
+            playSignal = max(min(signal(:), fullScale), -fullScale);
             nsamps = numel(playSignal);
             rec = zeros(nsamps, 1);
 

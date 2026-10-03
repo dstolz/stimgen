@@ -30,6 +30,7 @@ try
 	sp.SelectionType = "Serial"; % within-stim selection (single StimObj, irrelevant)
 
 	obj.StimPlayObjs(end+1, 1) = sp;
+	obj.mark_bank_dirty_;
 
 	obj.refresh_listbox_;
 	obj.refresh_combo_controls_;

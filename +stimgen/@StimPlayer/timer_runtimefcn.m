@@ -1,11 +1,19 @@
 function timer_runtimefcn(obj, src, ~)
 % timer_runtimefcn(obj, src) - Main playback loop; called every timer period.
 % Waits until the ISI has elapsed, triggers the current buffer, advances
-% the bank selection, and pre-loads the next buffer.
+% the bank selection, and pre-loads the next buffer. Does nothing while the
+% session is paused.
 
 try
     if obj.nextSPOIdx < 1
         return  % all reps done; waiting for timer_stopfcn to fire
+    end
+
+    % Held by Pause: the timer keeps ticking so nothing is torn down, but
+    % nothing is presented. Resume shifts lastTrigTime by the pause length
+    % (see playback_control), so the ISI check below picks up where it was.
+    if obj.Paused_
+        return
     end
 
     isi = obj.currentISI;
@@ -19,20 +27,40 @@ try
     % Spin until ISI has exactly elapsed
     while obj.timeSinceStart - obj.lastTrigTime < isi, end
 
+    % A run that started with hardware stops if it has lost it (a parameter
+    % gone, the connection dropped) rather than trigger nothing and log the
+    % trial as presented. Checked before logging, so the log holds only
+    % presentations that were triggered.
+    obj.require_run_hardware_;
+
+    % The stimulus whose buffer is loaded, and the combination it was
+    % generated from. Read before increment, which can move a multi-object
+    % bank item's cursor on to another object.
+    presentedSP  = obj.CurrentSPObj;
+    presentedObj = presentedSP.CurrentStimObj;
+    presentedVar = presentedObj.get_variant_info();
+
     % Log presentation
     obj.StimOrder(end+1, 1)     = obj.nextSPOIdx;
     obj.StimOrderTime(end+1, 1) = obj.timeSinceStart;
     obj.StimPolarity(end+1, 1)  = obj.nextPolarity_;
-    presentedIdx = obj.nextSPOIdx;
+    obj.StimVariant(end+1, 1)   = presentedVar.ActiveIndex;
 
     % Trigger hardware (no-op if hardware unavailable)
     obj.trigger_stim_playback;
 
-    % Advance the current bank item's internal counter
-    obj.CurrentSPObj.increment;
-    obj.advance_variant_(presentedIdx);
+    % Count the presentation, then let the presented stimulus select its
+    % next combination through its own VariantSelectionMode.
+    presentedSP.increment;
+    obj.advance_variant_(presentedObj);
 
     obj.trialCount_ = obj.trialCount_ + 1;
+
+    % What was just presented, for the operator: bank item, the combination
+    % it was generated from, and the trial count.
+    obj.set_status_(sprintf('Presenting %s [combo %d/%d] (%d/%d)', ...
+        char(presentedSP.Name), presentedVar.ActiveIndex, presentedVar.NumCombinations, ...
+        obj.trialCount_, obj.total_count_()));
 
     % Select next
     obj.nextSPOIdx = obj.select_next_idx;

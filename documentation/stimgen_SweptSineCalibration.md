@@ -167,13 +167,18 @@ Two guards, in order of preference:
 With both in place the top point tracks the rest of the band to within 0.1 dB down to
 25 dB SNR.
 
-### Distortion separation (not implemented)
+### Distortion separation
 
 The log sweep places all $N$-th harmonic distortion products at time
 $\Delta t_N = -T \ln(N) / \ln(f_2/f_1)$ *before* the fundamental in the impulse response,
-which permits time-gating them out. That is not implemented here, so `metrics.thd_db`,
-`h2_db` and `h3_db` are `NaN` for swept-sine runs — MATLAB's `thd()` assumes a stationary
-sinusoid and returns a meaningless number on a chirp.
+which permits time-gating them out. `Engine.estimate_sweep_harmonics_` does exactly that:
+circular deconvolution wraps each product to the tail of the buffer, where it is gated out
+(gate positions from `harmonic_geometry_`, orders 2–5) and its level taken from the spectral
+ratio $|H_N(Nf)| / |H_1(f)|$ rather than from the gate's energy. `metrics.thd_db`,
+`thd_percent`, `h2_db` and `h3_db` are the broadband (band-median) summary, in dB re the
+fundamental; an order within 6 dB of the measurement floor reports `NaN`. The per-order
+curves against excitation frequency are in `metrics.harmonics`. MATLAB's `thd()` is not used:
+it assumes a stationary sinusoid and returns a meaningless number on a chirp.
 
 ---
 
@@ -191,7 +196,7 @@ sinusoid and returns a meaningless number on a chirp.
 ### Quality metrics
 
 - **SNR** — reported at end of sweep; broadband 95th-percentile-over-median of the response spectrum
-- **THD** — `NaN` for swept sine (see *Distortion separation* above); use a tone sweep when you need it
+- **THD** — from the time-gated harmonic impulses (see *Distortion separation* above); `NaN` for an order lost in the noise floor
 - **Peak-to-RMS ratio** — inherent 4 dB crest factor; avoid clipping
 - **Repeatability** — compare with repeated 1-second runs; <0.5 dB variation expected
 

@@ -10,11 +10,16 @@ Processing Toolbox; Audio Toolbox only for sound-card playback/preview.
 
 ## Working in this repo
 
-There is no build, no test suite, and no CI. Verification is done by running code in MATLAB.
+There is no build. `tests/` holds a `matlab.unittest` suite for the GUI-free, hardware-free
+code (level scale, weighting, band and meter arithmetic, serialization, variants, logging,
+the tooltip catalog, and the calibration engine against `documentation/tools/SimRigAdapter.m`);
+`.github/workflows/tests.yml` runs it in CI on pushes to `main` and on pull requests. GUIs and
+real hardware are still verified by running them. See `tests/README.md`.
 
 ```matlab
 addpath('C:\src\stimgen')   % the ROOT, never +stimgen itself (MATLAB resolves it as a package)
 
+results = runtests('tests');                                     % from the root
 t = stimgen.Tone; t.Frequency = 4000; t.update_signal; t.plot   % smoke test
 stimgen.StimPlayer                        % bank editor/player (offline = speaker preview only)
 stimgen.calibration.CalibrationGui        % offline: inspect/load a .esgc
@@ -24,7 +29,8 @@ stimgen.SpotCheck                         % offline: load/inspect a stimulus; Ru
 After editing a classdef, MATLAB caches the old definition. `clear classes` (or restart) before
 re-testing, otherwise changes appear not to take effect.
 
-`.esgc` files are gitignored — they are calibration output written during local testing.
+`.esgc` files are gitignored — they are calibration output written during local testing. So are
+`.wav`/`.flac` files, except fixtures under `tests/`.
 
 Commit messages follow Conventional Commits (`docs:`, `feat:`, …).
 
@@ -58,8 +64,9 @@ renders that stream, either into its own window or into axes a host GUI supplies
 catches listener errors (warning per notify), `emit_live_` guards payload construction — every
 `calibrate_*` treats an error as an aborted run and discards the partial data — and
 `LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
-per-measurement warning storm. `Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset`
-remain only as deprecated shims that forward to an attached monitor.
+per-measurement warning storm. The engine keeps no registry of monitors; a host that wants the
+last record drawn outside a run calls `LiveMonitor.show_engine_state`. Progress (`Engine.RunProgress`,
+observable) is published per measurement regardless of `ShowLivePlots`.
 
 **Spot check** — `stimgen.SpotCheck` (in `@SpotCheck/`) spans all three: it plays a stimulus
 through `Engine.play_and_capture`, wraps the microphone record in a `stimgen.CapturedSignal`
@@ -86,7 +93,10 @@ returning one) or the host's calibration adapter, and opens the record in its ow
 the calibration's `MicSensitivity` into it — the scale travels with the samples, never
 through a live `StimCalibration` handle — along with the pre-stimulus silence
 (`NoiseRecord`), what was asked for (`Request`) and the `Warnings`. The inspector reads any
-`CapturedSignal` with a sensitivity in Pa/dB SPL. The "measure it as it was calibrated" rule
+`CapturedSignal` with a sensitivity in Pa/dB SPL. The sensitivity handed over must be a
+*measured* one: `Engine.MicSensitivity` starts at a 1 V/Pa placeholder and can never be NaN,
+so read `Engine.known_mic_sensitivity()` (NaN unless `MicSensitivityKnown`), which SpotCheck
+does. The "measure it as it was calibrated" rule
 is `stimgen.util.level_request` + `stimgen.util.level_as_calibrated`, shared by SpotCheck,
 the capture and the inspector; do not re-derive it locally. A capture never touches the
 bank: at a hardware rate the bank does not run at, the combination is regenerated on a
@@ -102,7 +112,11 @@ bank: at a hardware rate the bank does not run at, the combination is regenerate
   `StimPlayer` and `CalibrationGui`.
 - `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`, plus a concrete
   `record(nSamples)` (silent `play_and_record` by default) that `calibrate_reference` uses so the
-  reference step never drives the speaker. Consumed only
+  reference step never drives the speaker, and concrete `full_scale()` / `input_range()` (NaN =
+  unknown by default). The Engine judges excitation headroom against
+  `min(MaxOutputVoltage, full_scale())` and response headroom against `input_range()`, falling back
+  to `MaxOutputVoltage` for either when the adapter returns NaN, so an older adapter behaves as
+  before. Consumed only
   by `Engine`. `WindowsSoundCardAdapter` is the one built-in implementation.
 
 Both are optional at construction; omitting them puts the GUIs in offline mode where speaker
@@ -192,11 +206,16 @@ metadata appears in `StimPlayer` with no player-side changes.
 Widget types are `numeric`, `text`, `checkbox`, `dropdown`, and `button`. A `button` entry is an
 *action*, not a property: its field name is only a widget `Tag` (it need not name a real property),
 and it declares `text` (caption) and `callback` (a public no-argument method on the stimulus
-object) — see `SoundFile.BrowseFiles`. Two near-duplicate generators must both learn any new widget
-type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (which re-implements
-`resolve_widget_type` as a local function because the static is protected). Both wire
-`ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
-has to be excluded there.
+object) — see `SoundFile.BrowseFiles`. Every row is built by one method,
+`StimType.build_prop_widget` (public, `Hidden`, because `StimPlayer` is not a subclass): label,
+widget, tooltip, display scale, expression fields for vectorizable properties, and
+`UserData.labelHandle`/`labelFormat`. A new widget type is added there only. The two generators —
+`@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` — call it and keep only
+their own layout and edit handling: each wires `ValueChangedFcn` itself (`interpret_gui` /
+`set_prop_`), skipping a `uibutton`, which has no such callback, and each passes an action handler
+that runs a button's method inside try/catch, reports a failure and rebuilds its panel on success.
+`resolve_widget_type` and `localFormatPropertyValue_` are public `Hidden` statics for the same
+reason; do not copy them into `StimPlayer` again.
 
 **Tooltip text lives in one JSON file, never in the code.** `+stimgen/tooltips.json` holds every
 hover string in the package, in one section per class; `stimgen.util.tooltip(source, key)` is the
@@ -241,6 +260,15 @@ getters follow this rule through `active_duration_` (locked combination inside a
 `active_variant_values` outside), so a plot refresh reading `Time` does not step the variant.
 `Time` is `(0:N-1)/Fs`.
 
+**A presenter selects variants through the stimulus, never by index.** `update_signal()` called
+outside a variant cycle is the one call that selects the next combination per
+`VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and
+bypass the mode (right for previews and stepping, wrong for a run). `StimPlayer`'s Run calls
+`reset_variant_selection()` then `update_signal()` on every stimulus at start, `update_signal()`
+on the presented one after each trial, and logs the index played in `StimVariant`. `Reps` is per
+bank item, shared among its combinations, and never rounded: an uneven split is shown and warned
+about, not corrected.
+
 **The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
 `spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
 `20*log10((v/MicSensitivity)/Engine.ReferencePressurePa)`. `compute_spl_voltage_`,
@@ -253,6 +281,15 @@ the default 94 dB, 20 dB wrong at 114). `ReferenceLevel` is a property of the *c
 read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into V/Pa. `.esgc`
 schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
 is not 94.
+
+**A LUT voltage is anchored to the table's own `normative_db`, not the live `NormativeValue`.**
+Every `tone`/`click`/`swept_sine` table records the `NormativeValue` it was solved for when the
+sweep committed it, and `compute_adjusted_voltage` scales from that via
+`Engine.lut_normative_db(table, fallback)`. `NormativeValue` is a setting for the *next* sweep
+(the GUI pushes its field into the engine before every action), so scaling from it shifted every
+drive by however far the field had moved. `.esgc` schema version 3 marks the field; `Engine.restore`
+stamps older files' tables with the `NormativeValue` saved beside them. Anything that reads a stored
+voltage must go through the table's value too.
 
 **A level measured at the peak is labelled dB peSPL.** The click table (and anything
 `level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)
@@ -276,6 +313,13 @@ shared by `analyze_background_` and the inspector's Bands tab.
 supplies the lookup key (Frequency, ClickDuration, or geometric mean of Start/StopFrequency). A new
 calibration mode therefore requires coordinated edits in `Engine`, `apply_calibration`, and the
 subclass constant.
+
+**StimPlayer enables controls in two layers.** `lock_bank_controls_` holds a fixed list off during
+a session; `sync_control_enable_` then keeps a control off while its precondition is missing (no
+host, no route, no selection, empty bank) and runs at the end of every lock change. A new
+bank-editing control goes in the lock list *and*, if it needs something, in a rule there; keyboard
+shortcuts (`on_keypress_` in `create.m`) check the control's `Enable` rather than re-deriving it.
+Every bank edit calls `mark_bank_dirty_`, or close/Load Bank will not offer to save it.
 
 **Error identifiers** follow `stimgen:Class:Reason`. `StimPlayer.format_gui_error_message_` maps
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
@@ -320,9 +364,11 @@ becomes unconstructable. See `documentation/stimgen_logging.md`.
 
 ## Hardware parameter contract
 
-`StimPlayer` resolves these names from the host at Run time and disables hardware playback if any
-are missing (falling back to speaker preview): `BufferData_0/1`, `BufferSize_0/1`,
-`x_Trigger_0/1`. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
+`StimPlayer` resolves these names from the host at Run time: `BufferData_0/1`, `BufferSize_0/1`,
+`x_Trigger_0/1`. If any are missing (or no protocol is loaded/connected) Run asks before starting a
+dry run that plays nothing, naming what is missing; a run that started with them and loses one
+stops with `stimgen:StimPlayer:HardwareLost` rather than continuing silently. Preview falls back
+to the host's calibration adapter. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
 application's hardware circuit must expose to support hardware-triggered playback.
 
 ## Documentation

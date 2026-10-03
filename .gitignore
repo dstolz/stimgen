@@ -8,9 +8,12 @@ slprj/
 # Calibration output written during local testing
 *.esgc
 
-# Sound files used with stimgen.SoundFile during local testing
+# Sound files used with stimgen.SoundFile during local testing -- but not
+# fixtures under tests/, which are part of the suite
 *.wav
 *.flac
+!tests/**/*.wav
+!tests/**/*.flac
 
 # Screenshot regeneration output (documentation/tools/make_shots.m)
 documentation/tools/out/

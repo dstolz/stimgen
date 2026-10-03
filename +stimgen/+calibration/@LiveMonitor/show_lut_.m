@@ -71,7 +71,7 @@ hLut = obj.gobj_(k('lut_' + spec.field), @() line(ax, NaN, NaN, LineStyle='-', .
     DisplayName=spec.trace));
 set(hLut, XData=x(ok), YData=y(ok));
 
-draw_normative_(obj, ax, k, eng, x(ok));
+draw_normative_(obj, ax, k, eng, S, x(ok));
 
 if obj.LogX
     set(ax, XScale='log');
@@ -130,11 +130,13 @@ spec.unit = stimgen.calibration.LiveMonitor.panel_level_unit_(panel);
 end
 
 % ------------------------------------------------------------------------ %
-function draw_normative_(obj, ax, k, eng, x)
+function draw_normative_(obj, ax, k, eng, S, x)
 % The level the voltage column was solved for, which is what makes the
 % level curve's distance from it readable as headroom rather than as a
-% number needing the settings panel to interpret.
-v = eng.NormativeValue;
+% number needing the settings panel to interpret. The table's own record of
+% it: the engine's NormativeValue is the setting for the next sweep and may
+% have moved since this one.
+v = stimgen.calibration.Engine.lut_normative_db(S, eng.NormativeValue);
 if ~isfinite(v) || isempty(x)
     obj.drop_(k('norm'));
     return

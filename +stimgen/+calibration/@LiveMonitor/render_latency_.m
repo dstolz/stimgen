@@ -240,11 +240,10 @@ function [head, sub, headColor] = latency_caption_(lat)
 if lat.valid
     head = sprintf('Conduction delay  %.3f ms', lat.delay_ms);
     headColor = [0 0 0];
-    % Temperature in °F to match the setting it came from, which the
-    % CalibrationGui takes in Fahrenheit; the payload carries Celsius,
-    % the unit the Engine works in.
-    line1 = sprintf('~%.2f m of air at %.1f m/s (%.1f °F)', ...
-        lat.path_m, lat.speed_of_sound_ms, lat.temperature_c * 9/5 + 32);
+    % Celsius, the unit the payload carries and every other display of
+    % the temperature uses.
+    line1 = sprintf('~%.2f m of air at %.1f m/s (%.1f °C)', ...
+        lat.path_m, lat.speed_of_sound_ms, lat.temperature_c);
 elseif lat.at_bound
     head = 'Conduction delay  \bfUNRELIABLE\rm';
     headColor = [0.75 0 0];

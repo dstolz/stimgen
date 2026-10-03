@@ -164,6 +164,13 @@ adapter = host.calibrationAdapter();
 
 To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`. `record(nSamples)` — used by the reference measurement, which must not drive the speaker — is concrete and defaults to a silent `play_and_record`, so it only needs overriding if the device can acquire without arming its output.
 
+Two more concrete methods describe the converters' ranges, and both default to `NaN` ("not known"):
+
+- `full_scale()` — the largest `|signal|` `play_and_record` can reproduce. The engine's output ceiling is `min(MaxOutputVoltage, full_scale())`: excitation headroom and its clipping flag are judged against it, `test_tones`/`test_clicks` skip points whose drive exceeds it, and `play_and_capture` warns about a waveform beyond it.
+- `input_range()` — the largest `|response|` the input records before saturating. Response headroom, the response clipping flag, the background's headroom, and the live monitor's clipping rails use it; when it is `NaN` they fall back to `MaxOutputVoltage`, the assumption they always made.
+
+An adapter that overrides neither behaves exactly as before. `WindowsSoundCardAdapter` reports 1 for both (digital full scale), and its `play_and_record` **errors** (`stimgen:calibration:WindowsSoundCardAdapter:outOfRange`) on a signal beyond ±1 rather than clamping it: a clipped excitation would be measured as if it were the waveform the table says was played, and every drive voltage in the table would be wrong. The error aborts the run, and runs are atomic, so the previous table survives. On a sound card, keep `ExcitationVoltage` at 1 or below. The headroom records carry the ceilings they were judged against as `assumedFullScaleV` (output) and `assumedInputFullScaleV` (input).
+
 ### Step 2 — Create An Engine
 
 ```matlab
@@ -688,6 +695,8 @@ V = eng.compute_adjusted_voltage("tone", 4000, 70);
 V = eng.compute_adjusted_voltage("click", 0.0001, 80);
 ```
 
+A lookup outside the table's measured span is extrapolated (the table is interpolated with `makima`) and may be well off; the first such lookup per table logs a warning at verbosity 0, re-armed whenever `CalibrationData` changes. `calibrate_tones` and `calibrate_clicks` drop duplicate frequencies/durations (sorted ascending, with a warning) before measuring, since a repeated abscissa would leave a table that cannot be interpolated.
+
 In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.esgc` file is assigned to a stimulus generator — you do not need to call it manually during an experiment.
 
 ---
@@ -699,6 +708,16 @@ event for every measurement, carrying a
 [`stimgen.calibration.LiveUpdate`](../+stimgen/+calibration/LiveUpdate.m) payload: the
 waveform just acquired, the span of it that was measured, the partial lookup table, and
 the scalar metrics for that point.
+
+Progress is published separately and always, live plots or not: the observable
+`eng.RunProgress` struct (`stage`, `phase`, `index`/`total` point, `repeat`/`repeatTotal`
+pass, `fraction` of the run done) is updated per measurement by every sweep and test, so a
+host can show "Tone 12/40" without paying for the plots. `CalibrationGui` appends it to its
+status line:
+
+```matlab
+addlistener(eng, 'RunProgress', 'PostSet', @(~,~) disp(eng.RunProgress));
+```
 
 `stimgen.calibration.LiveMonitor` renders that stream into the waveform and spectrum
 panels and the transfer curve as it fills in:
@@ -855,9 +874,9 @@ addlistener(eng, 'LiveUpdate', @(~, d) fprintf('%s %d/%d — %.0f%%\n', ...
 A listener that throws is logged and skipped rather than allowed to abort the sweep: a
 plotting bug must not discard a measurement that took minutes to acquire.
 
-`Engine.plot_signal`, `plot_spectrum`, `plot_transfer` and `plot_reset` still exist and
-forward to an attached monitor, creating one if none is attached. They are deprecated;
-prefer a `LiveMonitor`.
+The engine's old drawing entry points (`plot_signal`, `plot_spectrum`, `plot_transfer`,
+`plot_reset`) have been removed; use a `LiveMonitor`, and its `show_engine_state` to draw
+the engine's last record outside a run.
 
 ---
 
@@ -865,17 +884,17 @@ prefer a `LiveMonitor`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known |
+| `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known. The default is a placeholder, not a sensitivity: `MicSensitivityKnown` (read-only, saved in the `.esgc`) is false until `calibrate_reference` measures one, `set_configuration` is given a different value, or a calibration where it was known is restored. A file written before the flag existed counts as known unless its sensitivity is exactly the 1 V/Pa default. `known_mic_sensitivity()` returns the sensitivity, or `NaN` when it is not known; `SpotCheck` reads levels through it |
 | `ReferenceLevel` | 94 dB | SPL produced by your calibrator. Read only by `calibrate_reference`; it is not an offset in the dB SPL scale (see [above](#where-referencelevel-enters--and-where-it-must-not)) |
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
-| `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
+| `NormativeValue` | 80 dB | Target SPL the next sweep solves its voltage column for. Each table records the value it was built at as `normative_db`, and `compute_adjusted_voltage` scales from that, so changing this after a sweep moves only the next sweep (and the default levels the tests and refinement run at) |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
-| `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
+| `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable — lowered to the adapter's `full_scale()` when that is smaller (1 on a sound card). Response headroom uses the adapter's `input_range()` instead, and this only when the adapter reports none |
 | `AdcGain` | 0 dB | dB of gain on the input stage, **recorded only**. Nothing reads it: the measurement was taken through that gain, so it is already inside every voltage and level in the tables, and applying it again would double-count it. It is here so a saved calibration states the rig settings it was made at, which is the one thing the tables cannot be checked against afterwards. Entered in the GUI under Options > Hardware and Analysis Settings. Saved in the `.esgc` file |
 | `DacAttenuation` | 0 dB | dB of attenuation on the output stage, on exactly the same terms as `AdcGain`: recorded, never applied. Saved in the `.esgc` file |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
 | `AcCoupleFrequency` | 20 Hz | Corner of that high-pass. Put it well below the lowest frequency being calibrated — the response is about 3 dB down at the corner itself. Saved in the `.esgc` file |
-| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere the package computes; `CalibrationGui` is the one place it is entered and shown in Fahrenheit |
+| `AmbientTemperature` | 20 °C | Air temperature of the test space. Sets the dependent `SpeedOfSound` (`331.3*sqrt(1+T/273.15)`, 343.2 m/s at the default), which is the speed every distance derived from a time of flight uses: the air path of a conduction delay, and each reflection's `path_difference_m` in a swept-sine analysis. No level, delay or arrival time depends on it. About 0.6 m/s per degree, so 5 °C is 1% of a distance. Saved in the `.esgc` file. Celsius here and everywhere it is entered or shown, `CalibrationGui` included |
 | `SpectralWindow` | `"auto"` | Analysis window every spectral estimator applies. `"auto"` leaves each with its own — flat top where a level is read, Hann where a floor is averaged — and is the behavior these settings were added underneath. `"flattop"`, `"hann"`, `"hamming"`, `"blackman"`, `"blackmanharris"` or `"rectangular"` applies one everywhere. Saved in the `.esgc` file. See [Spectral Analysis Settings](#spectral-analysis-settings) |
 | `SpectralFftLength` | 0 | Transform length those estimators run over. 0 leaves each with the next power of two at or above its record; a nonzero value raises that and never lowers it, so it can only zero-pad. Saved in the `.esgc` file |
 | `Notes` | `""` | Free text about this calibration in the operator's own words — the speaker, the microphone, the placement, whatever the tables cannot state for themselves. Never parsed and never read into a calculation. Saved in the `.esgc` file, restored with it, kept by `reset_calibration`, and printed at the top of `describe`. Entered in the GUI's Notes box |
@@ -898,23 +917,25 @@ otherwise written only by the calibration runs themselves.
 
 | Field | Populated by | Contents |
 |---|---|---|
-| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); burst_duration, gap_duration; metrics sub-struct |
-| `click` | `calibrate_clicks` | duration, measurement, spl_db, voltage (Nx1); metrics sub-struct |
-| `swept_sine` | `calibrate_swept_sine` | frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct |
+| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); normative_db; burst_duration, gap_duration; metrics sub-struct |
+| `click` | `calibrate_clicks` | duration, measurement, spl_db, voltage (Nx1); normative_db; metrics sub-struct |
+| `swept_sine` | `calibrate_swept_sine` | frequency, measurement, spl_db, voltage (Nx1); normative_db; metrics sub-struct |
 | `filter` | `design_filter` | `digitalFilter` object, or `[]` |
 | `filterGrpDelay` | `design_filter` | filter group delay in samples (0 until filter is designed) |
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
 | `toneTest` | `test_tones` | struct recording the tone-LUT verification run: the `frequency`-by-`level_db` grid, `lut_source`, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-frequency breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
-| `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
+| `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 | `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
+
+`normative_db` is the level (dB SPL; dB peSPL for `click`) the `voltage` column produces — the engine's `NormativeValue` when the sweep committed the table. `compute_adjusted_voltage` scales a stored voltage from it (`v = voltage * 10^((level - normative_db)/20)`), never from the live `NormativeValue`, and `refine_*` refines at it by default. `Engine.lut_normative_db(table, fallback)` reads it. Files before `.esgc` schema version 3 have no such field: `Engine.restore` (behind both `Engine.load` and `StimCalibration.loadobj`) stamps each of their tables with the `NormativeValue` saved in the same file, which is what built them, so they play exactly as before.
 
 After `refine_tones`/`refine_clicks` has run, the refined table (`tone`, `click` or `swept_sine`) also carries a `refinement` sub-struct: `lut_source`, `level_db`, the per-pass `iterations` record (`max_abs_error_db`, `rms_error_db`, `bias_db`, `n_reliable`, `n_corrected`, `max_correction_db`), `initial_`/`final_max_abs_error_db`, `n_unreliable`, `converged`, the criteria applied, and `refinedOn`. The next sweep of that table replaces both together.
 
 A sweep that is cancelled or fails leaves the table it would have replaced exactly as it was. A sweep that completes replaces the table and removes what was derived from the old one: `toneTest` when its `lut_source` names the table, `clickTest` for a click sweep, and the equalizer (`filter` back to `[]`, `filterGrpDelay` to 0, `filterSource`, `filterDesign` and `filterTest` removed) when `filterSource` names it. Removing the filter is logged; run `design_filter` again against the new table.
 
-The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
+The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields are broadband scalars rather than per-frequency vectors: `estimate_sweep_harmonics_` time-gates the harmonic impulses that the log sweep places ahead of the linear impulse response, and `thd_db`, `thd_percent`, `h2_db` and `h3_db` are the band-median levels re the fundamental (`NaN` for an order that sits within 6 dB of the measurement floor). The per-order curves against excitation frequency are in `metrics.harmonics`. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`. The `click` table's `metrics` carry `noise_floor_db`, `snr_db`, `repeatability` and `clipping_headroom` but no distortion: a click is an impulse, with no fundamental for a THD or harmonic to be referred to. Files saved before this carry a `thd_db` (and NaN `h2_db`/`h3_db`) on the click table and `clickTest`; they load unchanged, and neither `describe` nor the Clicks tab shows them.
 
 ---
 
@@ -992,7 +1013,7 @@ Three notes on behaviour:
 Source: `+stimgen/+calibration/`
 
 - `Engine.m` — calibration orchestration, result storage, save/load, voltage lookup, and the `describe` report (see [Step 9](#step-9--read-it-back-in-words)).
-- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
+- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`, `full_scale` and `input_range`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).

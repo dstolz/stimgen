@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`.
+Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `SoundFile` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
 
 ## What The Base Class Provides
 
@@ -114,6 +114,9 @@ These are used by editing workflows that support computed property values.
 ## GUI Integration
 
 `create_gui` builds widget controls from metadata (`propMeta`) and property definitions.
+Each label+widget row comes from `build_prop_widget(parent, propName, pm, labelFormat, actionFcn)`,
+a public `Hidden` method that `StimPlayer`'s bank editor calls too, so both panels render a
+property identically; each caller only places the row and wires its own edit handling.
 
 Recent UI sync behavior includes `update_handle_value`, which keeps control state aligned after property updates and variant changes.
 

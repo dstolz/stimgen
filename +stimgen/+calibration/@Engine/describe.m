@@ -48,7 +48,12 @@ lines(end+1,1) = "";
 lines(end+1,1) = "Microphone and scale";
 lines(end+1,1) = field_("  Reference", sprintf('%.1f dB SPL at %.10g Hz', ...
     obj.ReferenceLevel, obj.ReferenceFrequency));
-lines(end+1,1) = field_("  Mic sensitivity", sprintf('%.5g V/Pa', obj.MicSensitivity));
+if obj.MicSensitivityKnown
+    lines(end+1,1) = field_("  Mic sensitivity", sprintf('%.5g V/Pa', obj.MicSensitivity));
+else
+    lines(end+1,1) = field_("  Mic sensitivity", sprintf( ...
+        '%.5g V/Pa -- NOT MEASURED (the default; run calibrate_reference)', obj.MicSensitivity));
+end
 lines(end+1,1) = field_("  Normative level", sprintf('%.10g dB SPL', obj.NormativeValue));
 
 lines(end+1,1) = "";
@@ -68,7 +73,7 @@ else
     lines(end+1,1) = field_("  AC coupling", "off");
 end
 lines(end+1,1) = field_("  Spectral analysis", spectral_(obj));
-lines(end+1,1) = field_("  Ambient", sprintf('%.1f C, sound travels %.1f m/s', ...
+lines(end+1,1) = field_("  Ambient", sprintf('%.1f °C, sound travels %.1f m/s', ...
     obj.AmbientTemperature, obj.SpeedOfSound));
 if obj.Fs > 0
     lines(end+1,1) = field_("  Sample rate", sprintf('%.10g Hz (from the attached adapter)', obj.Fs));
@@ -199,11 +204,28 @@ out(end+1,1) = field_("  Level measured", sprintf('%.1f to %.1f %s (median %.1f)
     min(spl), max(spl), level_unit_(fieldName), median(spl, 'omitnan')));
 
 v = t.voltage(:);
-out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V at the normative level', ...
-    min(v), max(v)));
+% Solved for the level the table recorded when it was committed, which is
+% not necessarily the engine's Normative level printed above.
+nDb = stimgen.calibration.Engine.lut_normative_db(t, NaN);
+if isfinite(nDb)
+    out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V for %.10g %s (the table''s normative level)', ...
+        min(v), max(v), nDb, level_unit_(fieldName)));
+else
+    out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V at the normative level', ...
+        min(v), max(v)));
+end
 
 if isfield(t, 'metrics')
-    out = [out; metric_lines_(t.metrics, x, xUnit, xFmt)];
+    m = t.metrics;
+    if startsWith(string(fieldName), "click")
+        % A click has no fundamental, so a THD on its record is no figure
+        % of merit; older files still carry one and it is not reported.
+        drop = intersect(fieldnames(m), {'thd_db', 'h2_db', 'h3_db'});
+        if ~isempty(drop)
+            m = rmfield(m, drop);
+        end
+    end
+    out = [out; metric_lines_(m, x, xUnit, xFmt)];
 end
 if isfield(t, 'refinement') && ~isempty(t.refinement)
     out(end+1,1) = field_("  Refinement", refinement_(t.refinement));

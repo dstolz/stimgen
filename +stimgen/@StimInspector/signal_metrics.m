@@ -75,7 +75,10 @@ M = struct( ...
     'SinadDb',        NaN, ...
     'SfdrDb',         NaN);
 
-if n < 8 || ~all(isfinite(y)) || ~any(y ~= 0)
+% Constant means any constant, not only zero: a DC record has no fundamental,
+% and its Hann leakage would otherwise be reported as one. The same test
+% stimgen.util.sound_levels uses.
+if n < 8 || ~all(isfinite(y)) || ~any(y ~= y(1))
     return
 end
 M.Valid = true;

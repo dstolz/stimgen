@@ -15,9 +15,18 @@ classdef Engine < handle
     %
     % CalibrationData is empty ([]) until a successful run completes.
     % After a successful run it is a struct with fields:
-    %   tone             - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct
-    %   click            - struct: duration, measurement, spl_db, voltage (Nx1); metrics sub-struct
-    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct.
+    %   tone             - struct: frequency, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct
+    %   click            - struct: duration, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct
+    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct.
+    %                      normative_db is the level (dB SPL) the voltage
+    %                      column produces: NormativeValue when the sweep
+    %                      committed the table. compute_adjusted_voltage
+    %                      scales from it, never from the live NormativeValue,
+    %                      so changing that setting afterwards moves only the
+    %                      next sweep. See lut_normative_db.
     %                      Its metrics also carry a full acoustic characterization
     %                      derived from the deconvolved impulse response: phase and
     %                      group delay (with the minimum-phase/excess split),
@@ -179,6 +188,16 @@ classdef Engine < handle
         % produced it. describe() prints it alongside the tables.
         Notes               (1,1) string {mustBeNonmissing}                 = ""
         CalibrationTimestamp (1,1) datetime = datetime("")
+        % True when MicSensitivity is a real sensitivity rather than the
+        % 1 V/Pa placeholder every engine starts with: calibrate_reference
+        % measured it, set_configuration was handed a different value (a
+        % datasheet figure, a sensitivity measured elsewhere), or restore()
+        % read it from a calibration where it was known. MicSensitivity is
+        % validated positive and finite, so it can never itself say "not
+        % measured"; without this flag a level read on a fresh engine is off
+        % by 20*log10(1/trueSensitivity) and looks like a calibration fault.
+        % known_mic_sensitivity() is the read that respects it.
+        MicSensitivityKnown (1,1) logical = false
     end
 
     events
@@ -190,6 +209,11 @@ classdef Engine < handle
     % --- Calibration results and transient signals ---
     properties (SetAccess = protected)
         CalibrationData = []    % struct (see class doc) or [] if uncalibrated
+        % Count of assignments to CalibrationData, bumped by its set method.
+        % Lets a host tell "a run changed the calibration" from "a run left it
+        % alone" without comparing two struct trees -- CalibrationGui marks a
+        % calibration unsaved by it. Session state; never saved.
+        DataRevision (1,1) double = 0
         Adapter                 % stimgen.calibration.HwAdapter | []
         ExcitationSignal (1,:) double = []
         ResponseSignal   (1,:) double = []
@@ -228,18 +252,28 @@ classdef Engine < handle
             'peak_v', nan, 'noise_v', nan, 'corr', nan, ...
             'at_bound', false, 'valid', false, 'measuredOn', NaT, ...
             'temperature_c', nan, 'speed_of_sound_ms', nan, 'path_m', nan)
+
+        % Where the run in progress has got to, published per measurement
+        % whether or not ShowLivePlots is on, so a host can keep a progress
+        % line ("Tone 12/40") without paying for -- or asking the operator to
+        % turn on -- the live plots. stage is the LiveUpdate stage name;
+        % index/total the point, repeat/repeatTotal the pass, fraction the
+        % share of the whole run done (NaN when unknown). Observable for that
+        % host; nothing here reads it back. Not persisted.
+        RunProgress (1,1) struct = struct('stage', "", 'phase', "", ...
+            'index', 0, 'total', 0, 'repeat', 0, 'repeatTotal', 0, 'fraction', nan)
     end
 
     properties (Access = private)
         CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
         CancelScopeDepth_ (1,1) double = 0      % >0 inside run_cancellable/refine_lut_; nested reset_cancel_ calls are then no-ops
-        Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
         ToneLutRedirectWarned_ (1,1) logical = false  % latched by resolve_tone_lut_ so a redirect announces itself once per change, not per lookup
         LastDcRemoved_ (1,1) double = nan   % DC ac_couple_response_ took off the current record; NaN when it took none
         LastAcCoupleHz_ (1,1) double = nan  % corner it high-passed that record at; NaN when it did not filter
         AcCoupleFilter_ = []                % cached high-pass design for the current (fs, corner)
+        ExtrapolationWarned_ (1,1) struct = struct()  % LUT names compute_adjusted_voltage has reported extrapolating; cleared with CalibrationData
     end
 
     properties (Dependent)
@@ -333,6 +367,16 @@ classdef Engine < handle
             obj.ToneLutRedirectWarned_ = false; %#ok<MCSUP>
         end
 
+        function set.CalibrationData(obj, cd)
+            % Re-arm compute_adjusted_voltage's one-shot extrapolation notice:
+            % a new or restored table has a new span, and the first lookup
+            % outside it deserves saying again; and count the change for
+            % DataRevision. See set.ToneLutSource on MCSUP.
+            obj.CalibrationData = cd;
+            obj.ExtrapolationWarned_ = struct(); %#ok<MCSUP>
+            obj.DataRevision = obj.DataRevision + 1; %#ok<MCSUP>
+        end
+
         function set.ResponseSignal(obj, y)
             % A new record has no probe until the method that embedded one
             % says so, which it does after this assignment. Clearing here
@@ -343,19 +387,6 @@ classdef Engine < handle
             % Engine is a handle class; see set.ToneLutSource on MCSUP.
             obj.ResponseSignal = y;
             obj.ResponseProbeSpan = []; %#ok<MCSUP>
-        end
-
-        function plot_reset(obj)
-            % Clear the attached monitors' panels.
-            %
-            % Deprecated along with plot_signal/plot_spectrum/plot_transfer:
-            % drawing belongs to stimgen.calibration.LiveMonitor now. Kept so
-            % that scripts written against the old subplot figure keep working.
-            mons = obj.live_monitors_();
-            for k = 1:numel(mons)
-                mons{k}.reset();
-            end
-            drawnow;
         end
 
         function spl = spl_from_volts(obj, vrms)
@@ -384,6 +415,26 @@ classdef Engine < handle
             spl = stimgen.calibration.Engine.volts_to_spl(vrms, obj.MicSensitivity);
         end
 
+        function s = known_mic_sensitivity(obj)
+            % s = known_mic_sensitivity(obj)
+            % MicSensitivity when it is a real sensitivity, NaN otherwise.
+            %
+            % What a caller that turns an arbitrary recording into dB SPL --
+            % stimgen.SpotCheck, StimPlayer.capture_stim -- should read
+            % instead of MicSensitivity: NaN is what
+            % stimgen.util.level_as_calibrated and
+            % stimgen.CapturedSignal.from_capture take to mean "no scale,
+            % report volts", and the 1 V/Pa placeholder is not a scale.
+            %
+            % Returns:
+            %   s - (1,1) double V/Pa, or NaN when MicSensitivityKnown is false
+            if obj.MicSensitivityKnown
+                s = obj.MicSensitivity;
+            else
+                s = NaN;
+            end
+        end
+
         function s = spectral_options(obj)
             % s = spectral_options(obj)
             % The window and transform length every spectral estimator here
@@ -399,44 +450,13 @@ classdef Engine < handle
             s = stimgen.calibration.SpectralOptions( ...
                 obj.SpectralWindow, obj.SpectralFftLength);
         end
-
-        plot_signal(obj, reset) % Deprecated; delegates to LiveMonitor.
-        plot_spectrum(obj, reset) % Deprecated; delegates to LiveMonitor.
-        plot_transfer(obj, type, tableData, reset) % Deprecated; delegates to LiveMonitor.
     end
 
     % ------------------------------------------------------------------ %
     % Live-update plumbing. stimgen.calibration.LiveMonitor is the only
-    % outside caller: it registers itself so the deprecated plot_ entry
-    % points can find a renderer, and asks for a snapshot when it needs to
-    % draw the engine's state outside a run.
+    % outside caller: it asks for a snapshot when it needs to draw the
+    % engine's state outside a run.
     methods (Access = {?stimgen.calibration.Engine, ?stimgen.calibration.LiveMonitor})
-
-        function register_monitor_(obj, mon)
-            % register_monitor_(obj, mon)
-            % Remember a monitor that is following this engine. The LiveUpdate
-            % event drives it during a run; this registration is what lets the
-            % off-run entry points reach it as well.
-            mons = obj.live_monitors_();
-            for k = 1:numel(mons)
-                if mons{k} == mon
-                    obj.Monitors_ = mons;
-                    return
-                end
-            end
-            obj.Monitors_ = [mons, {mon}];
-        end
-
-        function unregister_monitor_(obj, mon)
-            % unregister_monitor_(obj, mon)
-            % Forget a monitor. Also drops any that have since been deleted.
-            mons = obj.live_monitors_();
-            keep = true(1, numel(mons));
-            for k = 1:numel(mons)
-                keep(k) = mons{k} ~= mon;
-            end
-            obj.Monitors_ = mons(keep);
-        end
 
         function d = live_snapshot_(obj, stage, phase, varargin)
             % d = live_snapshot_(obj, stage, phase)
@@ -476,18 +496,6 @@ classdef Engine < handle
     end
 
     methods (Access = private)
-        function mons = live_monitors_(obj)
-            % mons = live_monitors_(obj)
-            % Registered monitors that are still alive. A host GUI can be
-            % closed without detaching, so the list is pruned on every read
-            % rather than trusted.
-            mons = obj.Monitors_;
-            if isempty(mons), return; end
-            alive = cellfun(@(m) ~isempty(m) && isvalid(m), mons);
-            mons  = mons(alive);
-            obj.Monitors_ = mons;
-        end
-
         function emit_live_(obj, stage, phase, varargin)
             % emit_live_(obj, stage, phase, Name, Value, ...)
             % Broadcast one LiveUpdate, gated by ShowLivePlots so a headless
@@ -501,6 +509,7 @@ classdef Engine < handle
             % once per run and the sweep carries on. LiveMonitor.update guards
             % its own rendering the same way, so a plotting bug is one log
             % line rather than a per-measurement warning storm.
+            obj.note_progress_(stage, phase, varargin{:});
             if ~obj.ShowLivePlots, return; end
             try
                 notify(obj, 'LiveUpdate', obj.live_snapshot_(stage, phase, varargin{:}));
@@ -511,6 +520,37 @@ classdef Engine < handle
                         'A LiveUpdate listener failed; live plotting may be incomplete for this run.');
                     stimgen.util.vprintf(0, 1, ME);
                 end
+            end
+        end
+
+        function note_progress_(obj, stage, phase, varargin)
+            % note_progress_(obj, stage, phase, Name, Value, ...)
+            % Publish RunProgress from the progress fields of a LiveUpdate
+            % argument list (Index, Total, Repeat, RepeatTotal, Progress);
+            % every other name is ignored. Called by emit_live_ ahead of its
+            % ShowLivePlots gate, and directly by the sweeps' per-measurement
+            % updates, which sit inside that gate. Never throws: progress is
+            % worth less than the measurement it reports on.
+            try
+                p = struct('stage', string(stage), 'phase', string(phase), ...
+                    'index', 0, 'total', 0, 'repeat', 0, 'repeatTotal', 0, ...
+                    'fraction', nan);
+                map = {'Index', 'index'; 'Total', 'total'; 'Repeat', 'repeat'; ...
+                       'RepeatTotal', 'repeatTotal'; 'Progress', 'fraction'};
+                for k = 1:2:numel(varargin) - 1
+                    name = varargin{k};
+                    if ~(ischar(name) || (isstring(name) && isscalar(name)))
+                        continue
+                    end
+                    hit = strcmp(map(:, 1), char(name));
+                    v = varargin{k + 1};
+                    if any(hit) && isnumeric(v) && isscalar(v)
+                        p.(map{hit, 2}) = double(v);
+                    end
+                end
+                obj.RunProgress = p;
+            catch ME
+                stimgen.util.vprintf(3, 'RunProgress update skipped: %s', ME.message);
             end
         end
 
@@ -543,7 +583,7 @@ classdef Engine < handle
                 'MicSensitivity',    obj.MicSensitivity, ...
                 'NormativeValue',    obj.NormativeValue, ...
                 'ExcitationVoltage', obj.ExcitationVoltage, ...
-                'MaxOutputV',        obj.MaxOutputVoltage, ...
+                'MaxOutputV',        obj.output_ceiling_(), ...
                 'SpectralWindow',    obj.SpectralWindow, ...
                 'SpectralFftLength', obj.SpectralFftLength);
         end
@@ -554,7 +594,9 @@ classdef Engine < handle
             % stored in the calibration metrics, so the warning on screen and
             % the flag in the saved file cannot disagree.
             m = stimgen.calibration.LiveUpdate.default_metrics();
-            m.full_scale_v = obj.MaxOutputVoltage;
+            % The response panel draws its clipping rails at the input's
+            % range, the ceiling the response is actually judged against.
+            m.full_scale_v = obj.input_ceiling_();
 
             y = obj.ResponseSignal;
             if isempty(y), return; end
@@ -572,19 +614,41 @@ classdef Engine < handle
             m.ac_coupled_hz = obj.LastAcCoupleHz_;
         end
 
-        function render_engine_state_(obj, reset)
-            % Back end of the deprecated plot_signal/plot_spectrum entry
-            % points: draw the current response through whichever monitors are
-            % attached, creating one that owns its own window if none is.
-            mons = obj.live_monitors_();
-            if isempty(mons)
-                mons = {stimgen.calibration.LiveMonitor(obj)};
+        function tf = extrapolation_warned_(obj, lutType)
+            % tf = extrapolation_warned_(obj, lutType)
+            % False the first time it is asked about lutType since
+            % CalibrationData last changed, and latches; true after that.
+            f = char(lutType);
+            tf = isfield(obj.ExtrapolationWarned_, f);
+            obj.ExtrapolationWarned_.(f) = true;
+        end
+
+        function v = output_ceiling_(obj)
+            % v = output_ceiling_(obj)
+            % The largest drive the rig can reproduce: MaxOutputVoltage,
+            % lowered to the adapter's full_scale() when it reports one. An
+            % adapter that does not (HwAdapter's NaN default) leaves
+            % MaxOutputVoltage in charge, as it always was.
+            v = obj.MaxOutputVoltage;
+            if ~isempty(obj.Adapter)
+                a = double(obj.Adapter.full_scale());
+                if isscalar(a) && isfinite(a) && a > 0
+                    v = min(v, a);
+                end
             end
-            for k = 1:numel(mons)
-                if reset
-                    mons{k}.reset();
-                else
-                    mons{k}.show_engine_state(obj);
+        end
+
+        function v = input_ceiling_(obj)
+            % v = input_ceiling_(obj)
+            % The largest response the input can record: the adapter's
+            % input_range(), or MaxOutputVoltage when it does not report one
+            % -- the ceiling every response was judged against before the
+            % adapter could say, and still the only assumption available.
+            v = obj.MaxOutputVoltage;
+            if ~isempty(obj.Adapter)
+                a = double(obj.Adapter.input_range());
+                if isscalar(a) && isfinite(a) && a > 0
+                    v = a;
                 end
             end
         end
@@ -728,6 +792,35 @@ classdef Engine < handle
             spl = 20 * log10(pa ./ stimgen.calibration.Engine.ReferencePressurePa);
         end
 
+        function n = lut_normative_db(lut, fallbackDb)
+            % n = stimgen.calibration.Engine.lut_normative_db(lut, fallbackDb)
+            % The level, in dB SPL, a lookup table's voltage column produces.
+            %
+            % Every stored LUT voltage is solved for one level, the engine's
+            % NormativeValue at the moment the sweep committed the table, and
+            % the table records it as normative_db. Scaling a voltage to any
+            % other level has to start from that number: NormativeValue
+            % itself is a setting for the next sweep and may have moved since.
+            %
+            % fallbackDb answers for a table with no record, which only a
+            % struct assembled by hand can be by now -- tables are stamped
+            % when they are committed, and restore() stamps those from files
+            % written before the field existed with the NormativeValue those
+            % files were saved with.
+            %
+            % Parameters:
+            %   lut        - tone/click/swept_sine table struct
+            %   fallbackDb - (1,1) double level to assume when lut has none
+            %
+            % Returns:
+            %   n - (1,1) double dB SPL
+            n = fallbackDb;
+            if isstruct(lut) && isfield(lut, 'normative_db') ...
+                    && isscalar(lut.normative_db) && isfinite(lut.normative_db)
+                n = double(lut.normative_db);
+            end
+        end
+
         function pa = spl_to_pressure(spl)
             % pa = stimgen.calibration.Engine.spl_to_pressure(spl)
             % A level in dB SPL as a pressure in pascals -- the inverse of
@@ -776,6 +869,23 @@ classdef Engine < handle
     end
 
     methods (Static, Access = private)
+        function m = empty_headroom_()
+            % m = empty_headroom_()
+            % The estimate_headroom_ record with nothing measured. One
+            % definition, so the struct arrays the sweeps preallocate and the
+            % records assigned into them cannot disagree about their fields.
+            m = struct( ...
+                'assumedFullScaleV', nan, ...
+                'assumedInputFullScaleV', nan, ...
+                'excitationPeakV', nan, ...
+                'excitationHeadroomDb', nan, ...
+                'excitationClippingLikely', false, ...
+                'responsePeakV', nan, ...
+                'responseHeadroomDb', nan, ...
+                'responseFlatTopFraction', nan, ...
+                'responseClippingLikely', false);
+        end
+
         function s = merge_struct_(s, add)
             % Overlay the fields of add onto s. Used to let a caller name only
             % the metrics it knows without dropping the engine-derived rest.

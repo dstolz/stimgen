@@ -71,9 +71,7 @@ obj.PlayAllStimObj_ = stimObj;
 restoreObj = onCleanup(@() restore_play_all_ui_(obj, activeBtn, prevColor));
 
 try
-    if isfield(h, 'PlayBtn') && ~isempty(h.PlayBtn) && isvalid(h.PlayBtn)
-        h.PlayBtn.Enable = 'off';
-    end
+    obj.sync_control_enable_;  % Play (button, menu, toolbar) off while the cycle runs
     if isfield(h, 'PlayAllBtn') && ~isempty(h.PlayAllBtn) && isvalid(h.PlayAllBtn)
         h.PlayAllBtn.Text = 'Stop';
     end
@@ -142,10 +140,9 @@ end
 
 function restore_play_all_ui_(obj, activeBtn, prevColor)
 h = obj.handles;
-% A run started while this cycle was ending holds the lock; leave Play to it.
-if ~obj.CaptureLocked_ && isfield(h, 'PlayBtn') && ~isempty(h.PlayBtn) && isvalid(h.PlayBtn)
-    h.PlayBtn.Enable = 'on';
-end
+% Play comes back through the shared rule, which leaves it off when a run
+% started while this cycle was ending holds the lock, or nothing is selected.
+obj.sync_control_enable_;
 if isfield(h, 'PlayAllBtn') && ~isempty(h.PlayAllBtn) && isvalid(h.PlayAllBtn)
     h.PlayAllBtn.Text = 'Play All';
 end

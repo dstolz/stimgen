@@ -10,15 +10,16 @@ function h = create_gui(obj, src, ~)
 %
 % Returns:
 %   h - struct of widget handles keyed by property name
+%
+% Each row comes from build_prop_widget, the builder shared with the
+% StimPlayer bank editor. A 'button' action that succeeds rebuilds the panel
+% into src (see run_action_ below).
 
 meta     = obj.propMeta();
 sections = stimgen.StimType.group_prop_meta(meta); % Nx1 cell of {groupName, propNames}
 secRows  = vertcat(sections{:});                   % Nx2 cell: col 1 = name, col 2 = propNames
 fields   = vertcat(secRows{:, 2});                 % flatten propNames, section order preserved
 nRows    = numel(fields);
-
-mc = metaclass(obj);
-pl = mc.PropertyList;
 
 g = uigridlayout(src);
 g.ColumnWidth = {'1x', '1x'};
@@ -27,74 +28,17 @@ g.RowHeight   = repmat({25}, 1, nRows);
 h = struct();
 for i = 1:nRows
     propName = fields{i};
-    pm = meta.(propName);
 
-    lbl = uilabel(g, 'Text', pm.label);
+    % Label, widget, tooltip and display units come from the builder shared
+    % with the StimPlayer bank editor; only the layout is decided here.
+    [x, lbl] = obj.build_prop_widget(g, propName, meta.(propName), '%s', ...
+        @(callbackName) run_action_(obj, src, g, callbackName));
+
     lbl.Layout.Column = 1;
     lbl.Layout.Row    = i;
-    lbl.HorizontalAlignment = 'right';
-
-    wt = stimgen.StimType.resolve_widget_type(propName, pm, pl);
-    sc = stimgen.StimType.display_scale(pm);
-
-    switch wt
-        case 'numeric'
-            % Widgets show display units (e.g. ms); pm.format and pm.limits
-            % are already expressed in those units.
-            if obj.is_non_vectorizable_property_(propName)
-                x = uieditfield(g, 'numeric', 'Tag', propName);
-                x.Value = obj.(propName) * sc;
-                if isfield(pm, 'format')
-                    x.ValueDisplayFormat = pm.format;
-                end
-                if isfield(pm, 'limits')
-                    x.Limits = pm.limits;
-                end
-            else
-                x = uieditfield(g, 'Tag', propName);
-                x.Value = stimgen.StimType.localFormatPropertyValue_(obj.(propName) * sc);
-                x.UserData = struct('isNumericExpression', true, 'propMeta', pm);
-            end
-        case 'checkbox'
-            x = uicheckbox(g, 'Tag', propName, 'Text', '');
-            x.Value = obj.(propName);
-        case 'dropdown'
-            x = uidropdown(g, 'Tag', propName);
-            x.Items = pm.items;
-            if isfield(pm, 'itemsData')
-                x.ItemsData = pm.itemsData;
-            end
-            x.Value = obj.(propName);
-        case 'button'
-            % Action widget: pm.callback names a public method on obj.
-            % Backed by no property, so nothing is read from obj here.
-            x = uibutton(g, 'Tag', propName, 'Text', pm.text);
-            x.ButtonPushedFcn = @(~,~) obj.(pm.callback)();
-        otherwise % 'text'
-            x = uieditfield(g, 'Tag', propName);
-            x.Value = char(obj.(propName));
-    end
-
-    % Hover help, applied to both halves of the row so it appears wherever
-    % the pointer lands.
-    if isfield(pm, 'tooltip')
-        lbl.Tooltip = pm.tooltip;
-        x.Tooltip   = pm.tooltip;
-    end
-
-    % Keep the label reachable so refresh_gui_widget can retitle a property
-    % whose units depend on another property (e.g. Tone.WindowDuration).
-    ud = x.UserData;
-    if ~isstruct(ud)
-        ud = struct();
-    end
-    ud.labelHandle = lbl;
-    ud.labelFormat = '%s';
-    x.UserData     = ud;
-
-    x.Layout.Column = 2;
-    x.Layout.Row    = i;
-    h.(propName)    = x;
+    x.Layout.Column   = 2;
+    x.Layout.Row      = i;
+    h.(propName)      = x;
 end
 
 % Buttons carry ButtonPushedFcn, not ValueChangedFcn, and would error here.
@@ -105,3 +49,47 @@ for i = 1:numel(hNames)
     end
 end
 obj.GUIHandles = h;
+end
+
+
+% =========================================================================
+
+function run_action_(obj, src, g, callbackName)
+% run_action_(obj, src, g, callbackName) - Invoke a propMeta 'button' action.
+% A failure is logged and shown rather than escaping the callback, as the
+% StimPlayer bank editor does. An action (e.g. SoundFile.browse_files) can
+% change the parameter set and the number of variant combinations, so on
+% success the panel is rebuilt into the same container; the rebuilt widgets
+% are registered in GUIHandles, so the struct create_gui first returned is
+% stale from then on.
+if ~isvalid(obj)
+    return
+end
+try
+    obj.(callbackName)();
+catch ME
+    titleText = 'Parameter Action Failed';
+    stimgen.util.vprintf(0, 1, '%s: %s', titleText, ME.message);
+    stimgen.util.vprintf(0, 1, ME);
+    fig = [];
+    if isvalid(src)
+        fig = ancestor(src, 'matlab.ui.Figure');
+    end
+    if ~isempty(fig) && isvalid(fig)
+        try
+            uialert(fig, sprintf('Could not complete that action.\n\n%s', ME.message), ...
+                titleText, 'Icon', 'error');
+        catch
+            % Avoid cascading GUI failures while reporting an error.
+        end
+    end
+    return
+end
+
+if isvalid(src)
+    if isvalid(g)
+        delete(g);
+    end
+    obj.create_gui(src);
+end
+end

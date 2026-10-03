@@ -65,6 +65,7 @@ end
 % by coincidence, and 20 dB wrong at 114.
 pRef = stimgen.calibration.Engine.spl_to_pressure(obj.ReferenceLevel);
 obj.MicSensitivity = r / pRef;
+obj.MicSensitivityKnown = true;
 
 % Emitted after MicSensitivity is updated so the spectrum is drawn on the
 % scale the measurement just established, not the one it replaced.

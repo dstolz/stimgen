@@ -12,5 +12,4 @@ end
 obj.detach();
 obj.Engine = eng;
 obj.Listener_ = addlistener(eng, 'LiveUpdate', @(~, d) obj.update(d));
-eng.register_monitor_(obj);
 end

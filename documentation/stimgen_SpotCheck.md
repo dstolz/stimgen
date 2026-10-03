@@ -108,6 +108,19 @@ The calibrator's `ReferenceLevel` is deliberately not in it; it enters once, in
 reporting a level on a scale of its own would be worse than useless — it would disagree
 with the very tables it exists to check.
 
+**Only a measured sensitivity is used.** `MicSensitivity` cannot itself be missing — every
+engine starts at a 1 V/Pa placeholder — so the spot check reads
+`Engine.known_mic_sensitivity()`, which is `NaN` until `Engine.MicSensitivityKnown` is
+true: `calibrate_reference` measured it, `set_configuration` was given a different value,
+or it was restored from a calibration where it was known. Without one on the spot check's
+engine, the stimulus's own calibration supplies it if *its* sensitivity is known, and a
+warning says so (it is right only if that microphone chain is the one attached). With
+neither, the recording is reported in volts, no level error is computed, and a warning
+says why — instead of a dB SPL on the placeholder, which was off by
+`20*log10(1/sensitivity)` and read as a calibration fault. The sensitivity used and its
+source are saved in `results.engine` (`mic_sensitivity_v_per_pa`,
+`mic_sensitivity_source`: `"engine"`, `"stimulus calibration"` or `"none"`).
+
 The level error is only reported when the stimulus is genuinely calibrated —
 `ApplyCalibration` is on **and** it carries calibration data. Otherwise the measured level
 is still real, the requested one is not, and a warning says so.
@@ -216,11 +229,11 @@ answer.
 
 | field | holds |
 | --- | --- |
-| `stimulus` | what was asked for: class, label, file, fs, duration, calibration type, requested level, how it was measured, anchor frequency, variant state, parameter summary |
+| `stimulus` | what was asked for: class, label, file (`""` unless the stimulus came from `load_stimulus`; `set_stimulus` clears it), fs, duration, calibration type, requested level, how it was measured, anchor frequency, variant state, parameter summary |
 | `measured` | what came back: level, error, rms, peak, crest factor, noise floor, SNR, THD, fundamental, clipping, conduction delay |
 | `capture` | the raw struct from `play_and_capture`, waveforms included |
 | `stimulus_metrics`, `capture_metrics` | full `StimInspector.signal_metrics` structs for the two waveforms, so every number the inspector shows for either is in the saved result too |
-| `engine` | mic sensitivity, reference level, output ceiling, AC coupling, spectral window, notes |
+| `engine` | mic sensitivity actually used (`NaN` when none was measured) and its source, reference level, output ceiling, AC coupling, spectral window, notes |
 | `warnings` | everything that qualifies the numbers above |
 
 `save_results` writes all of that to a plain `.mat`, together with the stimulus in

@@ -7,8 +7,5 @@ if ~isempty(obj.Listener_) && isvalid(obj.Listener_)
 end
 obj.Listener_ = [];
 
-if ~isempty(obj.Engine) && isvalid(obj.Engine)
-    obj.Engine.unregister_monitor_(obj);
-end
 obj.Engine = [];
 end

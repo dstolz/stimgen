@@ -23,7 +23,7 @@ level its stimulus asked for against the level that came back. See
 ## Opening it
 
 From `StimPlayer`, use the **Inspect Stimulus** toolbar button or
-**File > Inspect Stimulus** (`Ctrl+I`). The button opens the window, or raises
+**Tools > Inspect Stimulus** (`Ctrl+I`). The button opens the window, or raises
 it if it is already open — there is only ever one inspector per player. The
 window then follows the player: changing the bank selection, editing a
 parameter or stepping the variant combination all refresh it.
@@ -49,7 +49,7 @@ stimgen.StimInspector(t, "my tone");
 | `Waveform` | Waveform with its analytic envelope and ±RMS markers, over the envelope in dB re peak — the dB view is where an onset/offset ramp shape is actually readable. A recording shown as sound: pressure in Pa, over the envelope in dB SPL with the noise floor drawn across it |
 | `Spectrum` | Single-sided magnitude spectrum, log or linear frequency axis, with markers at the harmonics found by `thd()`. **Density (per Hz)** divides out the bin width; **Noise floor** draws a recording's pre-stimulus silence underneath |
 | `Spectrogram` | Power spectrogram at a selectable FFT length (128–2048) and window, log or linear frequency axis, per bin or as a density |
-| `Distortion` | Harmonic levels relative to the fundamental, as a bar chart and a table of frequency / dBc / percent, plus each harmonic's own level (dB SPL for a recording shown as sound) |
+| `Distortion` | Harmonic levels relative to the fundamental, as a bar chart and a table of frequency / dBc / percent, plus each harmonic's own level: dB SPL for a recording shown as sound, otherwise its amplitude in dB re 1 on the Spectrum tab's scale (a full-scale sine's fundamental reads 0 dB in both) |
 | `Bands` | Octave, 1/3-, 1/6- or 1/12-octave band levels, Z/A/C weighted, with a recording's noise floor in the same bands and the SNR per band |
 | `Sound Level` | What a sound level meter would read: the Fast or Slow time-weighted level against time, over a table of Leq, Lpeak, LFmax, LSmax and LE for Z, A and C, plus peSPL and ppeSPL |
 
@@ -91,7 +91,8 @@ The spectrum uses a Hann window corrected for its coherent gain, so a
 full-scale sinusoid reads 0 dB at its own frequency.
 
 `M.Valid` is false — and every measurement `NaN` — when the waveform is
-shorter than 8 samples, constant, or non-finite. Each distortion estimator is
+shorter than 8 samples, constant (all zero, or any DC value — a
+constant has no fundamental, only window leakage), or non-finite. Each distortion estimator is
 computed independently and left at `NaN` if it fails, so one bad estimate never
 blanks the rest.
 
