@@ -270,6 +270,18 @@ classdef CalibrationGui < handle
         DelayMaxMs_ (1,1) double = 50
         DelayNumClicks_ (1,1) double = 1
 
+        % Run state. Busy_ is true while with_busy_state_ is running an
+        % action; a close request that arrives then (the X, pumped in by the
+        % engine's own drawnow between measurements) cancels the engine and
+        % sets CloseRequested_ instead of deleting the window out from under
+        % the run, and with_busy_state_ finishes the close once the run has
+        % unwound. Dirty_ is set when a run changes the engine's calibration
+        % (Engine.DataRevision moved, or the reference was re-measured) and
+        % cleared by a save or a load; closing or loading over it asks first.
+        Busy_ (1,1) logical = false
+        CloseRequested_ (1,1) logical = false
+        Dirty_ (1,1) logical = false
+
         % Listener on the engine's ConductionDelay property, so the readout
         % updates the moment a click probe lands rather than waiting for the
         % run to finish. Rebound whenever the engine is swapped (run_load_).
@@ -359,6 +371,11 @@ classdef CalibrationGui < handle
         end
 
         function delete(obj)
+            % A run still in progress is driving the speaker for a window
+            % that no longer exists; stop it at the next measurement.
+            if obj.Busy_ && ~isempty(obj.Engine) && isvalid(obj.Engine)
+                obj.Engine.cancel();
+            end
             % Release the monitor's registration on the engine. The engine may
             % outlive this window -- it might be saved, or shared with a
             % StimType -- and must not keep notifying a renderer whose axes
@@ -400,7 +417,8 @@ classdef CalibrationGui < handle
             obj.Figure = uifigure( ...
                 Name='Stim Calibration', ...
                 Position=[120 60 1360 820], ...
-                CloseRequestFcn=@(src,~) obj.on_close_(src));
+                CloseRequestFcn=@(src,~) obj.on_close_(src), ...
+                DeleteFcn=@(~,~) obj.on_figure_deleted_());
 
             obj.Grid = uigridlayout(obj.Figure, [1 2]);
             obj.Grid.ColumnWidth = {380, '1x'};
@@ -1604,6 +1622,24 @@ classdef CalibrationGui < handle
         end
 
         function on_close_(obj, fig)
+            % Mid-run, the window cannot simply go: the engine would keep
+            % driving the speaker through the rest of the sweep, and every
+            % line after it in the run would write to deleted handles. Ask the
+            % engine to stop instead, and leave the close to with_busy_state_,
+            % which calls back here once the run has unwound. A second press
+            % while it unwinds only repeats the request.
+            if obj.Busy_
+                obj.CloseRequested_ = true;
+                obj.Engine.cancel();
+                obj.set_status_('Stopping; the window closes when the run has stopped.', false);
+                return
+            end
+
+            if ~obj.confirm_discard_('closing')
+                obj.set_status_('Close cancelled.', false);
+                return
+            end
+
             % Settings are snapshotted before anything is torn down: the
             % monitor still holds the display state being saved.
             obj.save_settings_prefs_();
@@ -1627,6 +1663,50 @@ classdef CalibrationGui < handle
                 delete(obj.ExcitationDialog_);
             end
             delete(fig);
+        end
+
+        function on_figure_deleted_(obj)
+            % The figure went without on_close_ -- close all force, or a
+            % delete from the command line. Nothing can be deferred any more,
+            % but the engine can still be told to stop.
+            if isvalid(obj) && obj.Busy_ && ~isempty(obj.Engine) && isvalid(obj.Engine)
+                obj.Engine.cancel();
+            end
+        end
+
+        function proceed = confirm_discard_(obj, actionText)
+            % proceed = confirm_discard_(obj, actionText)
+            % Ask before an action that would drop an unsaved calibration:
+            % Save (then proceed if the save completed), Discard, or Cancel.
+            % True straight away when nothing is unsaved -- or nothing could be
+            % saved, since Engine.save refuses an engine with no tables.
+            proceed = true;
+            if ~obj.Dirty_ || ~obj.Engine.IsCalibrated
+                return
+            end
+            msg = sprintf(['This calibration has results that have not been saved. ' ...
+                'Save them before %s?'], actionText);
+            choice = uiconfirm(obj.Figure, msg, 'Unsaved Calibration', ...
+                Options={'Save', 'Discard', 'Cancel'}, DefaultOption=1, ...
+                CancelOption=3, Icon='warning');
+            switch choice
+                case 'Save'
+                    try
+                        ffn = obj.run_save_('');
+                    catch ME
+                        obj.set_status_(ME.message, true);
+                        uialert(obj.Figure, ME.message, 'Save Failed', Icon='error');
+                        proceed = false;
+                        return
+                    end
+                    % An empty path is a save dialog cancelled: nothing was
+                    % written, so nothing may be dropped either.
+                    proceed = ~isempty(ffn);
+                case 'Discard'
+                    proceed = true;
+                otherwise
+                    proceed = false;
+            end
         end
 
         function on_measure_reference_(obj)
@@ -2251,7 +2331,7 @@ classdef CalibrationGui < handle
             obj.with_busy_state_(@() obj.run_save_(''), 'Saving calibration file...');
         end
 
-        function run_save_(obj, ffn)
+        function ffn = run_save_(obj, ffn)
             arguments
                 obj
                 ffn (1,:) char = ''
@@ -2264,11 +2344,16 @@ classdef CalibrationGui < handle
                 obj.set_status_('Save cancelled.', false);
                 return
             end
+            obj.Dirty_ = false;
             obj.add_recent_calibration_(ffn);
             obj.set_status_('Calibration saved.', false);
         end
 
         function on_load_(obj)
+            if ~obj.confirm_discard_('loading another calibration')
+                obj.set_status_('Load cancelled.', false);
+                return
+            end
             obj.with_busy_state_(@() obj.run_load_(''), 'Loading calibration file...');
         end
 
@@ -2302,6 +2387,7 @@ classdef CalibrationGui < handle
             obj.sync_controls_();
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
+            obj.Dirty_ = false;
             obj.add_recent_calibration_(ffn);
             obj.set_status_('Calibration loaded.', false);
         end
@@ -2408,6 +2494,10 @@ classdef CalibrationGui < handle
 
         function open_recent_calibration_(obj, filePath)
             % Re-run Load .esgc with a remembered path.
+            if ~obj.confirm_discard_('loading another calibration')
+                obj.set_status_('Load cancelled.', false);
+                return
+            end
             obj.with_busy_state_(@() obj.run_load_(filePath), 'Loading calibration file...');
         end
 
@@ -3389,6 +3479,8 @@ classdef CalibrationGui < handle
             end
 
             obj.Engine.reset_calibration();
+            % Nothing is left to save, so nothing is left unsaved.
+            obj.Dirty_ = false;
             obj.refresh_all_plots_();
             obj.update_runtime_state_();
             obj.set_status_('Calibration reset. Ready to measure again.', false);
@@ -3428,6 +3520,24 @@ classdef CalibrationGui < handle
                 busyMessage
                 cancellable (1,1) logical = false
             end
+            % The menus are not disabled while a run is in progress, so Load,
+            % Save and the runtime items can arrive here mid-run (the engine
+            % pumps the event queue between measurements). Running one inside
+            % another would interleave two engine runs; refuse instead.
+            if obj.Busy_
+                obj.set_status_(['Another operation is still running. Wait for it ' ...
+                    'to finish, or press Stop.'], true);
+                return
+            end
+            obj.Busy_ = true;
+
+            % What the run is judged against for Dirty_: the engine it started
+            % on, its data revision, and the sensitivity (which is saved in the
+            % file but is not CalibrationData).
+            engBefore  = obj.Engine;
+            revBefore  = engBefore.DataRevision;
+            sensBefore = engBefore.MicSensitivity;
+
             obj.set_status_(busyMessage, false);
             obj.Figure.Pointer = 'watch';
             obj.set_busy_(true, cancellable);
@@ -3442,20 +3552,61 @@ classdef CalibrationGui < handle
                     fcn();
                 end
             catch ME
-                if isequal(ME.identifier, 'stimgen:calibration:Engine:cancelled')
+                if ~obj.ui_alive_()
+                    % The figure went mid-run (close all force); the error
+                    % is most likely the run writing to it. There is nothing
+                    % left to show it on, so it goes to the log.
+                    stimgen.util.vprintf(0, 1, ME);
+                elseif isequal(ME.identifier, 'stimgen:calibration:Engine:cancelled')
                     obj.set_status_('Calibration cancelled.', false);
                 else
                     obj.set_status_(ME.message, true);
                     uialert(obj.Figure, ME.message, 'Calibration Error', Icon='error');
                 end
             end
-            obj.Figure.Pointer = 'arrow';
-            obj.set_busy_(false, false);
-            obj.update_runtime_state_();
-            drawnow;
+            if ~isvalid(obj)
+                return
+            end
+            obj.Busy_ = false;
+
+            % A load swaps the engine and clears Dirty_ itself; a save clears
+            % it and changes nothing. Anything else that moved the data, on
+            % an engine that has something to save, has left it unsaved.
+            if obj.Engine == engBefore && obj.Engine.IsCalibrated && ...
+                    (obj.Engine.DataRevision ~= revBefore || ...
+                     obj.Engine.MicSensitivity ~= sensBefore)
+                obj.Dirty_ = true;
+            end
+
+            if obj.ui_alive_()
+                obj.Figure.Pointer = 'arrow';
+                obj.set_busy_(false, false);
+                obj.update_runtime_state_();
+                drawnow;
+            end
+
+            % A close asked for mid-run, now that the run has stopped. Through
+            % on_close_ again, so an unsaved calibration is still offered a
+            % save; cancelling that leaves the window open and idle.
+            if obj.CloseRequested_
+                obj.CloseRequested_ = false;
+                if obj.ui_alive_()
+                    obj.on_close_(obj.Figure);
+                end
+            end
+        end
+
+        function tf = ui_alive_(obj)
+            % True while the window this object draws into still exists.
+            tf = isvalid(obj) && ~isempty(obj.Figure) && isvalid(obj.Figure);
         end
 
         function set_status_(obj, msg, isError)
+            % Guarded: a run that outlives its window (see with_busy_state_)
+            % may still report on its way out.
+            if isempty(obj.StatusLabel) || ~isvalid(obj.StatusLabel)
+                return
+            end
             if isError
                 obj.StatusLabel.FontColor = [0.7 0 0];
             else

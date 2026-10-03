@@ -1066,6 +1066,29 @@ Everything else is left untouched: the attached adapter, the loaded protocol/hos
 7. Tone Lookup From Swept Sine: always enabled — it is a lookup preference on committed data, meaningful with or without an adapter.
 8. Reset Calibration: always enabled (except while a calibration run is in progress) — it only clears acquired data, not the adapter or settings.
 
+## Closing, Loading And Unsaved Results
+
+The window tracks whether its calibration has results that have not been
+saved: any action that changes `Engine.CalibrationData` (a sweep, a test, a
+refinement, a filter design, a background capture — counted by
+`Engine.DataRevision`) or re-measures the reference, on an engine that has
+tables to save, marks it unsaved; Save .esgc and Load .esgc clear the mark, as
+does Reset Calibration (nothing is left to save). Closing the window or loading
+another calibration (Load .esgc, or an entry under Recent Calibrations) over
+unsaved results asks first: **Save** (the action goes ahead only if the file
+was written), **Discard**, or **Cancel**.
+
+Closing while a run is in progress does not tear the window down underneath
+it. The close calls `Engine.cancel()` — the same request Stop makes — and the
+status line says the window will close when the run has stopped; the sweep
+aborts at its next measurement, atomically as always, and the window then
+closes through the normal path (so unsaved results from earlier runs are
+still offered a save). A run that does not poll for cancellation (Save, Load,
+Design Filter) finishes first. While one action is running, a second one
+arriving from a menu is refused with a status message rather than started
+inside it. If the figure is deleted outright (`close all force`), the engine
+is still told to stop.
+
 ## Runtime Ownership And Independence
 
 CalibrationGui holds no runtime or protocol state of its own. It keeps a single `Host` reference (a `stimgen.HardwareHost`, or empty when offline) and asks the host for everything hardware-related. All runtime and protocol objects live on the host side.

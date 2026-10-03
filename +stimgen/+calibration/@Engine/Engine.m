@@ -209,6 +209,11 @@ classdef Engine < handle
     % --- Calibration results and transient signals ---
     properties (SetAccess = protected)
         CalibrationData = []    % struct (see class doc) or [] if uncalibrated
+        % Count of assignments to CalibrationData, bumped by its set method.
+        % Lets a host tell "a run changed the calibration" from "a run left it
+        % alone" without comparing two struct trees -- CalibrationGui marks a
+        % calibration unsaved by it. Session state; never saved.
+        DataRevision (1,1) double = 0
         Adapter                 % stimgen.calibration.HwAdapter | []
         ExcitationSignal (1,:) double = []
         ResponseSignal   (1,:) double = []
@@ -356,9 +361,11 @@ classdef Engine < handle
         function set.CalibrationData(obj, cd)
             % Re-arm compute_adjusted_voltage's one-shot extrapolation notice:
             % a new or restored table has a new span, and the first lookup
-            % outside it deserves saying again. See set.ToneLutSource on MCSUP.
+            % outside it deserves saying again; and count the change for
+            % DataRevision. See set.ToneLutSource on MCSUP.
             obj.CalibrationData = cd;
             obj.ExtrapolationWarned_ = struct(); %#ok<MCSUP>
+            obj.DataRevision = obj.DataRevision + 1; %#ok<MCSUP>
         end
 
         function set.ResponseSignal(obj, y)
