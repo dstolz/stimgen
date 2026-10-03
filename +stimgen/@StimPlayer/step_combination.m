@@ -23,6 +23,14 @@ if idx < 1 || idx > numel(obj.StimPlayObjs)
     return
 end
 
+% A session holds the bank: stepping would change the combination a bank
+% item presents next under the run's own variant selection (the arrow keys
+% reach here even though the step buttons are disabled).
+if obj.CaptureLocked_
+    obj.set_status_("Stop the session before stepping combinations.");
+    return
+end
+
 try
     stimObj = obj.StimPlayObjs(idx).CurrentStimObj;
     info = stimObj.step_variant(step);

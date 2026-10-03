@@ -60,8 +60,17 @@ switch action
             % override the bank rate whenever it can report one.
             obj.adopt_host_fs_;
 
-            % Prime each bank item to combination #1 so playback stepping is deterministic
-            obj.initialize_variants_;
+            % Last chance to back out: say what this run will do that the
+            % operator may not expect, and let them cancel.
+            if ~obj.confirm_run_()
+                obj.disconnect_interfaces_;
+                obj.update_protocol_status_;
+                obj.set_status_("Run cancelled.");
+                return
+            end
+
+            % Each bank item's variant sequence is started by
+            % timer_startfcn (initialize_variants_), once per run.
 
             % Kill this player's stale timer. Not timerfindall: the tag is
             % shared, and that would stop another StimPlayer's run.

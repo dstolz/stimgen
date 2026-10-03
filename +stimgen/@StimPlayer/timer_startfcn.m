@@ -9,13 +9,15 @@ try
         obj.StimPlayObjs(i).reset;
     end
 
-    % Reset each bank item's vectorized-combination cursor
+    % Start each bank item's variant sequence: selection history
+    % forgotten, first combination selected through its own mode.
     obj.initialize_variants_;
 
     % Clear presentation log
     obj.StimOrder     = double.empty(0,1);
     obj.StimOrderTime = double.empty(0,1);
     obj.StimPolarity  = double.empty(0,1);
+    obj.StimVariant   = double.empty(0,1);
     obj.PolarityCount_ = {};
 
     obj.trialCount_ = 0;

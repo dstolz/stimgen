@@ -488,15 +488,20 @@ At run time the class:
 
 1. Resolves hardware parameters through `host.findParameter`.
 2. Adopts the host's sample rate, when it reports one.
-3. Regenerates signals for every bank item.
-4. Starts a fixed-rate timer.
+3. Asks for confirmation when the run will do something the operator may not
+   expect (see [Before a run starts](#before-a-run-starts)); Cancel abandons it.
+4. Starts a fixed-rate timer, whose start function resets every count and
+   starts each bank item's variant sequence (see
+   [Variant combinations in a run](#variant-combinations-in-a-run)).
 5. Chooses the next bank index using the player-level `SelectionType`.
 6. Writes the stimulus waveform into one of two hardware buffers, inverted
    on every other presentation of a variant whose stimulus alternates
    polarity (see below).
 7. Toggles the matching trigger parameter.
-8. Logs presentation order, elapsed trigger time, and the sign played
-   (`StimOrder`, `StimOrderTime`, `StimPolarity`).
+8. Logs presentation order, elapsed trigger time, the sign played and the
+   variant combination played (`StimOrder`, `StimOrderTime`, `StimPolarity`,
+   `StimVariant`, row-aligned).
+9. Lets the presented stimulus select its next combination.
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
@@ -563,6 +568,57 @@ That separation lets you do things like:
 
 `select_next_idx()` returns `-1` when every bank item has reached its target
 repetition count, which ends the session cleanly.
+
+### Variant combinations in a run
+
+Which combination of a vectorized stimulus is presented is decided by the
+stimulus's own `VariantSelectionMode` (`Serial`, `ShuffleUniform`,
+`ShuffleLeastUsed` or `CustomSelector` -- see
+[stimgen_StimType.md](stimgen_StimType.md)), not by the player:
+
+- At the start of a run (`timer_startfcn` -> `initialize_variants_`) every
+  stimulus calls `reset_variant_selection()` -- the `Serial` cursor returns to
+  combination 1, `ShuffleLeastUsed` counts are zeroed, a custom selector is
+  rebuilt and `initialize()`d again -- and then `update_signal()`, which
+  makes the run's first selection through the mode. Previews, combination
+  stepping and earlier runs therefore do not shape the order.
+- After each presentation, `advance_variant_` calls `update_signal()` on the
+  stimulus just presented, which selects its next combination the same way
+  and regenerates it.
+- The combination index each presentation was generated from is logged in
+  `StimVariant`, row-aligned with `StimOrder`. With a shuffled mode that log
+  is the only record of the order.
+
+Combination stepping (the `<`/`>` buttons and the arrow keys) is disabled
+while a session holds the bank: the next trial's buffer is already loaded,
+and the log records the combination it was made from.
+
+**Reps is per bank item, not per combination.** A run presents exactly `Reps`
+presentations of each bank item (of each stimulus object it holds), shared
+among its combinations; it never rounds `Reps` to a multiple of the
+combination count, so a saved bank always produces the same number of trials.
+How the presentations fall on the combinations depends on the mode:
+
+| Mode | Per-combination count |
+| --- | --- |
+| `Serial` | `floor(Reps/n)` or `ceil(Reps/n)`; combinations `1..mod(Reps,n)` get the extra one |
+| `ShuffleLeastUsed` | `floor(Reps/n)` or `ceil(Reps/n)`; which ones get the extra one is random |
+| `ShuffleUniform` | random -- drawn with replacement, expected `Reps/n` |
+| `CustomSelector` | whatever the selector returns |
+
+The bank panel's combination line shows the split for the selected item
+(`Combo: 2 / 6 | 3-4 reps each`), in amber when a balanced mode cannot split
+`Reps` evenly. Run lists every such item in its confirmation dialog and logs
+each one as a warning.
+
+### Before a run starts
+
+`confirm_run_` runs after the hardware is resolved and before the timer
+exists. Each finding is logged; when there is any, a single dialog lists them
+all and **Cancel** (the default) abandons the run without changing anything:
+
+- a bank item whose `Reps` is not a multiple of its combination count under a
+  balanced selection mode (see above).
 
 ## Saving and loading banks
 

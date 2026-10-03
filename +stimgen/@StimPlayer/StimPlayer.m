@@ -184,6 +184,7 @@ classdef StimPlayer < handle
         StimOrder (:,1) double = double.empty(0,1)     % Presentation log: index into StimPlayObjs
         StimOrderTime (:,1) double = double.empty(0,1) % Presentation log: time since start (s)
         StimPolarity (:,1) double = double.empty(0,1)  % Presentation log: sign played (+1/-1)
+        StimVariant (:,1) double = double.empty(0,1)   % Presentation log: variant combination index played
 
         nextPolarity_ (1,1) double = 1                 % Sign applied to the buffered (next) presentation
     end
@@ -1590,18 +1591,44 @@ classdef StimPlayer < handle
                 idx = h.BankList.Value;
             end
 
+            COLOR_NORMAL = [0 0 0];
+            COLOR_UNEVEN = [0.80 0.50 0.05];
+
             if isempty(idx)
                 h.ComboPrevBtn.Enable = 'off';
                 h.ComboNextBtn.Enable = 'off';
                 h.ComboStatusLbl.Text = 'Combo: - / -';
+                h.ComboStatusLbl.FontColor = COLOR_NORMAL;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLbl');
                 return
             end
 
-            stimObj = obj.StimPlayObjs(idx).CurrentStimObj;
-            info = stimObj.get_variant_info();
+            sp      = obj.StimPlayObjs(idx);
+            stimObj = sp.CurrentStimObj;
+            info    = stimObj.get_variant_info();
 
-            h.ComboStatusLbl.Text = sprintf('Combo: %d / %d', info.ActiveIndex, info.NumCombinations);
-            if info.NumCombinations > 1
+            % How Reps divides over the combinations, so an uneven split is
+            % visible while the bank is edited, not only when Run warns.
+            [repsText, uneven] = obj.reps_per_combination_(sp.Reps, stimObj);
+            if strlength(repsText) > 0
+                h.ComboStatusLbl.Text = char(sprintf('Combo: %d / %d | %s', ...
+                    info.ActiveIndex, info.NumCombinations, repsText));
+            else
+                h.ComboStatusLbl.Text = sprintf('Combo: %d / %d', info.ActiveIndex, info.NumCombinations);
+            end
+            if uneven
+                h.ComboStatusLbl.FontColor = COLOR_UNEVEN;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLblUneven');
+            else
+                h.ComboStatusLbl.FontColor = COLOR_NORMAL;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLbl');
+            end
+
+            % Stepping changes the combination a bank item will present
+            % next, so it is closed while a session holds the bank: the
+            % buffer for the next trial is already loaded, and the
+            % presentation log records the combination it was made from.
+            if info.NumCombinations > 1 && ~obj.CaptureLocked_
                 h.ComboPrevBtn.Enable = 'on';
                 h.ComboNextBtn.Enable = 'on';
             else
@@ -1611,22 +1638,144 @@ classdef StimPlayer < handle
         end
 
         % -----------------------------------------------------------------
-        function initialize_variants_(obj)
-            % initialize_variants_() - Reset all bank items to combination #1.
-            for i = 1:numel(obj.StimPlayObjs)
-                stimObj = obj.StimPlayObjs(i).CurrentStimObj;
-                stimObj.set_variant_index(1);
+        function [txt, uneven, detail] = reps_per_combination_(~, reps, stimObj)
+            % [txt, uneven, detail] = reps_per_combination_(reps, stimObj)
+            % How a bank item's Reps divides over its variant combinations.
+            %
+            % Reps counts presentations of the bank item (of each stimulus
+            % object it holds), not of each combination, and a Run makes
+            % exactly that many; it is never rounded to a multiple of the
+            % combination count. How the presentations fall on combinations
+            % depends on the stimulus's VariantSelectionMode:
+            %   Serial, ShuffleLeastUsed - balanced: every combination gets
+            %       floor(Reps/n) or ceil(Reps/n); uneven when n does not
+            %       divide Reps (Serial gives the extra one to 1..mod(Reps,n))
+            %   ShuffleUniform - drawn with replacement; counts are random
+            %   CustomSelector - whatever the selector decides
+            %
+            % Returns:
+            %   txt    - short label text ("" for a single combination)
+            %   uneven - true when a balanced mode cannot balance Reps
+            %   detail - one sentence for the Run warning ("" unless uneven)
+            txt = "";
+            uneven = false;
+            detail = "";
+            info  = stimObj.get_variant_info();
+            nComb = info.NumCombinations;
+            if nComb <= 1
+                return
+            end
+            mode = string(stimObj.VariantSelectionMode);
+            switch mode
+                case {"Serial", "ShuffleLeastUsed"}
+                    lo = floor(reps / nComb);
+                    hi = ceil(reps / nComb);
+                    if lo == hi
+                        txt = sprintf("%d reps each", lo);
+                    else
+                        txt = sprintf("%d-%d reps each", lo, hi);
+                        uneven = true;
+                        nHi = mod(reps, nComb);
+                        detail = sprintf("%d reps over %d combinations (%s): %d combination(s) get %d, %d get %d.", ...
+                            reps, nComb, mode, nHi, hi, nComb - nHi, lo);
+                        if mode == "Serial"
+                            detail = detail + sprintf(" Serial order gives the extra presentation to combinations 1-%d.", nHi);
+                        end
+                    end
+                case "ShuffleUniform"
+                    txt = sprintf("~%.3g reps each (random)", reps / nComb);
+                otherwise
+                    txt = "reps set by selector";
             end
         end
 
         % -----------------------------------------------------------------
-        function advance_variant_(obj, bankIdx)
-            % advance_variant_(obj, bankIdx) - Advance one bank item's variant by +1.
-            if bankIdx < 1 || bankIdx > numel(obj.StimPlayObjs)
+        function lines = uneven_reps_report_(obj)
+            % lines = uneven_reps_report_() - Bank items whose Reps a balanced mode cannot split evenly.
+            % One "<name>: <detail>" line per affected stimulus, logged as a
+            % warning too. Empty when every item divides evenly.
+            lines = strings(0, 1);
+            for i = 1:numel(obj.StimPlayObjs)
+                sp = obj.StimPlayObjs(i);
+                for k = 1:numel(sp.StimObj)
+                    [~, uneven, detail] = obj.reps_per_combination_(sp.Reps, sp.StimObj(k));
+                    if uneven
+                        lines(end+1, 1) = string(sp.Name) + ": " + detail; %#ok<AGROW>
+                    end
+                end
+            end
+            for i = 1:numel(lines)
+                stimgen.util.vprintf(1, 1, 'StimPlayer: uneven reps: %s', char(lines(i)));
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function proceed = confirm_run_(obj)
+            % proceed = confirm_run_() - Say what a run will do that may be unexpected; allow a cancel.
+            % Called by Run after the hardware is resolved and before the
+            % timer exists. Each finding is logged; when there is any, one
+            % confirmation dialog lists them all and Cancel (the default)
+            % abandons the run. Nothing is changed to make a finding go
+            % away -- in particular a run always presents exactly the Reps
+            % each bank item asks for.
+            %
+            % Returns:
+            %   proceed - false when the operator cancelled
+            issues = strings(0, 1);
+
+            uneven = obj.uneven_reps_report_();
+            if ~isempty(uneven)
+                issues(end+1, 1) = "Reps does not divide evenly over the variant combinations:" + newline + ...
+                    strjoin(("  - " + uneven).', newline) + newline + ...
+                    "A run presents exactly Reps per bank item, so these combinations will be " + ...
+                    "presented unequal numbers of times. Set Reps to a multiple of the " + ...
+                    "combination count for equal counts.";
+            end
+
+            proceed = true;
+            if isempty(issues) || isempty(obj.hFig) || ~isvalid(obj.hFig)
                 return
             end
-            stimObj = obj.StimPlayObjs(bankIdx).CurrentStimObj;
-            stimObj.step_variant(1);
+            msg = strjoin(issues.', string(newline) + newline) + newline + newline + "Run anyway?";
+            choice = uiconfirm(obj.hFig, char(msg), 'Check Before Running', ...
+                'Options', {'Run', 'Cancel'}, 'DefaultOption', 2, 'CancelOption', 2, ...
+                'Icon', 'warning');
+            proceed = strcmp(choice, 'Run');
+        end
+
+        % -----------------------------------------------------------------
+        function initialize_variants_(obj)
+            % initialize_variants_() - Start each bank item's variant sequence for a run.
+            % Every stimulus forgets its selection history
+            % (reset_variant_selection: Serial cursor back to combination 1,
+            % ShuffleLeastUsed counts zeroed, a custom selector rebuilt) and
+            % then makes the first selection of the run through its own
+            % VariantSelectionMode, by regenerating outside a variant cycle.
+            % Previews and combination stepping before the run therefore do
+            % not shape its order, and Serial still starts at combination 1.
+            for i = 1:numel(obj.StimPlayObjs)
+                sp = obj.StimPlayObjs(i);
+                for k = 1:numel(sp.StimObj)
+                    stimObj = sp.StimObj(k);
+                    stimObj.reset_variant_selection();
+                    stimObj.update_signal();
+                end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function advance_variant_(~, stimObj)
+            % advance_variant_(stimObj) - Select the next combination of a presented stimulus.
+            % update_signal() outside a variant cycle selects through the
+            % stimulus's own VariantSelectionMode (Serial, ShuffleUniform,
+            % ShuffleLeastUsed or CustomSelector) and regenerates Signal for
+            % it, so the next presentation of this stimulus plays that
+            % combination. step_variant(1) used to be called here, which
+            % pins index+1 and so bypassed every mode but Serial.
+            if isempty(stimObj)
+                return
+            end
+            stimObj.update_signal();
         end
 
         % -----------------------------------------------------------------

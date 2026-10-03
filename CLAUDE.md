@@ -236,6 +236,15 @@ next stimulus is what it is for. Code that only wants to *report* what the last 
 was made from must use `StimType.active_variant_values`, which returns the active combination and
 touches no selection state. Asking with `selected_value` changes the answer.
 
+**A presenter selects variants through the stimulus, never by index.** `update_signal()` called
+outside a variant cycle is the one call that selects the next combination per
+`VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and
+bypass the mode (right for previews and stepping, wrong for a run). `StimPlayer`'s Run calls
+`reset_variant_selection()` then `update_signal()` on every stimulus at start, `update_signal()`
+on the presented one after each trial, and logs the index played in `StimVariant`. `Reps` is per
+bank item, shared among its combinations, and never rounded: an uneven split is shown and warned
+about, not corrected.
+
 **The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
 `spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
 `20*log10((v/MicSensitivity)/Engine.ReferencePressurePa)`. `compute_spl_voltage_`,

@@ -479,6 +479,7 @@ if isempty(idx), return; end
 try
     obj.StimPlayObjs(idx).Reps = src.Value;
     obj.refresh_listbox_;
+    obj.refresh_combo_controls_;  % reps per combination
 catch ME
     src.Value = obj.StimPlayObjs(idx).Reps;
     obj.report_gui_error_(ME, "Invalid Repetitions", ...

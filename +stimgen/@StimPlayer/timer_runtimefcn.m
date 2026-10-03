@@ -27,18 +27,26 @@ try
     % Spin until ISI has exactly elapsed
     while obj.timeSinceStart - obj.lastTrigTime < isi, end
 
+    % The stimulus whose buffer is loaded, and the combination it was
+    % generated from. Read before increment, which can move a multi-object
+    % bank item's cursor on to another object.
+    presentedSP  = obj.CurrentSPObj;
+    presentedObj = presentedSP.CurrentStimObj;
+    presentedVar = presentedObj.get_variant_info();
+
     % Log presentation
     obj.StimOrder(end+1, 1)     = obj.nextSPOIdx;
     obj.StimOrderTime(end+1, 1) = obj.timeSinceStart;
     obj.StimPolarity(end+1, 1)  = obj.nextPolarity_;
-    presentedIdx = obj.nextSPOIdx;
+    obj.StimVariant(end+1, 1)   = presentedVar.ActiveIndex;
 
     % Trigger hardware (no-op if hardware unavailable)
     obj.trigger_stim_playback;
 
-    % Advance the current bank item's internal counter
-    obj.CurrentSPObj.increment;
-    obj.advance_variant_(presentedIdx);
+    % Count the presentation, then let the presented stimulus select its
+    % next combination through its own VariantSelectionMode.
+    presentedSP.increment;
+    obj.advance_variant_(presentedObj);
 
     obj.trialCount_ = obj.trialCount_ + 1;
 
