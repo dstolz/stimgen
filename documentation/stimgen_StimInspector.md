@@ -23,7 +23,7 @@ level its stimulus asked for against the level that came back. See
 ## Opening it
 
 From `StimPlayer`, use the **Inspect Stimulus** toolbar button or
-**File > Inspect Stimulus** (`Ctrl+I`). The button opens the window, or raises
+**Tools > Inspect Stimulus** (`Ctrl+I`). The button opens the window, or raises
 it if it is already open — there is only ever one inspector per player. The
 window then follows the player: changing the bank selection, editing a
 parameter or stepping the variant combination all refresh it.

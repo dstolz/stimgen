@@ -103,7 +103,7 @@ contract and TDT-specific legacy file types.
 
 ## Saved file types
 
-- `.esgc`: calibration files from the `stimgen.calibration` package (legacy `.sgc` files can still be loaded)
+- `.esgc`: calibration files from the `stimgen.calibration` package (legacy `.sgc` files are not supported: `Engine.load` rejects any other extension with `stimgen:calibration:Engine:wrongFormat`, so an old calibration has to be re-measured)
 - `.spl`: stimulus-bank files from `StimPlayer`
 - `.eprot`: host protocol files, which a host can load to reach hardware (via `HardwareHost.loadProtocol`); see [stimgen_TDT_RPvds.md](stimgen_TDT_RPvds.md)
 
