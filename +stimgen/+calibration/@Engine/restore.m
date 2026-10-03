@@ -1,5 +1,5 @@
-function restore(obj, s)
-% restore(obj, s)
+function restore(obj, s, options)
+% restore(obj, s, Source=...)
 % Restore engine state from a serialized struct.
 %
 % The measurement properties are SetAccess = protected, so callers outside
