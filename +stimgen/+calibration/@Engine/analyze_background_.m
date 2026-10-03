@@ -34,7 +34,7 @@ function results = analyze_background_(obj, records, fs, options)
 %     crest_factor_db          - peak over RMS; a large value means the record
 %                                is dominated by transients, not a steady floor
 %     dc_offset_v              - mean of each record, removed before analysis
-%     headroom_db, clipping    - margin to MaxOutputVoltage, and whether the
+%     headroom_db, clipping    - margin to the input range, and whether the
 %                                record reached it
 %     distinct_levels          - unique sample values in the quietest record;
 %                                a handful means the input is quantizer-limited
@@ -89,7 +89,7 @@ end
 % flat-top test cannot be used here: a record sitting a few LSBs above zero
 % spends most of its samples at its own peak, which that test reads as a
 % clipped waveform when it is the opposite problem.
-fullScaleV  = obj.MaxOutputVoltage;
+fullScaleV  = obj.input_ceiling_();   % the input's range, not the output's
 peakAll     = max(peakV);
 clipping    = peakAll >= fullScaleV * 0.999;
 headroomDb  = 20 * log10(max(fullScaleV, eps) / max(peakAll, eps));

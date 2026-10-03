@@ -105,7 +105,11 @@ bank: at a hardware rate the bank does not run at, the combination is regenerate
   `StimPlayer` and `CalibrationGui`.
 - `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`, plus a concrete
   `record(nSamples)` (silent `play_and_record` by default) that `calibrate_reference` uses so the
-  reference step never drives the speaker. Consumed only
+  reference step never drives the speaker, and concrete `full_scale()` / `input_range()` (NaN =
+  unknown by default). The Engine judges excitation headroom against
+  `min(MaxOutputVoltage, full_scale())` and response headroom against `input_range()`, falling back
+  to `MaxOutputVoltage` for either when the adapter returns NaN, so an older adapter behaves as
+  before. Consumed only
   by `Engine`. `WindowsSoundCardAdapter` is the one built-in implementation.
 
 Both are optional at construction; omitting them puts the GUIs in offline mode where speaker

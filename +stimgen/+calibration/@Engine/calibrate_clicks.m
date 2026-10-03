@@ -32,6 +32,17 @@ if isempty(durs)
     durs = 2.^(0:9) .* 10e-6;
 end
 
+% Distinct and ascending, for the same reason calibrate_tones uniques its
+% frequencies: the LUT is interpolated with makima, which cannot take a
+% repeated abscissa.
+nAsked = numel(durs);
+durs   = unique(durs);
+if numel(durs) < nAsked
+    stimgen.util.vprintf(0, 1, ...
+        'Click calibration: dropped %d duplicate duration(s); %d distinct remain.', ...
+        nAsked - numel(durs), numel(durs));
+end
+
 % ClickTrain renders round(fs*dur) samples and requires at least one.
 minDur     = 0.5 / fs;
 resolvable = round(fs .* durs) >= 1;
@@ -65,15 +76,7 @@ clickMeasAll = nan(repeatCount, n);
 clickSnrAll = nan(repeatCount, n);
 clickNoiseFloorAll = nan(repeatCount, n);
 clickThdAll = nan(repeatCount, n);
-clickHeadroomAll = repmat(struct( ...
-    'assumedFullScaleV', nan, ...
-    'excitationPeakV', nan, ...
-    'excitationHeadroomDb', nan, ...
-    'excitationClippingLikely', false, ...
-    'responsePeakV', nan, ...
-    'responseHeadroomDb', nan, ...
-    'responseFlatTopFraction', nan, ...
-    'responseClippingLikely', false), repeatCount, n);
+clickHeadroomAll = repmat(stimgen.calibration.Engine.empty_headroom_(), repeatCount, n);
 
 % Axis metadata for the live table; identical on every update of this run.
 axisMeta = {'XLabel', "click duration (\mus)", 'XScale', "log", 'XFactor', 1e6};

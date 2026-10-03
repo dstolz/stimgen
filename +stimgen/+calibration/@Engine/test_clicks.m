@@ -37,8 +37,8 @@ function results = test_clicks(obj, durs, levels, options)
 % was verified and how accurate it proved.
 %
 % Durations shorter than one sample at the current Fs cannot be rendered and
-% are dropped with a message. Points whose required drive exceeds
-% MaxOutputVoltage are skipped rather than played: they would clip, and
+% are dropped with a message. Points whose required drive exceeds the output
+% ceiling (MaxOutputVoltage, or the adapter's full_scale() when lower) are skipped rather than played: they would clip, and
 % clipping measures the amplifier, not the LUT. They are reported in
 % results.skipped and logged, never dropped silently.
 %
@@ -168,19 +168,22 @@ for li = 1:nL
     drive(:, li) = reshape(obj.compute_adjusted_voltage("click", durs, levels(li)), [], 1);
 end
 
-playable = isfinite(drive) & drive > 0 & drive <= obj.MaxOutputVoltage;
-[skipped, nOver] = skipped_points_(durs, levels, drive, playable, obj.MaxOutputVoltage);
+% The ceiling the adapter actually has: MaxOutputVoltage, or the adapter's
+% full_scale() when that is lower (a sound card's is 1).
+ceilV = obj.output_ceiling_();
+playable = isfinite(drive) & drive > 0 & drive <= ceilV;
+[skipped, nOver] = skipped_points_(durs, levels, drive, playable, ceilV);
 if nOver > 0
     stimgen.util.vprintf(0, 1, ...
         ['Click LUT test: skipping %d of %d point(s) needing more than the %g V ' ...
          'output ceiling; they would clip. See results.skipped.'], ...
-        nOver, nD * nL, obj.MaxOutputVoltage);
+        nOver, nD * nL, ceilV);
 end
 if ~any(playable(:))
     error('stimgen:calibration:Engine:noPlayablePoints', ...
         ['Every requested duration/level pair needs more than the %g V output ' ...
-         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig allows it.'], ...
-        obj.MaxOutputVoltage);
+         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig (and adapter) allow it.'], ...
+        ceilV);
 end
 
 % --- Stimulus, identical to the one calibrate_clicks sweeps with -----------

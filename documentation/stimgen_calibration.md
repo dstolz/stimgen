@@ -164,6 +164,13 @@ adapter = host.calibrationAdapter();
 
 To support a different device, subclass `stimgen.calibration.HwAdapter` and implement `sample_rate()` and `play_and_record(signal)`. `record(nSamples)` — used by the reference measurement, which must not drive the speaker — is concrete and defaults to a silent `play_and_record`, so it only needs overriding if the device can acquire without arming its output.
 
+Two more concrete methods describe the converters' ranges, and both default to `NaN` ("not known"):
+
+- `full_scale()` — the largest `|signal|` `play_and_record` can reproduce. The engine's output ceiling is `min(MaxOutputVoltage, full_scale())`: excitation headroom and its clipping flag are judged against it, `test_tones`/`test_clicks` skip points whose drive exceeds it, and `play_and_capture` warns about a waveform beyond it.
+- `input_range()` — the largest `|response|` the input records before saturating. Response headroom, the response clipping flag, the background's headroom, and the live monitor's clipping rails use it; when it is `NaN` they fall back to `MaxOutputVoltage`, the assumption they always made.
+
+An adapter that overrides neither behaves exactly as before. `WindowsSoundCardAdapter` reports 1 for both (digital full scale), and its `play_and_record` **errors** (`stimgen:calibration:WindowsSoundCardAdapter:outOfRange`) on a signal beyond ±1 rather than clamping it: a clipped excitation would be measured as if it were the waveform the table says was played, and every drive voltage in the table would be wrong. The error aborts the run, and runs are atomic, so the previous table survives. On a sound card, keep `ExcitationVoltage` at 1 or below. The headroom records carry the ceilings they were judged against as `assumedFullScaleV` (output) and `assumedInputFullScaleV` (input).
+
 ### Step 2 — Create An Engine
 
 ```matlab
@@ -688,6 +695,8 @@ V = eng.compute_adjusted_voltage("tone", 4000, 70);
 V = eng.compute_adjusted_voltage("click", 0.0001, 80);
 ```
 
+A lookup outside the table's measured span is extrapolated (the table is interpolated with `makima`) and may be well off; the first such lookup per table logs a warning at verbosity 0, re-armed whenever `CalibrationData` changes. `calibrate_tones` and `calibrate_clicks` drop duplicate frequencies/durations (sorted ascending, with a warning) before measuring, since a repeated abscissa would leave a table that cannot be interpolated.
+
 In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.esgc` file is assigned to a stimulus generator — you do not need to call it manually during an experiment.
 
 ---
@@ -870,7 +879,7 @@ prefer a `LiveMonitor`.
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
 | `NormativeValue` | 80 dB | Target SPL the next sweep solves its voltage column for. Each table records the value it was built at as `normative_db`, and `compute_adjusted_voltage` scales from that, so changing this after a sweep moves only the next sweep (and the default levels the tests and refinement run at) |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
-| `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
+| `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable — lowered to the adapter's `full_scale()` when that is smaller (1 on a sound card). Response headroom uses the adapter's `input_range()` instead, and this only when the adapter reports none |
 | `AdcGain` | 0 dB | dB of gain on the input stage, **recorded only**. Nothing reads it: the measurement was taken through that gain, so it is already inside every voltage and level in the tables, and applying it again would double-count it. It is here so a saved calibration states the rig settings it was made at, which is the one thing the tables cannot be checked against afterwards. Entered in the GUI under Options > Hardware and Analysis Settings. Saved in the `.esgc` file |
 | `DacAttenuation` | 0 dB | dB of attenuation on the output stage, on exactly the same terms as `AdcGain`: recorded, never applied. Saved in the `.esgc` file |
 | `AcCoupleResponse` | false | Zero-phase high-pass each acquired record before analyzing it, so an input DC offset or slow baseline drift does not inflate levels, bias burst alignment, or leak into the lowest spectrum bins. Applies to every acquisition path. Saved in the `.esgc` file |
@@ -994,7 +1003,7 @@ Three notes on behaviour:
 Source: `+stimgen/+calibration/`
 
 - `Engine.m` — calibration orchestration, result storage, save/load, voltage lookup, and the `describe` report (see [Step 9](#step-9--read-it-back-in-words)).
-- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`).
+- `HwAdapter.m` — abstract base class defining the adapter contract (`sample_rate`, `play_and_record`, plus the concrete `record`, `full_scale` and `input_range`).
 - `WindowsSoundCardAdapter.m` — concrete adapter using Windows Audio Toolbox (`audioPlayerRecorder`).
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).

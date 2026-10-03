@@ -102,12 +102,15 @@ maxLag = nPost;
 x = [zeros(1, nPre), signal, zeros(1, nPost)];
 obj.ExcitationSignal = x;
 
+% Against the ceiling the adapter actually has (output_ceiling_), not
+% MaxOutputVoltage alone: a sound card's full scale is 1.
 peakV = max(abs(signal));
-if peakV > obj.MaxOutputVoltage
+ceilV = obj.output_ceiling_();
+if peakV > ceilV
     stimgen.util.vprintf(0, 1, ...
         ['Excitation peaks at %.4g V, above the %.4g V output ceiling; the ' ...
          'converter will clip it and the captured level will be wrong.'], ...
-        peakV, obj.MaxOutputVoltage);
+        peakV, ceilV);
 end
 
 stimgen.util.vprintf(1, ...

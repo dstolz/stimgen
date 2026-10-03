@@ -68,6 +68,25 @@ else
 end
 z = d.voltage;
 
+% Outside the measured span makima extrapolates a cubic, which can run far
+% from anything the speaker does. Said once per table, not per lookup: a bank
+% regenerates every variant through here. The latch re-arms whenever
+% CalibrationData changes (see Engine's set.CalibrationData).
+outside = value(:) < min(x) | value(:) > max(x);
+if any(outside) && ~obj.extrapolation_warned_(lutType)
+    if lutType == "click"
+        span = sprintf('%.4g-%.4g us', min(x) * 1e6, max(x) * 1e6);
+        asked = sprintf('%.4g us', value(find(outside, 1)) * 1e6);
+    else
+        span = sprintf('%.6g-%.6g Hz', min(x), max(x));
+        asked = sprintf('%.6g Hz', value(find(outside, 1)));
+    end
+    stimgen.util.vprintf(0, 1, ...
+        ['Calibration lookup at %s lies outside the "%s" table''s measured %s; ' ...
+         'its voltage is extrapolated and may be well off. Calibrate over the ' ...
+         'range you play. (Reported once per table.)'], asked, lutType, span);
+end
+
 n = makima(x, z, value);  % normative voltage at requested parameter
 v = n .* 10 .^ ((level - stimgen.calibration.Engine.lut_normative_db(d, obj.NormativeValue)) ./ 20);
 

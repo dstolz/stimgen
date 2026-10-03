@@ -59,6 +59,19 @@ if isempty(freqs)
     freqs(freqs > fs * 0.5) = [];
 end
 
+% One table row per frequency, in ascending order. compute_adjusted_voltage
+% interpolates the table with makima, which needs distinct abscissae, so a
+% repeated frequency would build a table that cannot be looked up at all --
+% after the whole sweep had been played. The repeat adds nothing a higher
+% repeatCount does not do properly, so it is dropped up front and said so.
+nAsked = numel(freqs);
+freqs  = unique(freqs);
+if numel(freqs) < nAsked
+    stimgen.util.vprintf(0, 1, ...
+        'Tone calibration: dropped %d duplicate frequency(ies); %d distinct remain.', ...
+        nAsked - numel(freqs), numel(freqs));
+end
+
 burstDur = options.BurstDuration;
 gapDur   = options.GapDuration;
 
@@ -83,15 +96,7 @@ toneNoiseFloorAll = nan(repeatCount, n);
 toneThdAll = nan(repeatCount, n);
 toneH2All = nan(repeatCount, n);
 toneH3All = nan(repeatCount, n);
-toneHeadroomAll = repmat(struct( ...
-    'assumedFullScaleV', nan, ...
-    'excitationPeakV', nan, ...
-    'excitationHeadroomDb', nan, ...
-    'excitationClippingLikely', false, ...
-    'responsePeakV', nan, ...
-    'responseHeadroomDb', nan, ...
-    'responseFlatTopFraction', nan, ...
-    'responseClippingLikely', false), repeatCount, n);
+toneHeadroomAll = repmat(stimgen.calibration.Engine.empty_headroom_(), repeatCount, n);
 
 maxLag = max(round(gapDur * fs), 1);
 

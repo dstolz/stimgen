@@ -259,6 +259,7 @@ classdef Engine < handle
         LastDcRemoved_ (1,1) double = nan   % DC ac_couple_response_ took off the current record; NaN when it took none
         LastAcCoupleHz_ (1,1) double = nan  % corner it high-passed that record at; NaN when it did not filter
         AcCoupleFilter_ = []                % cached high-pass design for the current (fs, corner)
+        ExtrapolationWarned_ (1,1) struct = struct()  % LUT names compute_adjusted_voltage has reported extrapolating; cleared with CalibrationData
     end
 
     properties (Dependent)
@@ -350,6 +351,14 @@ classdef Engine < handle
             % default, so there is nothing to order.
             obj.ToneLutSource = src;
             obj.ToneLutRedirectWarned_ = false; %#ok<MCSUP>
+        end
+
+        function set.CalibrationData(obj, cd)
+            % Re-arm compute_adjusted_voltage's one-shot extrapolation notice:
+            % a new or restored table has a new span, and the first lookup
+            % outside it deserves saying again. See set.ToneLutSource on MCSUP.
+            obj.CalibrationData = cd;
+            obj.ExtrapolationWarned_ = struct(); %#ok<MCSUP>
         end
 
         function set.ResponseSignal(obj, y)
@@ -582,7 +591,7 @@ classdef Engine < handle
                 'MicSensitivity',    obj.MicSensitivity, ...
                 'NormativeValue',    obj.NormativeValue, ...
                 'ExcitationVoltage', obj.ExcitationVoltage, ...
-                'MaxOutputV',        obj.MaxOutputVoltage, ...
+                'MaxOutputV',        obj.output_ceiling_(), ...
                 'SpectralWindow',    obj.SpectralWindow, ...
                 'SpectralFftLength', obj.SpectralFftLength);
         end
@@ -593,7 +602,9 @@ classdef Engine < handle
             % stored in the calibration metrics, so the warning on screen and
             % the flag in the saved file cannot disagree.
             m = stimgen.calibration.LiveUpdate.default_metrics();
-            m.full_scale_v = obj.MaxOutputVoltage;
+            % The response panel draws its clipping rails at the input's
+            % range, the ceiling the response is actually judged against.
+            m.full_scale_v = obj.input_ceiling_();
 
             y = obj.ResponseSignal;
             if isempty(y), return; end
@@ -624,6 +635,45 @@ classdef Engine < handle
                     mons{k}.reset();
                 else
                     mons{k}.show_engine_state(obj);
+                end
+            end
+        end
+
+        function tf = extrapolation_warned_(obj, lutType)
+            % tf = extrapolation_warned_(obj, lutType)
+            % False the first time it is asked about lutType since
+            % CalibrationData last changed, and latches; true after that.
+            f = char(lutType);
+            tf = isfield(obj.ExtrapolationWarned_, f);
+            obj.ExtrapolationWarned_.(f) = true;
+        end
+
+        function v = output_ceiling_(obj)
+            % v = output_ceiling_(obj)
+            % The largest drive the rig can reproduce: MaxOutputVoltage,
+            % lowered to the adapter's full_scale() when it reports one. An
+            % adapter that does not (HwAdapter's NaN default) leaves
+            % MaxOutputVoltage in charge, as it always was.
+            v = obj.MaxOutputVoltage;
+            if ~isempty(obj.Adapter)
+                a = double(obj.Adapter.full_scale());
+                if isscalar(a) && isfinite(a) && a > 0
+                    v = min(v, a);
+                end
+            end
+        end
+
+        function v = input_ceiling_(obj)
+            % v = input_ceiling_(obj)
+            % The largest response the input can record: the adapter's
+            % input_range(), or MaxOutputVoltage when it does not report one
+            % -- the ceiling every response was judged against before the
+            % adapter could say, and still the only assumption available.
+            v = obj.MaxOutputVoltage;
+            if ~isempty(obj.Adapter)
+                a = double(obj.Adapter.input_range());
+                if isscalar(a) && isfinite(a) && a > 0
+                    v = a;
                 end
             end
         end
@@ -844,6 +894,23 @@ classdef Engine < handle
     end
 
     methods (Static, Access = private)
+        function m = empty_headroom_()
+            % m = empty_headroom_()
+            % The estimate_headroom_ record with nothing measured. One
+            % definition, so the struct arrays the sweeps preallocate and the
+            % records assigned into them cannot disagree about their fields.
+            m = struct( ...
+                'assumedFullScaleV', nan, ...
+                'assumedInputFullScaleV', nan, ...
+                'excitationPeakV', nan, ...
+                'excitationHeadroomDb', nan, ...
+                'excitationClippingLikely', false, ...
+                'responsePeakV', nan, ...
+                'responseHeadroomDb', nan, ...
+                'responseFlatTopFraction', nan, ...
+                'responseClippingLikely', false);
+        end
+
         function s = merge_struct_(s, add)
             % Overlay the fields of add onto s. Used to let a caller name only
             % the metrics it knows without dropping the engine-derived rest.
