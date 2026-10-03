@@ -40,7 +40,8 @@
 
   "Noise": {
     "HighPass": "Lower edge of the noise band in Hz. Must be below Low Pass Fc. Vectorizable.",
-    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable."
+    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable.",
+    "FilterOrder": "Order of the FIR band-pass filter (order + 1 taps). Higher = steeper band edges, longer filter. Scalar only."
   },
 
   "AMnoise": {

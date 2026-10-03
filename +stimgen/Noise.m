@@ -10,6 +10,9 @@ classdef Noise < stimgen.StimType
         HighPass  (1,:) double {mustBeNonnegative,mustBeFinite} = 500; % Hz
         LowPass   (1,:) double {mustBeNonnegative,mustBeFinite} = 20000; % Hz
         
+        % FIR order passed to designfilt (order + 1 taps). The filter is
+        % redesigned from it on every update_signal, so a change takes
+        % effect on the next waveform.
         FilterOrder (1,1) double {mustBePositive,mustBeInteger,mustBeFinite} = 40;
     end
 
@@ -32,7 +35,7 @@ classdef Noise < stimgen.StimType
             % Defaults first, caller's pairs last, so a caller's value wins.
             obj = obj@stimgen.StimType( ...
                 'DisplayName', 'Noise', ...
-                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass"], ...
+                'UserProperties', ["SoundLevel","Duration","WindowDuration","ApplyWindow","HighPass","LowPass","FilterOrder"], ...
                 varargin{:});
         end
         
@@ -94,6 +97,8 @@ classdef Noise < stimgen.StimType
                 'tooltip', stimgen.util.tooltip(obj, 'HighPass'));
             m.LowPass  = struct('label', 'Low Pass Fc',  'format', '%.1f Hz', 'limits', [100 40000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'LowPass'));
+            m.FilterOrder = struct('label', 'Filter Order', 'format', '%d', 'limits', [1 10000], ...
+                'tooltip', stimgen.util.tooltip(obj, 'FilterOrder'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end
     end

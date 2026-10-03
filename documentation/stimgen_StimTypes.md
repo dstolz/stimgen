@@ -78,7 +78,7 @@ whatever was stored.
 ## Noise
 
 Gaussian noise band-limited between `HighPass` and `LowPass` with an FIR bandpass
-filter (`FilterOrder` taps).
+filter of order `FilterOrder` (`FilterOrder` + 1 taps).
 
 - [+stimgen/Noise.m](../+stimgen/Noise.m)
 
@@ -86,12 +86,12 @@ filter (`FilterOrder` taps).
 | --- | --- | --- |
 | `HighPass` | yes | Hz, filter low cutoff |
 | `LowPass` | yes | Hz, filter high cutoff |
-| `FilterOrder` | no | FIR order used by `designfilt` |
+| `FilterOrder` | no | FIR order used by `designfilt` (default 40); editable in the GUI and saved with the stimulus |
 
 `LowPass` must exceed `HighPass`; a violation raises
 `stimgen:Noise:InvalidBand`. The digital filter is rebuilt on every `update_signal`
 via `update_digFilter` and cached on the object as `digFilter`, not recomputed
-per-sample. `Noise` is also the superclass for `AMnoise` and `AttackModNoise`, which
+per-sample, so a new `FilterOrder` takes effect on the next waveform. `Noise` is also the superclass for `AMnoise` and `AttackModNoise`, which
 reuse its carrier generation (`temporarilyDisableSignalMods` guards the base class's
 own normalize/calibrate/gate calls while the carrier is only an intermediate signal).
 
