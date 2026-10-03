@@ -290,7 +290,8 @@ classdef Engine < handle
         r = filter_level_reference(obj, x) % Level reference for running the equalization filter in hardware.
         s = describe(obj) % Describe the calibration in words; prints to the command window when nothing takes the output.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
-        restore(obj, s) % Restore engine state from a serialized struct.
+        restore(obj, s, options) % Restore engine state from a serialized struct.
+        s = to_struct(obj) % Persistent engine state as a struct (.esgc contents).
         cancel(obj) % Request cancellation of an in-progress calibration run.
         varargout = run_cancellable(obj, fcn) % Run fcn() as one cancellable operation, however many runs it makes.
         reset_calibration(obj) % Discard acquired calibration data; keeps adapter and parameters.
@@ -686,7 +687,6 @@ classdef Engine < handle
                        'sd_db', nan(1,n));
         end
 
-        restore_from_struct_(obj, s) % Restore engine state from saved struct.
     end
 
     methods (Static)

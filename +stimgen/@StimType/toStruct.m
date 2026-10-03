@@ -12,19 +12,13 @@ S = struct;
 S.Class        = string(class(obj));
 S.DisplayName  = obj.DisplayName;
 
-% Core StimType properties
-S.SoundLevel       = obj.SoundLevel;
-S.Duration         = obj.Duration;
-S.WindowDuration   = obj.WindowDuration;
-S.WindowFcn        = obj.WindowFcn;
+% Core StimType properties: the list fromStruct restores from
+core = stimgen.StimType.CoreProperties;
+for k = 1:numel(core)
+    pname = char(core(k));
+    S.(pname) = obj.(pname);
+end
 S.ApplyCalibration = obj.ApplyCalibration;
-S.ApplyWindow      = obj.ApplyWindow;
-S.Fs               = obj.Fs;
-S.VariantSelectionMode = obj.VariantSelectionMode;
-S.VariantCombinationMode = obj.VariantCombinationMode;
-S.VariantSelectorClass = obj.VariantSelectorClass;
-S.VariantSelectorConfig = obj.VariantSelectorConfig;
-S.VariantReselectOnUpdate = obj.VariantReselectOnUpdate;
 
 % Abstract/constant properties (same across instances of subclass)
 S.CalibrationType  = obj.CalibrationType;
