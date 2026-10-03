@@ -15,9 +15,18 @@ classdef Engine < handle
     %
     % CalibrationData is empty ([]) until a successful run completes.
     % After a successful run it is a struct with fields:
-    %   tone             - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct
-    %   click            - struct: duration, measurement, spl_db, voltage (Nx1); metrics sub-struct
-    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct.
+    %   tone             - struct: frequency, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct
+    %   click            - struct: duration, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct
+    %   swept_sine       - struct: frequency, measurement, spl_db, voltage (Nx1); normative_db;
+    %                      metrics sub-struct.
+    %                      normative_db is the level (dB SPL) the voltage
+    %                      column produces: NormativeValue when the sweep
+    %                      committed the table. compute_adjusted_voltage
+    %                      scales from it, never from the live NormativeValue,
+    %                      so changing that setting afterwards moves only the
+    %                      next sweep. See lut_normative_db.
     %                      Its metrics also carry a full acoustic characterization
     %                      derived from the deconvolved impulse response: phase and
     %                      group delay (with the minimum-phase/excess split),
@@ -726,6 +735,35 @@ classdef Engine < handle
             end
             pa  = max(vrms, 0) ./ max(micSensitivity, eps);
             spl = 20 * log10(pa ./ stimgen.calibration.Engine.ReferencePressurePa);
+        end
+
+        function n = lut_normative_db(lut, fallbackDb)
+            % n = stimgen.calibration.Engine.lut_normative_db(lut, fallbackDb)
+            % The level, in dB SPL, a lookup table's voltage column produces.
+            %
+            % Every stored LUT voltage is solved for one level, the engine's
+            % NormativeValue at the moment the sweep committed the table, and
+            % the table records it as normative_db. Scaling a voltage to any
+            % other level has to start from that number: NormativeValue
+            % itself is a setting for the next sweep and may have moved since.
+            %
+            % fallbackDb answers for a table with no record, which only a
+            % struct assembled by hand can be by now -- tables are stamped
+            % when they are committed, and restore() stamps those from files
+            % written before the field existed with the NormativeValue those
+            % files were saved with.
+            %
+            % Parameters:
+            %   lut        - tone/click/swept_sine table struct
+            %   fallbackDb - (1,1) double level to assume when lut has none
+            %
+            % Returns:
+            %   n - (1,1) double dB SPL
+            n = fallbackDb;
+            if isstruct(lut) && isfield(lut, 'normative_db') ...
+                    && isscalar(lut.normative_db) && isfinite(lut.normative_db)
+                n = double(lut.normative_db);
+            end
         end
 
         function pa = spl_to_pressure(spl)

@@ -6,14 +6,18 @@ function s = to_struct(obj)
 % the two cannot drift apart; restore() reads it back.
 %
 % Returns:
-%   s - struct of engine properties, schema version 2
+%   s - struct of engine properties, schema version 3
 
 % 2: levels are referenced to 20 uPa alone. Version 1 files added the
 % calibrator's ReferenceLevel on top of that, counting it twice, so their
 % tables are (ReferenceLevel - 94) dB off -- nothing at the default 94 dB
 % calibrator setting, 20 dB on a 114 dB one. load() checks for this and says
 % so rather than letting a stale table pass silently. See Engine.volts_to_spl.
-s.version             = 2;
+% 3: every tone/click/swept_sine table records normative_db, the level its
+% voltage column produces. Earlier files have none; restore() stamps their
+% tables with the file's own NormativeValue, which is what built them, so a
+% version 2 file plays exactly as it did. See Engine.lut_normative_db.
+s.version             = 3;
 s.CalibrationData     = obj.CalibrationData;
 s.MicSensitivity      = obj.MicSensitivity;
 s.NormativeValue      = obj.NormativeValue;

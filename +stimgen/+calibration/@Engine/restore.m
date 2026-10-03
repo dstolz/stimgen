@@ -62,7 +62,21 @@ if isfield(s, 'ReferenceLevel') && ~isempty(s.ReferenceLevel)
 end
 
 if isfield(s, 'CalibrationData') && isstruct(s.CalibrationData)
-    obj.CalibrationData = s.CalibrationData;
+    % A table written before schema version 3 does not say which level its
+    % voltages were solved for. The NormativeValue saved beside it is the one
+    % that solved them -- a sweep commits at the engine's current setting, and
+    % that setting is what to_struct wrote -- so it is stamped on now, once,
+    % rather than leaving compute_adjusted_voltage to fall back on whatever
+    % the setting happens to be later. Without one in the struct the engine's
+    % own value stands in, which is what the lookup used before the field
+    % existed. A table that already records its level is left alone.
+    if isfield(s, 'NormativeValue') && isscalar(s.NormativeValue) ...
+            && isfinite(s.NormativeValue)
+        savedNormative = double(s.NormativeValue);
+    else
+        savedNormative = obj.NormativeValue;
+    end
+    obj.CalibrationData = stamp_normative_(s.CalibrationData, savedNormative);
 end
 
 if isfield(s, 'CalibrationTimestamp')
@@ -105,6 +119,20 @@ end
 
 if ~isempty(cfg)
     obj.set_configuration(cfg{:});
+end
+end
+
+
+% ------------------------------------------------------------------------ %
+function cd = stamp_normative_(cd, normativeDb)
+% Record normative_db on every lookup table that does not carry one.
+names = {'tone', 'click', 'swept_sine'};
+for k = 1:numel(names)
+    f = names{k};
+    if isfield(cd, f) && isstruct(cd.(f)) && isscalar(cd.(f)) ...
+            && ~isfield(cd.(f), 'normative_db')
+        cd.(f).normative_db = normativeDb;
+    end
 end
 end
 

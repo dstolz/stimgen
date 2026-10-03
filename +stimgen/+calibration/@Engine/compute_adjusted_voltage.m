@@ -9,6 +9,15 @@ function v = compute_adjusted_voltage(obj, type, value, level)
 % takes precedence over any direct tone calibration for as long as it is
 % set; when no swept sine data exists the direct tone LUT applies as usual.
 %
+% The voltage column of a table is the drive that produced the table's own
+% normative_db, recorded when the sweep committed it -- not the engine's
+% NormativeValue now. NormativeValue is a setting for the NEXT sweep, and a
+% GUI pushes its field into the engine before every action; scaling a stored
+% voltage from the live value would shift every drive by however far the
+% field had moved since the sweep. A table restored from a file written
+% before the field existed is stamped with that file's NormativeValue by
+% restore(), so every table carries one by the time it gets here.
+%
 % Parameters:
 %   type  - "tone" | "click" | "swept_sine" | "filter" | "noise"
 %   value - frequency (Hz) for "tone", "swept_sine", "filter", "noise";
@@ -60,6 +69,6 @@ end
 z = d.voltage;
 
 n = makima(x, z, value);  % normative voltage at requested parameter
-v = n .* 10 .^ ((level - obj.NormativeValue) ./ 20);
+v = n .* 10 .^ ((level - stimgen.calibration.Engine.lut_normative_db(d, obj.NormativeValue)) ./ 20);
 
 end

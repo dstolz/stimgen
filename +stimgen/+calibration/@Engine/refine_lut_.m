@@ -83,8 +83,9 @@ end
 level = options.LevelDb;
 if ~isfinite(level)
     % The table's anchor level: the one every stored voltage promises to
-    % produce, so it is where a correction is worth the most.
-    level = obj.NormativeValue;
+    % produce, so it is where a correction is worth the most. The table's own
+    % record of it, not NormativeValue, which may have moved since the sweep.
+    level = stimgen.calibration.Engine.lut_normative_db(lut, obj.NormativeValue);
 end
 
 % Everything a pass touches -- the table itself and the test record the pass

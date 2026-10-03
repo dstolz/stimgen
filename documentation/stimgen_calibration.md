@@ -868,7 +868,7 @@ prefer a `LiveMonitor`.
 | `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known |
 | `ReferenceLevel` | 94 dB | SPL produced by your calibrator. Read only by `calibrate_reference`; it is not an offset in the dB SPL scale (see [above](#where-referencelevel-enters--and-where-it-must-not)) |
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
-| `NormativeValue` | 80 dB | Target SPL for the voltage lookup table |
+| `NormativeValue` | 80 dB | Target SPL the next sweep solves its voltage column for. Each table records the value it was built at as `normative_db`, and `compute_adjusted_voltage` scales from that, so changing this after a sweep moves only the next sweep (and the default levels the tests and refinement run at) |
 | `ExcitationVoltage` | 1 V | Amplitude of signals played during calibration sweeps |
 | `MaxOutputVoltage` | 10 V | Output ceiling of the rig. Sets the full scale the clipping test is judged against, and the line above which a required drive voltage is unreachable |
 | `AdcGain` | 0 dB | dB of gain on the input stage, **recorded only**. Nothing reads it: the measurement was taken through that gain, so it is already inside every voltage and level in the tables, and applying it again would double-count it. It is here so a saved calibration states the rig settings it was made at, which is the one thing the tables cannot be checked against afterwards. Entered in the GUI under Options > Hardware and Analysis Settings. Saved in the `.esgc` file |
@@ -898,9 +898,9 @@ otherwise written only by the calibration runs themselves.
 
 | Field | Populated by | Contents |
 |---|---|---|
-| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); burst_duration, gap_duration; metrics sub-struct |
-| `click` | `calibrate_clicks` | duration, measurement, spl_db, voltage (Nx1); metrics sub-struct |
-| `swept_sine` | `calibrate_swept_sine` | frequency, measurement, spl_db, voltage (Nx1); metrics sub-struct |
+| `tone` | `calibrate_tones` | frequency, measurement, spl_db, voltage (Nx1); normative_db; burst_duration, gap_duration; metrics sub-struct |
+| `click` | `calibrate_clicks` | duration, measurement, spl_db, voltage (Nx1); normative_db; metrics sub-struct |
+| `swept_sine` | `calibrate_swept_sine` | frequency, measurement, spl_db, voltage (Nx1); normative_db; metrics sub-struct |
 | `filter` | `design_filter` | `digitalFilter` object, or `[]` |
 | `filterGrpDelay` | `design_filter` | filter group delay in samples (0 until filter is designed) |
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
@@ -909,6 +909,8 @@ otherwise written only by the calibration runs themselves.
 | `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 | `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
+
+`normative_db` is the level (dB SPL; dB peSPL for `click`) the `voltage` column produces — the engine's `NormativeValue` when the sweep committed the table. `compute_adjusted_voltage` scales a stored voltage from it (`v = voltage * 10^((level - normative_db)/20)`), never from the live `NormativeValue`, and `refine_*` refines at it by default. `Engine.lut_normative_db(table, fallback)` reads it. Files before `.esgc` schema version 3 have no such field: `Engine.restore` (behind both `Engine.load` and `StimCalibration.loadobj`) stamps each of their tables with the `NormativeValue` saved in the same file, which is what built them, so they play exactly as before.
 
 After `refine_tones`/`refine_clicks` has run, the refined table (`tone`, `click` or `swept_sine`) also carries a `refinement` sub-struct: `lut_source`, `level_db`, the per-pass `iterations` record (`max_abs_error_db`, `rms_error_db`, `bias_db`, `n_reliable`, `n_corrected`, `max_correction_db`), `initial_`/`final_max_abs_error_db`, `n_unreliable`, `converged`, the criteria applied, and `refinedOn`. The next sweep of that table replaces both together.
 

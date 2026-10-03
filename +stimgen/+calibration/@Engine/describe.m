@@ -199,8 +199,16 @@ out(end+1,1) = field_("  Level measured", sprintf('%.1f to %.1f %s (median %.1f)
     min(spl), max(spl), level_unit_(fieldName), median(spl, 'omitnan')));
 
 v = t.voltage(:);
-out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V at the normative level', ...
-    min(v), max(v)));
+% Solved for the level the table recorded when it was committed, which is
+% not necessarily the engine's Normative level printed above.
+nDb = stimgen.calibration.Engine.lut_normative_db(t, NaN);
+if isfinite(nDb)
+    out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V for %.10g %s (the table''s normative level)', ...
+        min(v), max(v), nDb, level_unit_(fieldName)));
+else
+    out(end+1,1) = field_("  Drive needed", sprintf('%.4g to %.4g V at the normative level', ...
+        min(v), max(v)));
+end
 
 if isfield(t, 'metrics')
     out = [out; metric_lines_(t.metrics, x, xUnit, xFmt)];

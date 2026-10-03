@@ -249,6 +249,15 @@ read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into
 schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
 is not 94.
 
+**A LUT voltage is anchored to the table's own `normative_db`, not the live `NormativeValue`.**
+Every `tone`/`click`/`swept_sine` table records the `NormativeValue` it was solved for when the
+sweep committed it, and `compute_adjusted_voltage` scales from that via
+`Engine.lut_normative_db(table, fallback)`. `NormativeValue` is a setting for the *next* sweep
+(the GUI pushes its field into the engine before every action), so scaling from it shifted every
+drive by however far the field had moved. `.esgc` schema version 3 marks the field; `Engine.restore`
+stamps older files' tables with the `NormativeValue` saved beside them. Anything that reads a stored
+voltage must go through the table's value too.
+
 **A level measured at the peak is labelled dB peSPL.** The click table (and anything
 `level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)
 is built from `max(abs(y))/sqrt(2)`: peak-equivalent SPL, baseline-to-peak. It is not comparable

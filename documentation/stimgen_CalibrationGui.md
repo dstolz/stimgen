@@ -335,7 +335,7 @@ position in one long list:
 | Section | Contents |
 |---|---|
 | Microphone | Reference Level, Reference Frequency, Mic Sensitivity, then Measure Reference beside Measure Background — the two measurements that play nothing — then Measure Conduction Delay |
-| Calibration | Normative Value — the level every sweep's table is anchored to — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
+| Calibration | Normative Value — the level the next sweep's table is anchored to, recorded on that table as `normative_db` so a later edit does not move it — then Calibrate Tones with Iterative Level Refinement beside it, the two optional sweeps below, and Tone Lookup From Swept Sine |
 | Verification & Equalization | Test Tones beside Test Clicks — one per lookup table — then Design Filter beside Test Filter, Copy Filter Coefficients across the row below, and the Unity-Gain Noise Level readout under it |
 | Display | Show Engine Live Plots, Transfer Plot Log X-Axis |
 | Notes | One free-text box, full width — see [Notes](#notes) |
@@ -949,8 +949,10 @@ The status line reports the verdict, the worst error and where it occurred, and
 the mean bias, against the pass tolerance (default 3 dB). A failure raises an
 alert; the shape of the error says what to fix:
 
-- **A uniform bias at every frequency and level** — the reference measurement or
-  Normative Value moved since the sweep. Re-run Measure Reference.
+- **A uniform bias at every frequency and level** — the reference measurement
+  moved since the sweep. Re-run Measure Reference. (Normative Value cannot cause
+  this: each table records the level it was solved for, and lookups scale from
+  that, so editing the field after a sweep changes only the next sweep.)
 - **Errors at scattered frequencies, small elsewhere** — the table is too sparse
   to interpolate through a response with structure between its points. Re-run
   Calibrate Tones with a finer frequency list.
