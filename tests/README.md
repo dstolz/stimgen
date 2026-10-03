@@ -45,7 +45,7 @@ every pull request, through `matlab-actions/setup-matlab` and
 | `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection |
 | `LoggingTest.m` | `vprintf` through a `stimgen.FcnLogSink`: raw messages, the red flag, literal text, the sink's gate, uninstalling |
 | `TooltipCatalogTest.m` | every `propMeta` entry has a tooltip; every literal key passed to `stimgen.util.tooltip` resolves in `tooltips.json` |
-| `CalibrationEngineTest.m` | `calibrate_reference` recovering the simulated 50 mV/Pa microphone, its refusal with no calibrator, `.esgc` save/load |
+| `CalibrationEngineTest.m` | `calibrate_reference` recovering the simulated 50 mV/Pa microphone, its refusal with no calibrator, `.esgc` save/load; `MicSensitivityKnown`/`known_mic_sensitivity` before and after the reference step and across save/load; tone tables recording `normative_db` and lookups scaling from it rather than the live `NormativeValue`; `restore` stamping unversioned tables; a duplicated sweep frequency being dropped and logged |
 
 Test data is generated into temporary folders and deleted afterwards. A
 fixture that has to live in the repository goes under `tests/`, where
