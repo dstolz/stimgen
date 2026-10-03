@@ -865,7 +865,7 @@ prefer a `LiveMonitor`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known |
+| `MicSensitivity` | 1 V/Pa | Updated by `calibrate_reference`; can also be set manually if known. The default is a placeholder, not a sensitivity: `MicSensitivityKnown` (read-only, saved in the `.esgc`) is false until `calibrate_reference` measures one, `set_configuration` is given a different value, or a calibration where it was known is restored. A file written before the flag existed counts as known unless its sensitivity is exactly the 1 V/Pa default. `known_mic_sensitivity()` returns the sensitivity, or `NaN` when it is not known; `SpotCheck` reads levels through it |
 | `ReferenceLevel` | 94 dB | SPL produced by your calibrator. Read only by `calibrate_reference`; it is not an offset in the dB SPL scale (see [above](#where-referencelevel-enters--and-where-it-must-not)) |
 | `ReferenceFrequency` | 1000 Hz | Frequency used by your calibrator |
 | `NormativeValue` | 80 dB | Target SPL the next sweep solves its voltage column for. Each table records the value it was built at as `normative_db`, and `compute_adjusted_voltage` scales from that, so changing this after a sweep moves only the next sweep (and the default levels the tests and refinement run at) |

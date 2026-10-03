@@ -86,7 +86,10 @@ returning one) or the host's calibration adapter, and opens the record in its ow
 the calibration's `MicSensitivity` into it — the scale travels with the samples, never
 through a live `StimCalibration` handle — along with the pre-stimulus silence
 (`NoiseRecord`), what was asked for (`Request`) and the `Warnings`. The inspector reads any
-`CapturedSignal` with a sensitivity in Pa/dB SPL. The "measure it as it was calibrated" rule
+`CapturedSignal` with a sensitivity in Pa/dB SPL. The sensitivity handed over must be a
+*measured* one: `Engine.MicSensitivity` starts at a 1 V/Pa placeholder and can never be NaN,
+so read `Engine.known_mic_sensitivity()` (NaN unless `MicSensitivityKnown`), which SpotCheck
+does. The "measure it as it was calibrated" rule
 is `stimgen.util.level_request` + `stimgen.util.level_as_calibrated`, shared by SpotCheck,
 the capture and the inspector; do not re-derive it locally. A capture never touches the
 bank: at a hardware rate the bank does not run at, the combination is regenerated on a

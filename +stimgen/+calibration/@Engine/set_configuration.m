@@ -5,7 +5,14 @@ function set_configuration(obj, options)
 % Update engine calibration parameters in one call.
 %
 % Parameters (Name=Value):
-%   MicSensitivity     - (1,1) double, > 0
+%   MicSensitivity     - (1,1) double, > 0. A value different from the
+%                        current one is taken as a sensitivity the caller
+%                        knows (a datasheet figure, or one measured on another
+%                        engine), and sets MicSensitivityKnown. Re-passing the
+%                        current value -- which every call that omits it does,
+%                        and which a GUI pushing all its fields does -- leaves
+%                        the flag as it was, so the 1 V/Pa default never
+%                        becomes "known" by being echoed back.
 %   ReferenceLevel     - (1,1) double, > 0
 %   ReferenceFrequency - (1,1) double, > 0
 %   NormativeValue     - (1,1) double, > 0
@@ -73,6 +80,9 @@ arguments
     options.ToneLutSource      (1,1) string {mustBeMember(options.ToneLutSource, ["tone", "swept_sine"])} = obj.ToneLutSource
 end
 
+if options.MicSensitivity ~= obj.MicSensitivity
+    obj.MicSensitivityKnown = true;
+end
 obj.MicSensitivity    = options.MicSensitivity;
 obj.ReferenceLevel    = options.ReferenceLevel;
 obj.ReferenceFrequency = options.ReferenceFrequency;

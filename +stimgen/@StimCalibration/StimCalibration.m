@@ -14,7 +14,8 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     % stimgen.calibration.CalibrationGui, which drives the same Engine.
     %
     % Properties (delegated from Engine):
-    %   CalibrationData, MicSensitivity, ReferenceLevel, ReferenceFrequency,
+    %   CalibrationData, MicSensitivity, MicSensitivityKnown (read-only),
+    %   ReferenceLevel, ReferenceFrequency,
     %   NormativeValue, ExcitationSignalVoltage, ToneLutSource, Notes,
     %   CalibrationTimestamp, Fs
     %
@@ -55,6 +56,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     properties (Dependent)
         CalibrationData
         MicSensitivity
+        MicSensitivityKnown     % read-only; see Engine.MicSensitivityKnown
         ReferenceLevel
         ReferenceFrequency
         NormativeValue
@@ -123,6 +125,10 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         end
         function set.MicSensitivity(obj, r)
             obj.Engine.set_configuration(MicSensitivity=r);
+        end
+
+        function v = get.MicSensitivityKnown(obj)
+            v = obj.Engine.MicSensitivityKnown;
         end
 
         function v = get.ReferenceLevel(obj)

@@ -120,6 +120,18 @@ end
 if ~isempty(cfg)
     obj.set_configuration(cfg{:});
 end
+
+% Whether the sensitivity is a real one. set_configuration above marks it
+% known whenever it changed the value, so the struct's own record is applied
+% after it and wins. A struct written before the flag existed is judged by its
+% value: only the 1 V/Pa placeholder an engine starts with counts as unknown,
+% since no measurement chain lands on exactly that and a calibrator reading
+% always replaces it. Without either field the engine's own state stands.
+if isfield(s, 'MicSensitivityKnown') && ~isempty(s.MicSensitivityKnown)
+    obj.MicSensitivityKnown = logical(s.MicSensitivityKnown);
+elseif isfield(s, 'MicSensitivity') && ~isempty(s.MicSensitivity)
+    obj.MicSensitivityKnown = double(s.MicSensitivity) ~= 1;
+end
 end
 
 

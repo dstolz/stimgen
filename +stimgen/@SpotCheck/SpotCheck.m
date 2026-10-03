@@ -39,7 +39,10 @@ classdef SpotCheck < handle
     %
     % The headline number is the level error. The stimulus asks for a level in
     % dB SPL; the recording is converted to dB SPL through the engine's own
-    % scale (Engine.spl_from_volts) and the two are subtracted. The measurement
+    % scale (Engine.volts_to_spl) and the two are subtracted -- on a measured
+    % microphone sensitivity only (Engine.known_mic_sensitivity, else the
+    % stimulus calibration's; with neither the record stays in volts and no
+    % error is reported, never a level on the 1 V/Pa placeholder). The measurement
     % follows the stimulus's CalibrationType, so it is made the same way the
     % table that calibrated it was made -- spectral rms at the tone frequency
     % for a tone, peak for a click train, broadband rms otherwise. A spot check
@@ -275,6 +278,12 @@ classdef SpotCheck < handle
             end
 
             obj.Stimulus = stimObj;
+
+            % A stimulus handed over as an object came from no file. Cleared
+            % here rather than left to whoever calls next, so a saved result
+            % never names the file a previous stimulus was loaded from;
+            % load_stimulus sets it again after this returns.
+            obj.StimulusFile = "";
 
             % Start on the combination the stimulus arrives on, so a caller
             % that stepped it before handing it over gets that one checked.
@@ -530,6 +539,46 @@ classdef SpotCheck < handle
             if obj.is_open()
                 obj.refresh_ui_();
             end
+        end
+
+
+        function [sens, source] = mic_sensitivity_(obj, stimObj)
+            % [sens, source] = mic_sensitivity_(obj, stimObj)
+            % The microphone sensitivity a capture is read on, and where it
+            % came from.
+            %
+            % Engine.MicSensitivity is never missing -- it starts at a 1 V/Pa
+            % placeholder -- so it is read through known_mic_sensitivity,
+            % which answers NaN until a reference has been measured, entered,
+            % or loaded with a calibration that had one. Read through the
+            % placeholder, a fresh engine reported every level 20*log10(1/S)
+            % dB off and called the difference a calibration error.
+            %
+            % When this engine has none, the stimulus's own calibration is the
+            % next best: it is the calibration whose level the stimulus asks
+            % for, and it was measured through a microphone. That is only
+            % right when the same microphone chain is on the rig now, which is
+            % why the source is returned for a warning to say so.
+            %
+            % Returns:
+            %   sens   - V/Pa, or NaN when nothing has a measured sensitivity
+            %   source - "engine" | "stimulus calibration" | "none"
+            sens   = obj.Engine.known_mic_sensitivity();
+            source = "engine";
+            if isfinite(sens)
+                return
+            end
+            if ~isempty(stimObj) && isvalid(stimObj) ...
+                    && isa(stimObj.Calibration, 'stimgen.StimCalibration') ...
+                    && ~isempty(stimObj.Calibration.Engine)
+                sens = stimObj.Calibration.Engine.known_mic_sensitivity();
+                if isfinite(sens)
+                    source = "stimulus calibration";
+                    return
+                end
+            end
+            sens   = NaN;
+            source = "none";
         end
 
 

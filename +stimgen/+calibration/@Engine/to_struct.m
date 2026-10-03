@@ -20,6 +20,10 @@ function s = to_struct(obj)
 s.version             = 3;
 s.CalibrationData     = obj.CalibrationData;
 s.MicSensitivity      = obj.MicSensitivity;
+% Whether MicSensitivity is a real sensitivity or the 1 V/Pa placeholder an
+% engine starts with. Absent from files written before it existed; restore()
+% infers it for those.
+s.MicSensitivityKnown = obj.MicSensitivityKnown;
 s.NormativeValue      = obj.NormativeValue;
 s.ReferenceLevel      = obj.ReferenceLevel;
 s.ReferenceFrequency  = obj.ReferenceFrequency;

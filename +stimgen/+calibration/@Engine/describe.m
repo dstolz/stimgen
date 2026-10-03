@@ -48,7 +48,12 @@ lines(end+1,1) = "";
 lines(end+1,1) = "Microphone and scale";
 lines(end+1,1) = field_("  Reference", sprintf('%.1f dB SPL at %.10g Hz', ...
     obj.ReferenceLevel, obj.ReferenceFrequency));
-lines(end+1,1) = field_("  Mic sensitivity", sprintf('%.5g V/Pa', obj.MicSensitivity));
+if obj.MicSensitivityKnown
+    lines(end+1,1) = field_("  Mic sensitivity", sprintf('%.5g V/Pa', obj.MicSensitivity));
+else
+    lines(end+1,1) = field_("  Mic sensitivity", sprintf( ...
+        '%.5g V/Pa -- NOT MEASURED (the default; run calibrate_reference)', obj.MicSensitivity));
+end
 lines(end+1,1) = field_("  Normative level", sprintf('%.10g dB SPL', obj.NormativeValue));
 
 lines(end+1,1) = "";

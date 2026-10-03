@@ -35,6 +35,7 @@ These proxy directly to the underlying `Engine`:
 
 - `CalibrationData`
 - `MicSensitivity`
+- `MicSensitivityKnown` (read-only) — whether `MicSensitivity` was measured, entered, or loaded, rather than the 1 V/Pa default
 - `ReferenceLevel`
 - `ReferenceFrequency`
 - `NormativeValue`

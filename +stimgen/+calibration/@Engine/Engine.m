@@ -188,6 +188,16 @@ classdef Engine < handle
         % produced it. describe() prints it alongside the tables.
         Notes               (1,1) string {mustBeNonmissing}                 = ""
         CalibrationTimestamp (1,1) datetime = datetime("")
+        % True when MicSensitivity is a real sensitivity rather than the
+        % 1 V/Pa placeholder every engine starts with: calibrate_reference
+        % measured it, set_configuration was handed a different value (a
+        % datasheet figure, a sensitivity measured elsewhere), or restore()
+        % read it from a calibration where it was known. MicSensitivity is
+        % validated positive and finite, so it can never itself say "not
+        % measured"; without this flag a level read on a fresh engine is off
+        % by 20*log10(1/trueSensitivity) and looks like a calibration fault.
+        % known_mic_sensitivity() is the read that respects it.
+        MicSensitivityKnown (1,1) logical = false
     end
 
     events
@@ -391,6 +401,26 @@ classdef Engine < handle
                 vrms (1,:) double
             end
             spl = stimgen.calibration.Engine.volts_to_spl(vrms, obj.MicSensitivity);
+        end
+
+        function s = known_mic_sensitivity(obj)
+            % s = known_mic_sensitivity(obj)
+            % MicSensitivity when it is a real sensitivity, NaN otherwise.
+            %
+            % What a caller that turns an arbitrary recording into dB SPL --
+            % stimgen.SpotCheck, StimPlayer.capture_stim -- should read
+            % instead of MicSensitivity: NaN is what
+            % stimgen.util.level_as_calibrated and
+            % stimgen.CapturedSignal.from_capture take to mean "no scale,
+            % report volts", and the 1 V/Pa placeholder is not a scale.
+            %
+            % Returns:
+            %   s - (1,1) double V/Pa, or NaN when MicSensitivityKnown is false
+            if obj.MicSensitivityKnown
+                s = obj.MicSensitivity;
+            else
+                s = NaN;
+            end
         end
 
         function s = spectral_options(obj)
