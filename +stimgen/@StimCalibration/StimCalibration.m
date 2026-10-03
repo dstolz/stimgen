@@ -14,7 +14,8 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     % stimgen.calibration.CalibrationGui, which drives the same Engine.
     %
     % Properties (delegated from Engine):
-    %   CalibrationData, MicSensitivity, ReferenceLevel, ReferenceFrequency,
+    %   CalibrationData, MicSensitivity, MicSensitivityKnown (read-only),
+    %   ReferenceLevel, ReferenceFrequency,
     %   NormativeValue, ExcitationSignalVoltage, ToneLutSource, Notes,
     %   CalibrationTimestamp, Fs
     %
@@ -55,6 +56,7 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     properties (Dependent)
         CalibrationData
         MicSensitivity
+        MicSensitivityKnown     % read-only; see Engine.MicSensitivityKnown
         ReferenceLevel
         ReferenceFrequency
         NormativeValue
@@ -97,9 +99,8 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
             % holds, so a calibration carried into a .spl bank or a protocol
             % file keeps everything the file would -- ToneLutSource, which
             % decides which table serves tone lookups, among them -- and its
-            % schema version (2: the 20 uPa-only level scale; see
-            % stimgen.calibration.Engine.volts_to_spl). Engine.restore reads
-            % it back.
+            % schema version (see stimgen.calibration.Engine.to_struct for
+            % what each version changed). Engine.restore reads it back.
             S = struct('Class', "stimgen.StimCalibration");
             e = obj.Engine.to_struct();
             fn = fieldnames(e);
@@ -124,6 +125,10 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         end
         function set.MicSensitivity(obj, r)
             obj.Engine.set_configuration(MicSensitivity=r);
+        end
+
+        function v = get.MicSensitivityKnown(obj)
+            v = obj.Engine.MicSensitivityKnown;
         end
 
         function v = get.ReferenceLevel(obj)

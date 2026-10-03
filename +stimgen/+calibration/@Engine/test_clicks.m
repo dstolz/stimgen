@@ -37,8 +37,8 @@ function results = test_clicks(obj, durs, levels, options)
 % was verified and how accurate it proved.
 %
 % Durations shorter than one sample at the current Fs cannot be rendered and
-% are dropped with a message. Points whose required drive exceeds
-% MaxOutputVoltage are skipped rather than played: they would clip, and
+% are dropped with a message. Points whose required drive exceeds the output
+% ceiling (MaxOutputVoltage, or the adapter's full_scale() when lower) are skipped rather than played: they would clip, and
 % clipping measures the amplifier, not the LUT. They are reported in
 % results.skipped and logged, never dropped silently.
 %
@@ -67,7 +67,8 @@ function results = test_clicks(obj, durs, levels, options)
 %                              scale the click LUT itself is on)
 %     error_db               - measured minus requested
 %     sd_db                  - across-repeat spread of the measured level
-%     snr_db, thd_db         - measurement quality per point
+%     snr_db                 - measurement quality per point (no THD: an
+%                              impulse has no fundamental to refer one to)
 %     clipping               - response clipped at this point
 %     extrapolated           - (D,1) duration outside the LUT's span
 %     tested                 - point was played and measured
@@ -168,19 +169,22 @@ for li = 1:nL
     drive(:, li) = reshape(obj.compute_adjusted_voltage("click", durs, levels(li)), [], 1);
 end
 
-playable = isfinite(drive) & drive > 0 & drive <= obj.MaxOutputVoltage;
-[skipped, nOver] = skipped_points_(durs, levels, drive, playable, obj.MaxOutputVoltage);
+% The ceiling the adapter actually has: MaxOutputVoltage, or the adapter's
+% full_scale() when that is lower (a sound card's is 1).
+ceilV = obj.output_ceiling_();
+playable = isfinite(drive) & drive > 0 & drive <= ceilV;
+[skipped, nOver] = skipped_points_(durs, levels, drive, playable, ceilV);
 if nOver > 0
     stimgen.util.vprintf(0, 1, ...
         ['Click LUT test: skipping %d of %d point(s) needing more than the %g V ' ...
          'output ceiling; they would clip. See results.skipped.'], ...
-        nOver, nD * nL, obj.MaxOutputVoltage);
+        nOver, nD * nL, ceilV);
 end
 if ~any(playable(:))
     error('stimgen:calibration:Engine:noPlayablePoints', ...
         ['Every requested duration/level pair needs more than the %g V output ' ...
-         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig allows it.'], ...
-        obj.MaxOutputVoltage);
+         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig (and adapter) allow it.'], ...
+        ceilV);
 end
 
 % --- Stimulus, identical to the one calibrate_clicks sweeps with -----------
@@ -196,7 +200,6 @@ nReps = options.RepeatCount;
 measSplAll = nan(nReps, nD, nL);   % dB SPL per repeat
 measAll    = nan(nReps, nD, nL);   % linear peak volts, for the spread
 snrAll     = nan(nReps, nD, nL);
-thdAll     = nan(nReps, nD, nL);
 clipAny    = false(nD, nL);
 
 axisMeta = {'XLabel', "click duration (\mus)", 'XScale', "log", 'XFactor', 1e6};
@@ -243,13 +246,15 @@ try
 
                 response = obj.ResponseSignal;
                 [~, snrAll(rep, i, li)] = obj.estimate_noise_snr_(response, fs, nan);
-                thdAll(rep, i, li) = thd(response, fs);
 
                 h = obj.estimate_headroom_(y, response);
                 clipAny(i, li) = clipAny(i, li) || ...
                     h.responseClippingLikely || h.excitationClippingLikely;
 
                 captureNum = captureNum + 1;
+                obj.note_progress_("click_test", "measure", 'Index', i, 'Total', nD, ...
+                    'Repeat', rep, 'RepeatTotal', nReps, ...
+                    'Progress', captureNum / totalCaptures);
                 if obj.ShowLivePlots
                     % Running average rather than the finished point: on a
                     % many-pass run that is the difference between a curve
@@ -265,8 +270,7 @@ try
                         axisMeta{:}, ...
                         'Metrics', struct('spl_db', tbl.spl_db(i), ...
                                           'voltage', drive(i, li), ...
-                                          'snr_db', snrAll(rep, i, li), ...
-                                          'thd_db', thdAll(rep, i, li)));
+                                          'snr_db', snrAll(rep, i, li)));
                 end
             end
         end
@@ -279,7 +283,6 @@ end
 % --- Accuracy statistics ---------------------------------------------------
 measuredSpl = reshape(mean(measSplAll, 1, 'omitnan'), nD, nL);
 snr         = reshape(mean(snrAll,     1, 'omitnan'), nD, nL);
-thdDb       = reshape(mean(thdAll,     1, 'omitnan'), nD, nL);
 
 sd = nan(nD, nL);
 for li = 1:nL
@@ -305,7 +308,6 @@ results.measured_spl_db = measuredSpl;
 results.error_db        = error_db;
 results.sd_db           = sd;
 results.snr_db          = snr;
-results.thd_db          = thdDb;
 results.clipping        = clipAny;
 results.extrapolated    = extrapolated;
 results.tested          = tested;

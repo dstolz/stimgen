@@ -203,6 +203,9 @@ try
             end
 
             captureNum = captureNum + 1;
+            obj.note_progress_("filter_test", "measure", 'Index', 0, 'Total', n, ...
+                'Repeat', rep, 'RepeatTotal', nReps, ...
+                'Progress', captureNum / totalCaptures);
             if obj.ShowLivePlots
                 for i = 1:n
                     mAvg = mean(measAll(1:rep, i), 'omitnan');

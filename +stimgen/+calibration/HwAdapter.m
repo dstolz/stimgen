@@ -9,7 +9,11 @@ classdef (Abstract) HwAdapter < handle
     % absent (fail-fast).
     %
     % record() is concrete and defaults to a silent play_and_record, so an
-    % existing subclass satisfies the contract unchanged.
+    % existing subclass satisfies the contract unchanged. So are full_scale()
+    % and input_range(), which default to NaN ("not known"): the Engine then
+    % judges headroom against its own MaxOutputVoltage exactly as it did
+    % before they existed. A backend whose converters have a known range
+    % should override them.
     %
     % See also: stimgen.calibration.WindowsSoundCardAdapter, stimgen.calibration.Engine,
     %           documentation/stimgen_calibration.md
@@ -37,6 +41,41 @@ classdef (Abstract) HwAdapter < handle
                 nSamples (1,1) double {mustBeInteger, mustBePositive}
             end
             response = obj.play_and_record(zeros(1, nSamples));
+        end
+
+        function v = full_scale(~)
+            % v = full_scale(obj)
+            % Largest |signal| play_and_record can reproduce, in the units the
+            % signal is given in (volts for an analog rig, digital full scale
+            % for a sound card).
+            %
+            % The Engine judges excitation headroom against the smaller of
+            % this and its MaxOutputVoltage, refuses test points that need
+            % more, and checks play_and_capture waveforms against it. NaN, the
+            % default, means "not known" and leaves MaxOutputVoltage alone in
+            % charge -- the behaviour every adapter had before this method
+            % existed.
+            %
+            % Returns:
+            %   v - (1,1) double positive full scale, or NaN when unknown
+            v = NaN;
+        end
+
+        function v = input_range(~)
+            % v = input_range(obj)
+            % Largest |response| the input can record before it saturates, in
+            % the units play_and_record returns.
+            %
+            % The Engine judges a response's headroom and its clipping flag
+            % against this. NaN, the default, means "not known": the Engine
+            % then falls back to MaxOutputVoltage, which is what it judged
+            % the input against before this method existed -- right for a rig
+            % whose input and output ranges match (+/-10 V on both sides of a
+            % TDT RZ), and the only assumption available otherwise.
+            %
+            % Returns:
+            %   v - (1,1) double positive input range, or NaN when unknown
+            v = NaN;
         end
     end
 

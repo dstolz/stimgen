@@ -64,8 +64,9 @@ renders that stream, either into its own window or into axes a host GUI supplies
 catches listener errors (warning per notify), `emit_live_` guards payload construction — every
 `calibrate_*` treats an error as an aborted run and discards the partial data — and
 `LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
-per-measurement warning storm. `Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset`
-remain only as deprecated shims that forward to an attached monitor.
+per-measurement warning storm. The engine keeps no registry of monitors; a host that wants the
+last record drawn outside a run calls `LiveMonitor.show_engine_state`. Progress (`Engine.RunProgress`,
+observable) is published per measurement regardless of `ShowLivePlots`.
 
 **Spot check** — `stimgen.SpotCheck` (in `@SpotCheck/`) spans all three: it plays a stimulus
 through `Engine.play_and_capture`, wraps the microphone record in a `stimgen.CapturedSignal`
@@ -92,7 +93,10 @@ returning one) or the host's calibration adapter, and opens the record in its ow
 the calibration's `MicSensitivity` into it — the scale travels with the samples, never
 through a live `StimCalibration` handle — along with the pre-stimulus silence
 (`NoiseRecord`), what was asked for (`Request`) and the `Warnings`. The inspector reads any
-`CapturedSignal` with a sensitivity in Pa/dB SPL. The "measure it as it was calibrated" rule
+`CapturedSignal` with a sensitivity in Pa/dB SPL. The sensitivity handed over must be a
+*measured* one: `Engine.MicSensitivity` starts at a 1 V/Pa placeholder and can never be NaN,
+so read `Engine.known_mic_sensitivity()` (NaN unless `MicSensitivityKnown`), which SpotCheck
+does. The "measure it as it was calibrated" rule
 is `stimgen.util.level_request` + `stimgen.util.level_as_calibrated`, shared by SpotCheck,
 the capture and the inspector; do not re-derive it locally. A capture never touches the
 bank: at a hardware rate the bank does not run at, the combination is regenerated on a
@@ -108,7 +112,11 @@ bank: at a hardware rate the bank does not run at, the combination is regenerate
   `StimPlayer` and `CalibrationGui`.
 - `stimgen.calibration.HwAdapter` — `sample_rate()` and `play_and_record(signal)`, plus a concrete
   `record(nSamples)` (silent `play_and_record` by default) that `calibrate_reference` uses so the
-  reference step never drives the speaker. Consumed only
+  reference step never drives the speaker, and concrete `full_scale()` / `input_range()` (NaN =
+  unknown by default). The Engine judges excitation headroom against
+  `min(MaxOutputVoltage, full_scale())` and response headroom against `input_range()`, falling back
+  to `MaxOutputVoltage` for either when the adapter returns NaN, so an older adapter behaves as
+  before. Consumed only
   by `Engine`. `WindowsSoundCardAdapter` is the one built-in implementation.
 
 Both are optional at construction; omitting them puts the GUIs in offline mode where speaker
@@ -268,6 +276,15 @@ the default 94 dB, 20 dB wrong at 114). `ReferenceLevel` is a property of the *c
 read only by `calibrate_reference`, which uses `spl_to_pressure` to turn it into V/Pa. `.esgc`
 schema version 2 marks the fix; `Engine.load` warns on a version 1 file whose `ReferenceLevel`
 is not 94.
+
+**A LUT voltage is anchored to the table's own `normative_db`, not the live `NormativeValue`.**
+Every `tone`/`click`/`swept_sine` table records the `NormativeValue` it was solved for when the
+sweep committed it, and `compute_adjusted_voltage` scales from that via
+`Engine.lut_normative_db(table, fallback)`. `NormativeValue` is a setting for the *next* sweep
+(the GUI pushes its field into the engine before every action), so scaling from it shifted every
+drive by however far the field had moved. `.esgc` schema version 3 marks the field; `Engine.restore`
+stamps older files' tables with the `NormativeValue` saved beside them. Anything that reads a stored
+voltage must go through the table's value too.
 
 **A level measured at the peak is labelled dB peSPL.** The click table (and anything
 `level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)

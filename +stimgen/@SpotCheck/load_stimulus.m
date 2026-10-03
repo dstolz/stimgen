@@ -60,10 +60,12 @@ if isempty(stimObj)
          'or a struct from its toStruct method.'], ffn);
 end
 
-obj.StimulusFile = string(ffn);
 obj.DataPath_    = string(fileparts(ffn));
 
+% set_stimulus clears StimulusFile -- an object handed over directly has no
+% file -- so the file is recorded after it.
 obj.set_stimulus(stimObj, label);
+obj.StimulusFile = string(ffn);
 
 stimgen.util.vprintf(1, 'SpotCheck: loaded "%s" from "%s"', char(label), ffn);
 obj.set_status_("Loaded " + label + " from " + string(ffn));

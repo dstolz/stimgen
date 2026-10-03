@@ -43,7 +43,7 @@ if isfinite(r.measured.level_error_db)
     L(end+1) = sprintf('  measured       %.1f %s', r.measured.level_db_spl, lu);
     L(end+1) = sprintf('  error          %+.2f dB', r.measured.level_error_db);
 else
-    L(end+1) = sprintf('  measured       %.1f %s', r.measured.level_db_spl, lu);
+    L(end+1) = sprintf('  measured       %s', fmt_(r.measured.level_db_spl, ['%.1f ' char(lu)]));
     L(end+1) = "  requested      not comparable (see warnings)";
 end
 L(end+1) = sprintf('  noise floor    %s', fmt_(r.measured.noise_db_spl, '%.1f dB SPL'));

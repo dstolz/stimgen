@@ -35,7 +35,8 @@ function results = test_tones(obj, freqs, levels, options)
 % CalibrationData.toneTest, so a saved .esgc records that its tone table was
 % verified and how accurate it proved.
 %
-% Points whose required drive exceeds MaxOutputVoltage are skipped rather than
+% Points whose required drive exceeds the output ceiling (MaxOutputVoltage, or
+% the adapter's full_scale() when lower) are skipped rather than
 % played: they would clip, and clipping measures the amplifier, not the LUT.
 % They are reported in results.skipped and logged, never dropped silently.
 %
@@ -178,19 +179,22 @@ for li = 1:nL
     drive(:, li) = reshape(obj.compute_adjusted_voltage("tone", freqs, levels(li)), [], 1);
 end
 
-playable = isfinite(drive) & drive > 0 & drive <= obj.MaxOutputVoltage;
-[skipped, nOver] = skipped_points_(freqs, levels, drive, playable, obj.MaxOutputVoltage);
+% The ceiling the adapter actually has: MaxOutputVoltage, or the adapter's
+% full_scale() when that is lower (a sound card's is 1).
+ceilV = obj.output_ceiling_();
+playable = isfinite(drive) & drive > 0 & drive <= ceilV;
+[skipped, nOver] = skipped_points_(freqs, levels, drive, playable, ceilV);
 if nOver > 0
     stimgen.util.vprintf(0, 1, ...
         ['Tone LUT test: skipping %d of %d point(s) needing more than the %g V ' ...
          'output ceiling; they would clip. See results.skipped.'], ...
-        nOver, nF * nL, obj.MaxOutputVoltage);
+        nOver, nF * nL, ceilV);
 end
 if ~any(playable(:))
     error('stimgen:calibration:Engine:noPlayablePoints', ...
         ['Every requested frequency/level pair needs more than the %g V output ' ...
-         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig allows it.'], ...
-        obj.MaxOutputVoltage);
+         'ceiling. Test lower levels, or raise MaxOutputVoltage if the rig (and adapter) allow it.'], ...
+        ceilV);
 end
 
 % --- Train layout, identical to calibrate_tones ----------------------------
@@ -336,6 +340,9 @@ try
                         h.responseClippingLikely || h.excitationClippingLikely;
 
                     captureNum = captureNum + 1;
+                    obj.note_progress_("tone_test", "measure", 'Index', i, 'Total', nF, ...
+                        'Repeat', rep, 'RepeatTotal', nReps, ...
+                        'Progress', captureNum / totalCaptures);
                     if obj.ShowLivePlots
                         tbl.measurement(i) = m;
                         tbl.spl_db(i)      = mean(measSplAll(1:rep, i, li), 'omitnan');
