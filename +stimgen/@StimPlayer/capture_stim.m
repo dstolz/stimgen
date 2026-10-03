@@ -121,7 +121,9 @@ try
             AcCoupleFrequency = ce.AcCoupleFrequency, ...
             SpectralWindow    = ce.SpectralWindow, ...
             SpectralFftLength = ce.SpectralFftLength);
-        sens = ce.MicSensitivity;
+        % NaN unless a reference was measured (or loaded): the 1 V/Pa
+        % default is not a sensitivity, and a level read on it is wrong.
+        sens = ce.known_mic_sensitivity();
     end
 
     peakV = max(abs(y));
@@ -236,7 +238,7 @@ function s = summary_line_(rec, label, spectral)
 % Built as a string from the start: + between two char vectors is arithmetic.
 s = string(sprintf('Captured "%s".', label));
 if ~rec.has_spl_scale()
-    s = s + " No calibration loaded, so it is shown in volts.";
+    s = s + " No measured microphone sensitivity, so it is shown in volts.";
 else
     m = stimgen.util.level_as_calibrated(rec.Waveform, rec.Fs, rec.Request, ...
         rec.MicSensitivity, spectral);

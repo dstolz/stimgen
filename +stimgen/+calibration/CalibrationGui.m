@@ -2132,9 +2132,9 @@ classdef CalibrationGui < handle
 
             % A filter cut for a rate other than the one attached is a
             % legitimate thing to want, and a silent trap if it was not
-            % intended -- test_filter is the only thing that refuses it, and
-            % apply_calibration would happily run it at the wrong rate. Flag it
-            % on the way out.
+            % intended -- test_filter and apply_calibration (through
+            % stimgen.util.assert_filter_rate) both refuse it. Flag it on the
+            % way out, before either is reached.
             fsHardware = obj.Engine.Fs;
             isOverride = fsHardware > 0 && abs(D.sampleRate - fsHardware) > 1e-6 * fsHardware;
             if isOverride
@@ -2790,9 +2790,10 @@ classdef CalibrationGui < handle
 
             % An FIR's taps carry the rate they were designed for, so a loaded
             % calibration whose filter was cut at another rate equalizes the
-            % wrong frequencies -- quietly, since apply_calibration does not
-            % compare rates. Report it where the rate is read, not only when
-            % test_filter happens to be run.
+            % wrong frequencies. apply_calibration refuses it (through
+            % stimgen.util.assert_filter_rate), so a stimulus would fail at
+            % playback; report it here, where the rate is read, so it is seen
+            % before then.
             designFs = obj.filter_design_rate_();
             mismatched = designFs > 0 && (fs <= 0 || abs(designFs - fs) > 1e-6 * fs);
             if mismatched
