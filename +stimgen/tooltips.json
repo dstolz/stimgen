@@ -140,7 +140,7 @@
     "Counter": "Stimuli presented / total for this run, summed over bank.",
     "LoadProtocolTool": "Load Protocol",
     "LoadBankTool": "Load Bank",
-    "SaveBankTool": "Save Bank",
+    "SaveBankTool": "Save Bank (to the file it was loaded from or last saved to; File > Save Bank As... to choose another)",
     "CalibrationGuiTool": "Open Calibration GUI",
     "AddStimTool": "Add Stimulus",
     "DuplicateStimTool": "Duplicate Stimulus",

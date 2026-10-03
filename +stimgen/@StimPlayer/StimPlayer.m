@@ -77,6 +77,7 @@ classdef StimPlayer < handle
         rec = capture_stim(obj, src, event)
         dlg = edit_capture_settings(obj)
         save_bank(obj, ffn)
+        save_bank_as(obj)
         load_bank(obj, ffn)
         set_control_visibility(obj, options)
         set_computing_(obj, tf)
@@ -161,6 +162,14 @@ classdef StimPlayer < handle
         LastCapture = []
     end
 
+    % --- Bank file ---
+    properties (SetAccess = protected)
+        % The .spl file the bank was last loaded from or saved to ("" = none
+        % yet). save_bank writes here without asking; save_bank_as asks,
+        % offering it as the default.
+        BankFile (1,1) string = ""
+    end
+
     % --- Calibration state ---
     properties (SetAccess = protected)
         % stimgen.StimCalibration loaded via the Calibration menu, or [].
@@ -214,6 +223,8 @@ classdef StimPlayer < handle
 
         Paused_ (1,1) logical = false        % True while a running session is held by Pause
         HardwareRun_ (1,1) logical = false   % True when the current run started with hardware output
+
+        Dirty_ (1,1) logical = false         % Bank edited since it was last loaded or saved
         PauseStartedAt_ (1,1) double = 0     % timeSinceStart when the current pause began
     end
 
@@ -395,6 +406,12 @@ classdef StimPlayer < handle
 
             obj.sync_fs_field_;
             obj.update_signal_plot;
+
+            % Every bank item stores its rate, so a changed rate is an edit
+            % of the bank -- including one adopted from the hardware.
+            if value ~= previousFs && ~isempty(obj.StimPlayObjs)
+                obj.mark_bank_dirty_;
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1082,7 +1099,7 @@ classdef StimPlayer < handle
 
             fields = {'AddBtn','DuplicateBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
                 'ISIField','FsField','OrderDD','OutputDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
-                'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
+                'LoadBankMenu','SaveBankMenu','SaveBankAsMenu','CalibrationMenu','CalibrationGuiMenu', ...
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
                 'AddStimTool','DuplicateStimTool','RemoveStimTool', ...
@@ -1210,6 +1227,108 @@ classdef StimPlayer < handle
 
             h.ProtocolStatusLabel.Text = sprintf('Protocol: %s | HW: %s', ...
                 obj.Host.protocolName(), hwState);
+        end
+
+        % -----------------------------------------------------------------
+        function mark_bank_dirty_(obj)
+            % mark_bank_dirty_() - Record that the bank differs from its file.
+            % Called by every bank edit: add, open, duplicate, remove, a
+            % parameter or label edit, Reps/ISI/order/sample rate, applying a
+            % calibration. Close, Load Bank and Remove ask before losing it.
+            obj.Dirty_ = true;
+            obj.update_title_;
+        end
+
+        % -----------------------------------------------------------------
+        function mark_bank_clean_(obj, ffn)
+            % mark_bank_clean_(ffn) - Record that the bank matches the file ffn.
+            obj.BankFile = string(ffn);
+            obj.Dirty_   = false;
+            obj.update_title_;
+        end
+
+        % -----------------------------------------------------------------
+        function update_title_(obj)
+            % update_title_() - "StimPlayer - <bank file> *" (the star while unsaved).
+            if isempty(obj.hFig) || ~isvalid(obj.hFig)
+                return
+            end
+            t = "StimPlayer";
+            if strlength(obj.BankFile) > 0
+                [~, fn, ext] = fileparts(char(obj.BankFile));
+                t = t + " - " + string([fn ext]);
+            end
+            if obj.Dirty_
+                t = t + " *";
+            end
+            obj.hFig.Name = char(t);
+        end
+
+        % -----------------------------------------------------------------
+        function tf = confirm_discard_changes_(obj, actionText)
+            % tf = confirm_discard_changes_(actionText) - Offer to save unsaved bank edits.
+            % Returns true when it is safe to go on: nothing was unsaved, the
+            % operator saved (and the save succeeded), or chose Discard.
+            % Cancel, a cancelled Save dialog or a failed save return false.
+            %
+            % Parameters:
+            %   actionText - what is about to happen, e.g. "closing"
+            tf = true;
+            if ~obj.Dirty_ || isempty(obj.hFig) || ~isvalid(obj.hFig)
+                return
+            end
+            if strlength(obj.BankFile) > 0
+                [~, fn, ext] = fileparts(char(obj.BankFile));
+                what = sprintf('The bank (%s%s) has', fn, ext);
+            else
+                what = 'The bank has';
+            end
+            msg = sprintf('%s unsaved changes. Save them before %s?', what, char(actionText));
+            choice = uiconfirm(obj.hFig, msg, 'Unsaved Changes', ...
+                'Options', {'Save', 'Discard', 'Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 3, 'Icon', 'warning');
+            switch choice
+                case 'Save'
+                    obj.save_bank();
+                    tf = ~obj.Dirty_;
+                case 'Discard'
+                    tf = true;
+                otherwise
+                    tf = false;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function on_close_request_(obj)
+            % on_close_request_() - Figure CloseRequestFcn: confirm before losing work.
+            % A running (or paused) session is stopped by closing and its
+            % presentation log goes with the player, so that is confirmed
+            % first; then unsaved bank edits are offered for saving. A
+            % failure while asking must not leave a window that cannot be
+            % closed, so it is logged and the window closes.
+            try
+                if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
+                    msg = sprintf(['A session is running (%d of %d presentations made). ' ...
+                        'Closing stops it, and its presentation log (StimOrder, ' ...
+                        'StimOrderTime, StimPolarity, StimVariant) is discarded with the player.'], ...
+                        obj.presented_count_(), obj.total_count_());
+                    choice = uiconfirm(obj.hFig, msg, 'Close StimPlayer', ...
+                        'Options', {'Stop and Close', 'Cancel'}, ...
+                        'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                    if ~strcmp(choice, 'Stop and Close')
+                        return
+                    end
+                end
+                if ~obj.confirm_discard_changes_("closing")
+                    return
+                end
+            catch ME
+                stimgen.util.vprintf(0, 1, 'StimPlayer: close confirmation failed; closing anyway.');
+                stimgen.util.vprintf(0, 1, ME);
+            end
+            if ~isempty(obj.hFig) && isvalid(obj.hFig)
+                delete(obj.hFig);  % DeleteFcn deletes the player
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1343,6 +1462,9 @@ classdef StimPlayer < handle
 
                 for i = 1:numel(obj.StimPlayObjs)
                     obj.StimPlayObjs(i).StimObj.Calibration = calObj;
+                end
+                if ~isempty(obj.StimPlayObjs)
+                    obj.mark_bank_dirty_;  % each item saves its calibration
                 end
                 obj.Calibration     = calObj;
                 obj.CalibrationFile = string(ffn);

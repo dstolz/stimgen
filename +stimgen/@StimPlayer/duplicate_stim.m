@@ -45,6 +45,7 @@ try
 	sp.Name          = unique_copy_name_(src.Name, [obj.StimPlayObjs.Name]);
 
 	obj.StimPlayObjs = [obj.StimPlayObjs(1:idx); sp; obj.StimPlayObjs(idx+1:end)];
+	obj.mark_bank_dirty_;
 
 	obj.refresh_listbox_;
 	obj.refresh_combo_controls_;

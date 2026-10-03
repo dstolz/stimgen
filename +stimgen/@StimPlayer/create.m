@@ -9,6 +9,9 @@ tip = @(key) stimgen.util.tooltip('StimPlayer', key);
 
 f = uifigure('Name', 'StimPlayer', 'Position', [100 100 1000 760]);
 f.DeleteFcn = @(~,~) delete(obj);
+% Closing asks first when a session is running or the bank has unsaved
+% edits; it then deletes the figure, whose DeleteFcn deletes the player.
+f.CloseRequestFcn = @(src,~) on_close_request_fcn_(obj, src);
 f.WindowKeyPressFcn = @(~,evt) on_keypress_(obj, evt);
 obj.hFig = f;
 
@@ -354,6 +357,8 @@ mLoadBank = uimenu(mFile, 'Text', '&Load Bank',  'Accelerator', 'L', ...
     'MenuSelectedFcn', @(~,~) obj.load_bank());
 mSaveBank = uimenu(mFile, 'Text', '&Save Bank',  'Accelerator', 'S', ...
     'MenuSelectedFcn', @(~,~) obj.save_bank());
+mSaveBankAs = uimenu(mFile, 'Text', 'Save Bank &As...', ...
+    'MenuSelectedFcn', @(~,~) obj.save_bank_as());
 mRecentBanks = uimenu(mFile, 'Text', 'Recent Stimulus &Banks');
 
 mCalibrationMenu = uimenu(f, 'Text', '&Calibration');
@@ -449,6 +454,7 @@ obj.update_calibration_status_;
 obj.handles.LoadProtocolMenu  = mLoadProtocol;
 obj.handles.LoadBankMenu      = mLoadBank;
 obj.handles.SaveBankMenu      = mSaveBank;
+obj.handles.SaveBankAsMenu    = mSaveBankAs;
 obj.handles.CalibrationMenu   = mCalibration;
 obj.handles.RecentProtocolsMenu    = mRecentProtocols;
 obj.handles.RecentBanksMenu        = mRecentBanks;
@@ -478,6 +484,7 @@ idx = selected_bank_idx_(obj);
 if isempty(idx), return; end
 try
     obj.StimPlayObjs(idx).Reps = src.Value;
+    obj.mark_bank_dirty_;
     obj.refresh_listbox_;
     obj.refresh_combo_controls_;  % reps per combination
 catch ME
@@ -503,6 +510,7 @@ try
     end
     obj.ISI = v ./ 1e3;
     src.Value = mat2str(v);
+    obj.mark_bank_dirty_;
 catch ME
     src.Value = event.PreviousValue;
     obj.report_gui_error_(ME, "Invalid ISI", ...
@@ -527,6 +535,7 @@ end
 function on_order_changed_(obj, src, ~)
 try
     obj.SelectionType = src.Value;
+    obj.mark_bank_dirty_;
 catch ME
     obj.report_gui_error_(ME, "Invalid Order", ...
         "Unable to apply the selected playback order.");
@@ -543,6 +552,16 @@ catch ME
     src.Value = event.PreviousValue;
     obj.report_gui_error_(ME, "Preview Output Error", ...
         "StimPlayer could not switch the preview output.");
+end
+end
+
+function on_close_request_fcn_(obj, fig)
+% The player can be deleted while its window stays open (delete(sp) from a
+% host); the window must still close then, with nothing left to ask about.
+if isvalid(obj)
+    obj.on_close_request_();
+else
+    delete(fig);
 end
 end
 

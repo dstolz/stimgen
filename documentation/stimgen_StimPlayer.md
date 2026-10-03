@@ -649,6 +649,38 @@ running is refused rather than restarting it.
 
 `StimPlayer` persists banks as `.spl` files saved with MATLAB `save -v7`.
 
+### Current file and unsaved changes
+
+`BankFile` (read-only) is the `.spl` file the bank was last loaded from or
+saved to, `""` until there is one. **File > Save Bank** (`Ctrl+S`,
+`save_bank()`) writes there without asking; with no file yet, or one whose
+folder has gone, it falls through to **File > Save Bank As...**
+(`save_bank_as()`), which asks and opens on `BankFile` (else `StimBank.spl`
+in `DataPath`). `save_bank(ffn)` writes to `ffn` and makes it the current
+file.
+
+Every bank edit made through the player -- add, open, duplicate, remove, a
+parameter, action button or label edit, `Reps`, `ISI`, order, a sample-rate
+change (including one adopted from the hardware), applying a calibration --
+marks the bank unsaved, shown as a `*` after the file name in the window
+title. Then:
+
+- **closing the window** offers Save / Discard / Cancel (and, if a session is
+  running or paused, first warns that closing stops it and discards its
+  presentation log);
+- **Load Bank** (and the Recent Banks entries) offers Save / Discard / Cancel
+  before replacing the bank;
+- **Remove** always asks, since a removal cannot be undone.
+
+Choosing Save in those dialogs saves as above; a cancelled Save As dialog or
+a failed save cancels the close or load. A successful load or save marks the
+bank saved, except that a load which had to change the bank (mixed sample
+rates unified) leaves it unsaved. A load that fails part-way leaves the
+current bank, its `ISI` and its order untouched; if it fails after the bank
+was replaced, the result is marked unsaved with no current file, so Save
+cannot overwrite either file without asking. Programmatic edits made
+directly on `StimPlayObjs` are not tracked.
+
 `save_bank()` stores:
 
 - the global `ISI`
