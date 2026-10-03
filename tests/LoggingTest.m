@@ -41,7 +41,7 @@ classdef LoggingTest < matlab.unittest.TestCase
 
         function formattedMessageArrivesRaw(testCase)
             stimgen.util.vprintf(1, 'value %d of %s', 5, 'five');
-            testCase.verifyEqual(testCase.Log.Count, 1);
+            testCase.verifyEqual(double(testCase.Log.Count), 1);
             r = testCase.Log(1);
             testCase.verifyEqual(r.level, 1);
             testCase.verifyFalse(r.red);
@@ -55,7 +55,7 @@ classdef LoggingTest < matlab.unittest.TestCase
             % a percent sign must survive.
             literal = 'C:\new\data.mat at 100%';
             stimgen.util.vprintf(0, 1, literal);
-            testCase.verifyEqual(testCase.Log.Count, 1);
+            testCase.verifyEqual(double(testCase.Log.Count), 1);
             r = testCase.Log(1);
             testCase.verifyEqual(r.level, 0);
             testCase.verifyTrue(r.red);
@@ -81,16 +81,16 @@ classdef LoggingTest < matlab.unittest.TestCase
         function sinkGateSuppresses(testCase)
             stimgen.util.vprintf(3, 'verbose detail %d', 1);
             stimgen.util.vprintf(4, 'trace detail');
-            testCase.verifyEqual(testCase.Log.Count, 0);
+            testCase.verifyEqual(double(testCase.Log.Count), 0);
             stimgen.util.vprintf(2, 'debug detail');
-            testCase.verifyEqual(testCase.Log.Count, 1);
+            testCase.verifyEqual(double(testCase.Log.Count), 1);
         end
 
         function uninstallReturnsToBuiltInLogger(testCase)
             stimgen.util.logSink([]);
             testCase.verifyEmpty(stimgen.util.logSink());
             stimgen.util.vprintf(-1, 'goes to the built-in log file only');
-            testCase.verifyEqual(testCase.Log.Count, 0);
+            testCase.verifyEqual(double(testCase.Log.Count), 0);
         end
 
         function rejectsANonSink(testCase)
