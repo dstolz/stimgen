@@ -197,8 +197,16 @@ if ~isempty(N)
 end
 
 % --- Spectrum and distortion, with the fundamental on the record's scale -
+% In volts this is an rms dBV, like the RMS row above it -- 3.01 dB under the
+% sine-amplitude scale the Spectrum and Distortion tabs use for a signal --
+% so its label says so.
 f0Level = obj.to_db_(10 .^ (M.FundamentalDb / 20) / sqrt(2));
-rows = [rows; spectrum_rows_(M, ['Fundamental (' dbU ')'], num_(f0Level, '%.2f'))];
+if acoustic
+    f0Label = ['Fundamental (' dbU ')'];
+else
+    f0Label = 'Fundamental (dB re 1 V rms)';
+end
+rows = [rows; spectrum_rows_(M, f0Label, num_(f0Level, '%.2f'))];
 rows = [rows; distortion_rows_(M)];
 
 % --- How it was captured -------------------------------------------------
