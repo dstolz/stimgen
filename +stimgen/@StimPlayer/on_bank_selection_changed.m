@@ -66,9 +66,6 @@ g.RowHeight   = rowHeights;
 g.Padding     = [6 6 6 6];
 g.RowSpacing  = 2;
 
-mc = metaclass(stimObj);
-pl = mc.PropertyList;
-
 paramHandles = struct(); % registered with stimObj so on_gui_changed can reach the widgets
 
 row = 1;
@@ -106,63 +103,17 @@ for s = 1:numel(sections)
         propName = sPropList{p};
         pm       = sMeta.(propName);
 
-        lbl = uilabel(g, 'Text', [pm.label ':'], ...
-            'HorizontalAlignment', 'right');
+        % Label, widget, tooltip and display units come from the builder
+        % shared with StimType.create_gui; the layout and the edit handling
+        % are this panel's own.
+        [x, lbl] = stimObj.build_prop_widget(g, propName, pm, '%s:', ...
+            @(callbackName) run_action_(obj, stimObj, callbackName));
         lbl.Layout.Row    = row;
         lbl.Layout.Column = 1;
 
-        wt = resolve_wt_(propName, pm, pl);
-        sc = stimgen.StimType.display_scale(pm);
-        switch wt
-            case 'numeric'
-                % Widgets carry display units (ms for time properties);
-                % pm.format and pm.limits are already in those units.
-                if is_non_vectorizable_prop_(propName)
-                    x = uieditfield(g, 'numeric', 'Tag', propName);
-                    x.Value = stimObj.(propName) * sc;
-                    if isfield(pm, 'format'), x.ValueDisplayFormat = pm.format; end
-                    if isfield(pm, 'limits'), x.Limits = pm.limits; end
-                else
-                    x = uieditfield(g, 'Tag', propName);
-                    x.Value = localFormatPropValue_(stimObj.(propName) * sc);
-                    x.UserData = struct('isNumericExpression', true);
-                end
-            case 'checkbox'
-                x = uicheckbox(g, 'Tag', propName, 'Text', '');
-                x.Value = stimObj.(propName);
-            case 'dropdown'
-                x = uidropdown(g, 'Tag', propName);
-                x.Items = pm.items;
-                if isfield(pm, 'itemsData'), x.ItemsData = pm.itemsData; end
-                x.Value = stimObj.(propName);
-            case 'button'
-                % Action widget: pm.callback names a public method on stimObj.
-                x = uibutton(g, 'Tag', propName, 'Text', pm.text);
-                x.ButtonPushedFcn = @(~,~) run_action_(obj, stimObj, pm.callback);
-            otherwise
-                x = uieditfield(g, 'Tag', propName);
-                x.Value = char(stimObj.(propName));
-        end
         if ~isa(x, 'matlab.ui.control.Button')
             x.ValueChangedFcn = @(s, e) set_prop_(obj, stimObj, s, e);
         end
-
-        % Hover help, applied to both halves of the row so it appears
-        % wherever the pointer lands.
-        if isfield(pm, 'tooltip')
-            lbl.Tooltip = pm.tooltip;
-            x.Tooltip   = pm.tooltip;
-        end
-
-        % Keep the label reachable so refresh_gui_widget can retitle a
-        % property whose units depend on another (e.g. Tone.WindowDuration).
-        ud = x.UserData;
-        if ~isstruct(ud)
-            ud = struct();
-        end
-        ud.labelHandle = lbl;
-        ud.labelFormat = '%s:';
-        x.UserData     = ud;
 
         x.Layout.Row    = row;
         x.Layout.Column = 2;
@@ -224,7 +175,7 @@ try
     obj.remember_stim_settings_(stimObj);
 catch ME
     if isNumExpr
-        src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
+        src.Value = stimgen.StimType.localFormatPropertyValue_(stimObj.(src.Tag) * sc);
     elseif isprop(stimObj, src.Tag)
         currentValue = stimObj.(src.Tag);
         if islogical(currentValue)
@@ -244,7 +195,7 @@ catch ME
     return
 end
 if isNumExpr
-    src.Value = localFormatPropValue_(stimObj.(src.Tag) * sc);
+    src.Value = stimgen.StimType.localFormatPropertyValue_(stimObj.(src.Tag) * sc);
 end
 obj.refresh_combo_controls_();
 end
@@ -303,42 +254,3 @@ obj.update_signal_plot;
 obj.set_status_("Renamed stimulus to: " + nameValue);
 end
 
-
-function wt = resolve_wt_(propName, pm, pl)
-% resolve_wt_(propName, pm, pl) - Determine widget type for a property.
-if isfield(pm, 'widget')
-    wt = pm.widget;
-    return
-end
-idx = strcmp({pl.Name}, propName);
-if ~any(idx) || isempty(pl(idx).Validation) || isempty(pl(idx).Validation.Class)
-    wt = 'text';
-    return
-end
-switch pl(idx).Validation.Class.Name
-    case 'double'
-        wt = 'numeric';
-    case 'logical'
-        wt = 'checkbox';
-    otherwise
-        wt = 'text';
-end
-end
-
-
-function tf = is_non_vectorizable_prop_(propName)
-% is_non_vectorizable_prop_(propName) - True for properties that must stay scalar.
-% Mirrors stimgen.StimType.is_non_vectorizable_property_ (protected).
-tf = any(strcmp(string(propName), ["Fs","ApplyCalibration","ApplyWindow"]));
-end
-
-
-function text = localFormatPropValue_(value)
-% localFormatPropValue_(value) - Format a numeric property value for a text edit field.
-% Scalars render as a bare number; vectors render in mat2str bracket notation.
-if isscalar(value)
-    text = num2str(double(value), '%g');
-else
-    text = mat2str(double(value));
-end
-end

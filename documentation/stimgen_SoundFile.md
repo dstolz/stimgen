@@ -197,9 +197,10 @@ m.BrowseFiles = struct('label','Sound Files','widget','button', ...
 ```
 
 Both GUI generators support it — `@StimType/create_gui.m` and
-`@StimPlayer/on_bank_selection_changed.m`. In `StimPlayer` the panel is rebuilt after the callback
-returns, because an action can change both the parameter values and the number of variant
-combinations.
+`@StimPlayer/on_bank_selection_changed.m`, through the row builder they share,
+`StimType.build_prop_widget`. In both the panel is rebuilt after the callback returns, because an
+action can change both the parameter values and the number of variant combinations; an action
+that errors is logged and reported in an alert instead, and the panel is left as it was.
 
 `FileIndex`, `Channel`, and `AnchorFrequency` are `double` and vectorizable, so they render as
 expression text fields — type `1:8` into File Index directly.

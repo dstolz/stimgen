@@ -241,6 +241,13 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         refresh_gui_widget(obj, propName)                                         % Re-apply propMeta to a live widget and its label
     end % methods (public external)
 
+    % --- Public but hidden: shared with the StimPlayer bank editor ---
+    % StimPlayer builds its parameter panel from the same code as create_gui
+    % but is not a StimType subclass, so these cannot be protected.
+    methods (Hidden)
+        [x, lbl] = build_prop_widget(obj, parent, propName, pm, labelFormat, actionFcn) % Label + widget for one propMeta entry
+    end % methods (Hidden)
+
     % --- Protected external method declarations ---
     methods (Access = protected)
         apply_normalization(obj)                                                   % Normalize Signal
@@ -273,11 +280,16 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         m = propMeta(obj)                                                          % Return GUI display metadata struct
     end % methods (protected external)
 
-    % --- Static protected (inline: cannot live in external files) ---
+    % --- Static protected ---
     methods (Static, Access = protected)
         m = merge_prop_meta(a, b)                                                 % Append fields of b into a
-        wt = resolve_widget_type(propName, pm, pl)                                % Infer widget type from metadata/property class
     end % methods (Static, Access = protected)
+
+    % --- Static, public but hidden: GUI helpers StimPlayer also calls ---
+    methods (Static, Hidden)
+        wt = resolve_widget_type(propName, pm, pl)                                % Infer widget type from metadata/property class
+        text = localFormatPropertyValue_(value)                                   % Format numeric values for GUI edit fields
+    end % methods (Static, Hidden)
 
     methods (Static)
         obj = fromStruct(S, calibration)                                           % Reconstruct StimType from serialized struct
@@ -288,7 +300,6 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     end % methods (Static)
 
     methods (Static, Access = protected)
-        text = localFormatPropertyValue_(value)                                   % Format numeric values for GUI edit fields
         text = format_summary_value_(value)                                       % Format values for compact parameter summary
     end % methods (Static, Access = protected)
 

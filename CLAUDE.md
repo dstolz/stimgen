@@ -206,11 +206,16 @@ metadata appears in `StimPlayer` with no player-side changes.
 Widget types are `numeric`, `text`, `checkbox`, `dropdown`, and `button`. A `button` entry is an
 *action*, not a property: its field name is only a widget `Tag` (it need not name a real property),
 and it declares `text` (caption) and `callback` (a public no-argument method on the stimulus
-object) — see `SoundFile.BrowseFiles`. Two near-duplicate generators must both learn any new widget
-type: `@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` (which re-implements
-`resolve_widget_type` as a local function because the static is protected). Both wire
-`ValueChangedFcn` across the widgets they build, so a widget without that callback — a `uibutton` —
-has to be excluded there.
+object) — see `SoundFile.BrowseFiles`. Every row is built by one method,
+`StimType.build_prop_widget` (public, `Hidden`, because `StimPlayer` is not a subclass): label,
+widget, tooltip, display scale, expression fields for vectorizable properties, and
+`UserData.labelHandle`/`labelFormat`. A new widget type is added there only. The two generators —
+`@StimType/create_gui.m` and `@StimPlayer/on_bank_selection_changed.m` — call it and keep only
+their own layout and edit handling: each wires `ValueChangedFcn` itself (`interpret_gui` /
+`set_prop_`), skipping a `uibutton`, which has no such callback, and each passes an action handler
+that runs a button's method inside try/catch, reports a failure and rebuilds its panel on success.
+`resolve_widget_type` and `localFormatPropertyValue_` are public `Hidden` statics for the same
+reason; do not copy them into `StimPlayer` again.
 
 **Tooltip text lives in one JSON file, never in the code.** `+stimgen/tooltips.json` holds every
 hover string in the package, in one section per class; `stimgen.util.tooltip(source, key)` is the
