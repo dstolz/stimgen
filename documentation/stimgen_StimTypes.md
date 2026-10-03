@@ -151,7 +151,11 @@ integration, not a simple phase wobble).
 | `CarrierFrequency` | yes | Hz, center frequency |
 | `ModulationFrequency` | yes | Hz, modulator rate; `0` collapses to a pure tone at `CarrierFrequency` |
 | `ModulationDepth` | yes | Hz, peak deviation of instantaneous frequency |
-| `OnsetPhase` | yes | radians (not degrees, unlike `Tone`/`AMnoise`) |
+| `OnsetPhase` | yes | degrees, carrier phase at t=0 (same convention as `Tone`/`AMnoise`) |
+
+`OnsetPhase` used to be in radians. It is now degrees like every other stimulus, so a
+saved non-zero `FMtone` `OnsetPhase` from an older bank is reinterpreted (1 rad is
+read as 1°); the default of 0 is unaffected.
 
 `CalibrationType` is `"filter"` rather than `"tone"` — an FM tone sweeps a band, so it
 is calibrated like broadband material (equalizer/filter LUT) rather than looked up at

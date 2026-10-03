@@ -71,7 +71,9 @@ classdef AttackModNoise < stimgen.Noise
 
             am = am ./ max(am);
             
-            nperiods = ceil(obj.Duration/period);
+            % The active combination's Duration: obj.Duration may be a
+            % vector of variants.
+            nperiods = ceil(double(obj.selected_value("Duration"))/period);
             
             am = repmat(am,1,nperiods);
             
@@ -103,7 +105,7 @@ classdef AttackModNoise < stimgen.Noise
             m = struct();
             m.Z          = struct('label', 'Z (Ramp/Damp)',         'format', '%.3f',    'limits', [-1 1], ...
                 'tooltip', stimgen.util.tooltip(obj, 'Z'));
-            m.AMRate     = struct('label', 'AM Rate',               'format', '%.1f Hz', 'limits', [0.1 500], ...
+            m.AMRate     = struct('label', 'AM Rate (Hz)',          'format', '%.1f Hz', 'limits', [0.1 500], ...
                 'tooltip', stimgen.util.tooltip(obj, 'AMRate'));
             m.EnvelopeOnly              = struct('label', 'Envelope Only', ...
                 'tooltip', stimgen.util.tooltip(obj, 'EnvelopeOnly'));

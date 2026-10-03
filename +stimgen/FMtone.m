@@ -8,7 +8,7 @@ classdef FMtone < stimgen.StimType
     %     CarrierFrequency      - carrier frequency (Hz)
     %     ModulationFrequency   - modulation frequency (Hz)
     %     ModulationDepth       - peak deviation of instantaneous frequency (Hz)
-    %     OnsetPhase            - initial phase of the carrier (radians)
+    %     OnsetPhase            - initial phase of the carrier (degrees)
     %
     %   Base-class properties (SoundLevel, Duration, WindowDuration,
     %   ApplyCalibration, etc.) control level, timing, and windowing.
@@ -17,7 +17,7 @@ classdef FMtone < stimgen.StimType
         CarrierFrequency    (1,:) double {mustBePositive,mustBeFinite}    = 4000
         ModulationFrequency (1,:) double {mustBeNonnegative,mustBeFinite} = 10
         ModulationDepth     (1,:) double {mustBeNonnegative,mustBeFinite} = 1000
-        OnsetPhase          (1,:) double                                    = 0
+        OnsetPhase          (1,:) double                                    = 0 % degrees
     end
     
 
@@ -46,11 +46,12 @@ classdef FMtone < stimgen.StimType
                 return
             end
 
-            t  = obj.Time;  % column vector from base class
+            t  = obj.Time;  % row vector from base class
             fc = double(obj.selected_value("CarrierFrequency"));
             fm = double(obj.selected_value("ModulationFrequency"));
             fd = double(obj.selected_value("ModulationDepth"));
-            onsetPhase = double(obj.selected_value("OnsetPhase"));
+            % OnsetPhase is in degrees, as in Tone and AMnoise.
+            onsetPhase = deg2rad(double(obj.selected_value("OnsetPhase")));
 
             if fm == 0 || fd == 0
                 % Reduce to pure tone if no modulation
@@ -86,13 +87,13 @@ classdef FMtone < stimgen.StimType
         function m = propMeta(obj)
             % propMeta() - Display metadata for FMtone GUI properties.
             m = struct();
-            m.CarrierFrequency    = struct('label', 'Carrier Freq',  'format', '%.1f Hz',  'limits', [1 80000], ...
+            m.CarrierFrequency    = struct('label', 'Carrier Freq (Hz)', 'format', '%.1f Hz',  'limits', [1 80000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'CarrierFrequency'));
-            m.ModulationFrequency = struct('label', 'FM Rate',        'format', '%.2f Hz',  'limits', [0 40000], ...
+            m.ModulationFrequency = struct('label', 'FM Rate (Hz)',   'format', '%.2f Hz',  'limits', [0 40000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'ModulationFrequency'));
             m.ModulationDepth     = struct('label', 'FM Depth (Hz)',  'format', '%.1f Hz',  'limits', [0 20000], ...
                 'tooltip', stimgen.util.tooltip(obj, 'ModulationDepth'));
-            m.OnsetPhase          = struct('label', 'Onset Phase',    'format', '%.3f rad', ...
+            m.OnsetPhase          = struct('label', 'Onset Phase (deg)', 'format', '%.1f deg', ...
                 'tooltip', stimgen.util.tooltip(obj, 'OnsetPhase'));
             m = stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj));
         end

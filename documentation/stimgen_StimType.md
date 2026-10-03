@@ -71,6 +71,13 @@ For a `CalibrationType` of `"filter"`, `apply_calibration` first checks that the
 
 `refresh_plot_if_valid` keeps open plot handles synchronized.
 
+`Time` is `(0:N-1)/Fs` -- exact 1/`Fs` spacing from 0 -- with
+`N = round(Fs*Duration)` (at least one sample for `Time`). Both read `Duration`
+through `active_duration_`: inside `update_signal` that is the combination being
+generated; outside a cycle it is the active combination read with
+`active_variant_values`, so reading `Time` or `N` (for example from a plot
+refresh) never advances the variant selection.
+
 ## Variant Selection
 
 Vectorized user properties (for example a `Tone` with `Frequency = [1000 2000 4000]`) define a set of stimulus *variants*. The class has explicit variant-control properties and cache management:
@@ -171,9 +178,13 @@ displayValue = propertyValue * scale
 
 Rules that follow from this:
 
-- `label`, `format` and `limits` are all in **display** units. Vectorizable
-  properties render as expression text fields, which ignore `format` entirely,
-  so the unit must appear in `label` to be visible.
+- `label`, `format` and `limits` are all in **display** units. Every numeric
+  property except `Fs`, `ApplyCalibration` and `ApplyWindow` renders as an
+  expression text field -- even one declared `(1,1)`, such as
+  `SweptSine.StartFrequency` -- and that field ignores `format` entirely, so
+  every unit is written into `label` (`'Frequency (Hz)'`, `'Onset Phase (deg)'`).
+  A level whose unit depends on a setting takes it from
+  `stimgen.util.level_unit` (`ClickTrain`, `SoundFile`).
 - `build_expression_context_` also returns display units, so an expression
   typed into a millisecond field (`Duration/20`) stays in milliseconds
   end-to-end. `evalPropertyExpression` therefore returns display units and its

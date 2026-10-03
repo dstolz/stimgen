@@ -159,8 +159,9 @@ computation and by `toStruct`/`fromStruct`. GUIs display and accept milliseconds
 declared per property in `propMeta` as `'scale', 1000` and read back via
 `stimgen.StimType.display_scale(pm)`; `displayValue = propertyValue * scale`. Consequences:
 
-- `label`, `format` and `limits` in `propMeta` are all in *display* units. Vectorizable properties
-  render as expression text fields that ignore `format`, so the unit has to be in `label`.
+- `label`, `format` and `limits` in `propMeta` are all in *display* units. Every numeric property
+  except `Fs`/`ApplyCalibration`/`ApplyWindow` renders as an expression text field that ignores
+  `format` (even a `(1,1)` one), so the unit has to be in `label` -- `'Frequency (Hz)'`.
 - `build_expression_context_` returns display units, so `evalPropertyExpression` both takes and
   returns milliseconds. Every caller divides by the scale before assigning to the property — that
   single division is the only conversion, so don't add another.
@@ -234,7 +235,10 @@ instead does not work: that path *errors* on a non-scalar value rather than pass
 variant cycle — it advances the selection order and bumps the use count, because generating the
 next stimulus is what it is for. Code that only wants to *report* what the last generated waveform
 was made from must use `StimType.active_variant_values`, which returns the active combination and
-touches no selection state. Asking with `selected_value` changes the answer.
+touches no selection state. Asking with `selected_value` changes the answer. The `Time` and `N`
+getters follow this rule through `active_duration_` (locked combination inside a cycle,
+`active_variant_values` outside), so a plot refresh reading `Time` does not step the variant.
+`Time` is `(0:N-1)/Fs`.
 
 **The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
 `spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
