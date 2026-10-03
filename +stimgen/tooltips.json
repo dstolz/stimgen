@@ -48,16 +48,13 @@
     "AMDepth": "Depth 0–1. 0 = unmodulated, 1 = envelope to zero. Vectorizable.",
     "AMRate": "Modulation frequency in Hz. Vectorizable.",
     "OnsetPhase": "Modulator phase in degrees. Default 180 starts at envelope minimum.",
-    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape.",
-    "ApplyViemeisterCorrection": "Normalize RMS power as Depth changes, keeping depth and level independent."
+    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape."
   },
 
   "AttackModNoise": {
     "Z": "Asymmetry: positive = damped (fast onset, slow decay), negative = ramped (slow onset, fast offset), 0 = symmetric. Magnitude controls sharpness.",
-    "AMDepth": "Depth 0–1. Shape from Z; depth only feeds Viemeister correction.",
     "AMRate": "Envelope repetition rate in Hz. Vectorizable.",
-    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape.",
-    "ApplyViemeisterCorrection": "Normalize RMS power as Depth changes, keeping depth and level independent."
+    "EnvelopeOnly": "Output envelope only, without noise carrier. For checking envelope shape."
   },
 
   "FMtone": {

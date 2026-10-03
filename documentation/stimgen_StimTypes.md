@@ -107,11 +107,13 @@ own normalize/calibrate/gate calls while the carrier is only an intermediate sig
 | `AMRate` | yes | Hz |
 | `OnsetPhase` | yes | degrees, modulator phase at t=0 |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) — useful for verifying envelope shape |
-| `ApplyViemeisterCorrection` | no | scales the modulator so average power matches the unmodulated carrier |
 
-Inherits `HighPass`/`LowPass`/`FilterOrder` from `Noise`. `ApplyViemeisterCorrection`
-keeps loudness roughly constant across `AMDepth` values by compensating for the power
-lost to modulation (Viemeister 1979).
+Inherits `HighPass`/`LowPass`/`FilterOrder` from `Noise`. The modulated waveform is
+rms-normalized before calibration, so the rms of the delivered waveform does not depend
+on `AMDepth`; no separate power compensation is needed. (An earlier `ApplyViemeisterCorrection`
+option scaled the envelope by a constant that this normalization divided straight back
+out, so it never changed the output; it has been removed, and older banks that still
+carry it load with the field ignored.)
 
 ## AttackModNoise
 
@@ -122,12 +124,17 @@ lost to modulation (Viemeister 1979).
 
 | Property | Vectorizable | Meaning |
 | --- | --- | --- |
-| `AMDepth` | yes | modulation depth, 0–1 (kept for `ApplyViemeisterCorrection`; the envelope shape itself is set by `Z`) |
 | `AMRate` | yes | Hz, sets the modulation period `1/AMRate` |
 | `Z` | yes | -1–1, envelope shape: negative ramps up (attack), positive damps down (decay) |
 | `AddOnOffperiods` | no | prepend/append a partial period so the envelope starts and ends near zero crossing |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) |
-| `ApplyViemeisterCorrection` | no | same power-compensation as `AMnoise` |
+
+There is no depth parameter: the envelope always runs from zero to its peak, with its
+shape set by `Z`. The `AMDepth` and `ApplyViemeisterCorrection` properties this class
+used to carry fed only a constant factor that rms normalization removed, so neither
+changed the output; both have been removed, and an older bank that still lists them
+loads with those fields ignored. (A vectorized `AMDepth` in such a bank made variants
+that were identical waveforms; it no longer adds variants.)
 
 Unlike `AMnoise`, `OnsetPhase` here is scalar and not exposed in `UserProperties` —
 the envelope's phase is fixed by construction (`Z` sign), not by a phase offset.
