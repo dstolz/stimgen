@@ -267,7 +267,6 @@ classdef Engine < handle
     properties (Access = private)
         CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
         CancelScopeDepth_ (1,1) double = 0      % >0 inside run_cancellable/refine_lut_; nested reset_cancel_ calls are then no-ops
-        Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
         ToneLutRedirectWarned_ (1,1) logical = false  % latched by resolve_tone_lut_ so a redirect announces itself once per change, not per lookup
@@ -390,19 +389,6 @@ classdef Engine < handle
             obj.ResponseProbeSpan = []; %#ok<MCSUP>
         end
 
-        function plot_reset(obj)
-            % Clear the attached monitors' panels.
-            %
-            % Deprecated along with plot_signal/plot_spectrum/plot_transfer:
-            % drawing belongs to stimgen.calibration.LiveMonitor now. Kept so
-            % that scripts written against the old subplot figure keep working.
-            mons = obj.live_monitors_();
-            for k = 1:numel(mons)
-                mons{k}.reset();
-            end
-            drawnow;
-        end
-
         function spl = spl_from_volts(obj, vrms)
             % spl = spl_from_volts(obj, vrms)
             % Measured rms volts as a level in dB SPL, on this engine's scale.
@@ -464,44 +450,13 @@ classdef Engine < handle
             s = stimgen.calibration.SpectralOptions( ...
                 obj.SpectralWindow, obj.SpectralFftLength);
         end
-
-        plot_signal(obj, reset) % Deprecated; delegates to LiveMonitor.
-        plot_spectrum(obj, reset) % Deprecated; delegates to LiveMonitor.
-        plot_transfer(obj, type, tableData, reset) % Deprecated; delegates to LiveMonitor.
     end
 
     % ------------------------------------------------------------------ %
     % Live-update plumbing. stimgen.calibration.LiveMonitor is the only
-    % outside caller: it registers itself so the deprecated plot_ entry
-    % points can find a renderer, and asks for a snapshot when it needs to
-    % draw the engine's state outside a run.
+    % outside caller: it asks for a snapshot when it needs to draw the
+    % engine's state outside a run.
     methods (Access = {?stimgen.calibration.Engine, ?stimgen.calibration.LiveMonitor})
-
-        function register_monitor_(obj, mon)
-            % register_monitor_(obj, mon)
-            % Remember a monitor that is following this engine. The LiveUpdate
-            % event drives it during a run; this registration is what lets the
-            % off-run entry points reach it as well.
-            mons = obj.live_monitors_();
-            for k = 1:numel(mons)
-                if mons{k} == mon
-                    obj.Monitors_ = mons;
-                    return
-                end
-            end
-            obj.Monitors_ = [mons, {mon}];
-        end
-
-        function unregister_monitor_(obj, mon)
-            % unregister_monitor_(obj, mon)
-            % Forget a monitor. Also drops any that have since been deleted.
-            mons = obj.live_monitors_();
-            keep = true(1, numel(mons));
-            for k = 1:numel(mons)
-                keep(k) = mons{k} ~= mon;
-            end
-            obj.Monitors_ = mons(keep);
-        end
 
         function d = live_snapshot_(obj, stage, phase, varargin)
             % d = live_snapshot_(obj, stage, phase)
@@ -541,18 +496,6 @@ classdef Engine < handle
     end
 
     methods (Access = private)
-        function mons = live_monitors_(obj)
-            % mons = live_monitors_(obj)
-            % Registered monitors that are still alive. A host GUI can be
-            % closed without detaching, so the list is pruned on every read
-            % rather than trusted.
-            mons = obj.Monitors_;
-            if isempty(mons), return; end
-            alive = cellfun(@(m) ~isempty(m) && isvalid(m), mons);
-            mons  = mons(alive);
-            obj.Monitors_ = mons;
-        end
-
         function emit_live_(obj, stage, phase, varargin)
             % emit_live_(obj, stage, phase, Name, Value, ...)
             % Broadcast one LiveUpdate, gated by ShowLivePlots so a headless
@@ -669,23 +612,6 @@ classdef Engine < handle
             m.dc_v          = mean(y);
             m.dc_removed_v  = obj.LastDcRemoved_;
             m.ac_coupled_hz = obj.LastAcCoupleHz_;
-        end
-
-        function render_engine_state_(obj, reset)
-            % Back end of the deprecated plot_signal/plot_spectrum entry
-            % points: draw the current response through whichever monitors are
-            % attached, creating one that owns its own window if none is.
-            mons = obj.live_monitors_();
-            if isempty(mons)
-                mons = {stimgen.calibration.LiveMonitor(obj)};
-            end
-            for k = 1:numel(mons)
-                if reset
-                    mons{k}.reset();
-                else
-                    mons{k}.show_engine_state(obj);
-                end
-            end
         end
 
         function tf = extrapolation_warned_(obj, lutType)

@@ -216,7 +216,16 @@ else
 end
 
 if isfield(t, 'metrics')
-    out = [out; metric_lines_(t.metrics, x, xUnit, xFmt)];
+    m = t.metrics;
+    if startsWith(string(fieldName), "click")
+        % A click has no fundamental, so a THD on its record is no figure
+        % of merit; older files still carry one and it is not reported.
+        drop = intersect(fieldnames(m), {'thd_db', 'h2_db', 'h3_db'});
+        if ~isempty(drop)
+            m = rmfield(m, drop);
+        end
+    end
+    out = [out; metric_lines_(m, x, xUnit, xFmt)];
 end
 if isfield(t, 'refinement') && ~isempty(t.refinement)
     out(end+1,1) = field_("  Refinement", refinement_(t.refinement));

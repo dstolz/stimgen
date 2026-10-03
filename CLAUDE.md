@@ -58,8 +58,9 @@ renders that stream, either into its own window or into axes a host GUI supplies
 catches listener errors (warning per notify), `emit_live_` guards payload construction — every
 `calibrate_*` treats an error as an aborted run and discards the partial data — and
 `LiveMonitor.update` latches its own render errors so a plotting bug is one log line, not a
-per-measurement warning storm. `Engine.plot_signal`/`plot_spectrum`/`plot_transfer`/`plot_reset`
-remain only as deprecated shims that forward to an attached monitor.
+per-measurement warning storm. The engine keeps no registry of monitors; a host that wants the
+last record drawn outside a run calls `LiveMonitor.show_engine_state`. Progress (`Engine.RunProgress`,
+observable) is published per measurement regardless of `ShowLivePlots`.
 
 **Spot check** — `stimgen.SpotCheck` (in `@SpotCheck/`) spans all three: it plays a stimulus
 through `Engine.play_and_capture`, wraps the microphone record in a `stimgen.CapturedSignal`

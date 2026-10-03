@@ -187,7 +187,7 @@
     "QuickStartTool": "Open calibration walkthrough on stimgen wiki.",
     "GuiGuideTool": "Open the guide to this window on the stimgen wiki: what each control does, in the order a calibration session uses them.",
     "TabTones": "Tone lookup table against frequency, with drive voltage per point, and the distortion and SNR measured at each frequency below it. Fills in live during a tone sweep or a tone LUT test.",
-    "TabClicks": "Click lookup table against duration, with drive voltage per point, and the distortion and SNR measured at each duration below it. Fills in live during a click sweep or a click LUT test.",
+    "TabClicks": "Click lookup table against duration, with drive voltage per point, and the SNR measured at each duration below it (no distortion: a click has no fundamental). Fills in live during a click sweep or a click LUT test.",
     "TabSweptSine": "Swept sine lookup table, with the deconvolved response below it: magnitude flatness and group delay against frequency, and the impulse response with its arrival and first reflection.",
     "TabFilterTest": "Equalization filter verification: the response with and without the filter in dB SPL, and below it each one's deviation from flat against the ripple tolerance. Fills in live during Test Filter; the comparison is drawn when the run ends.",
     "TabBackground": "Background noise: band levels, broadband/A-weighted level, tonal peaks. Drawn by Measure Background.",

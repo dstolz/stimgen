@@ -67,7 +67,8 @@ function results = test_clicks(obj, durs, levels, options)
 %                              scale the click LUT itself is on)
 %     error_db               - measured minus requested
 %     sd_db                  - across-repeat spread of the measured level
-%     snr_db, thd_db         - measurement quality per point
+%     snr_db                 - measurement quality per point (no THD: an
+%                              impulse has no fundamental to refer one to)
 %     clipping               - response clipped at this point
 %     extrapolated           - (D,1) duration outside the LUT's span
 %     tested                 - point was played and measured
@@ -199,7 +200,6 @@ nReps = options.RepeatCount;
 measSplAll = nan(nReps, nD, nL);   % dB SPL per repeat
 measAll    = nan(nReps, nD, nL);   % linear peak volts, for the spread
 snrAll     = nan(nReps, nD, nL);
-thdAll     = nan(nReps, nD, nL);
 clipAny    = false(nD, nL);
 
 axisMeta = {'XLabel', "click duration (\mus)", 'XScale', "log", 'XFactor', 1e6};
@@ -246,7 +246,6 @@ try
 
                 response = obj.ResponseSignal;
                 [~, snrAll(rep, i, li)] = obj.estimate_noise_snr_(response, fs, nan);
-                thdAll(rep, i, li) = thd(response, fs);
 
                 h = obj.estimate_headroom_(y, response);
                 clipAny(i, li) = clipAny(i, li) || ...
@@ -271,8 +270,7 @@ try
                         axisMeta{:}, ...
                         'Metrics', struct('spl_db', tbl.spl_db(i), ...
                                           'voltage', drive(i, li), ...
-                                          'snr_db', snrAll(rep, i, li), ...
-                                          'thd_db', thdAll(rep, i, li)));
+                                          'snr_db', snrAll(rep, i, li)));
                 end
             end
         end
@@ -285,7 +283,6 @@ end
 % --- Accuracy statistics ---------------------------------------------------
 measuredSpl = reshape(mean(measSplAll, 1, 'omitnan'), nD, nL);
 snr         = reshape(mean(snrAll,     1, 'omitnan'), nD, nL);
-thdDb       = reshape(mean(thdAll,     1, 'omitnan'), nD, nL);
 
 sd = nan(nD, nL);
 for li = 1:nL
@@ -311,7 +308,6 @@ results.measured_spl_db = measuredSpl;
 results.error_db        = error_db;
 results.sd_db           = sd;
 results.snr_db          = snr;
-results.thd_db          = thdDb;
 results.clipping        = clipAny;
 results.extrapolated    = extrapolated;
 results.tested          = tested;

@@ -874,9 +874,9 @@ addlistener(eng, 'LiveUpdate', @(~, d) fprintf('%s %d/%d — %.0f%%\n', ...
 A listener that throws is logged and skipped rather than allowed to abort the sweep: a
 plotting bug must not discard a measurement that took minutes to acquire.
 
-`Engine.plot_signal`, `plot_spectrum`, `plot_transfer` and `plot_reset` still exist and
-forward to an attached monitor, creating one if none is attached. They are deprecated;
-prefer a `LiveMonitor`.
+The engine's old drawing entry points (`plot_signal`, `plot_spectrum`, `plot_transfer`,
+`plot_reset`) have been removed; use a `LiveMonitor`, and its `show_engine_state` to draw
+the engine's last record outside a run.
 
 ---
 
@@ -925,7 +925,7 @@ otherwise written only by the calibration runs themselves.
 | `filterSource` | `design_filter` | `"tone"` or `"swept_sine"` — which LUT the filter was designed from |
 | `filterDesign` | `design_filter` | struct recording the options the filter was designed with, plus `correctionDb` (the achieved correction span), `sampleRate` and `designedOn` |
 | `toneTest` | `test_tones` | struct recording the tone-LUT verification run: the `frequency`-by-`level_db` grid, `lut_source`, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-frequency breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
-| `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, `thd_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
+| `clickTest` | `test_clicks` | struct recording the click-LUT verification run: the `duration`-by-`level_db` grid, `drive_voltage`, `measured_spl_db`, `error_db`, `sd_db`, `snr_db`, the `tested`/`reliable`/`clipping`/`extrapolated` masks, summary statistics (`max_abs_error_db`, `rms_error_db`, `bias_db`, per-level and per-duration breakdowns, `worst`), `skipped`, the criteria applied, `passed`, and `testedOn` |
 | `filterTest` | `test_filter` | struct recording the verification run: sampled `frequency`, `band`, `unfiltered`/`filtered` levels and flatness statistics (`ripple_db`, `flatness_std_db`), the improvement, `passed`, and `testedOn` |
 | `background` | `measure_background` | struct recording a silent capture: `spl_db`/`spl_dba` and the per-record `repeat_spl_db` with its `sd_db`/`range_db`/`stable` verdict; `bands` (frequency, `level_db`, `level_dba`, `snr_at_normative_db`, `edges`, `fraction`) and a finer `spectrum` for redrawing; `peaks` (frequency, `level_db`, `prominence_db`) and `mains`; `worst_band`; acquisition health (`rms_v`, `peak_v`, `crest_factor_db`, `dc_offset_v`, `headroom_db`, `clipping`, `distinct_levels`); the scale it is on (`reference_level_db`, `mic_sensitivity`, `normative_value_db`, `headroom_to_normative_db`); `flags`, and `measuredOn` |
 
@@ -935,7 +935,7 @@ After `refine_tones`/`refine_clicks` has run, the refined table (`tone`, `click`
 
 A sweep that is cancelled or fails leaves the table it would have replaced exactly as it was. A sweep that completes replaces the table and removes what was derived from the old one: `toneTest` when its `lut_source` names the table, `clickTest` for a click sweep, and the equalizer (`filter` back to `[]`, `filterGrpDelay` to 0, `filterSource`, `filterDesign` and `filterTest` removed) when `filterSource` names it. Removing the filter is logged; run `design_filter` again against the new table.
 
-The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
+The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`. The `click` table's `metrics` carry `noise_floor_db`, `snr_db`, `repeatability` and `clipping_headroom` but no distortion: a click is an impulse, with no fundamental for a THD or harmonic to be referred to. Files saved before this carry a `thd_db` (and NaN `h2_db`/`h3_db`) on the click table and `clickTest`; they load unchanged, and neither `describe` nor the Clicks tab shows them.
 
 ---
 
