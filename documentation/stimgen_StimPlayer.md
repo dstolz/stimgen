@@ -364,9 +364,50 @@ Remove Stimulus, Inspect Stimulus, Show All Combinations and Play Selected.
 Toolbar buttons that edit the bank (Load/Save Bank/Protocol, Open Calibration
 GUI, Add/Duplicate/Remove Stimulus) are disabled during playback by
 `lock_bank_controls_`, the same as their menu/button counterparts. Show All
-Combinations is disabled too: it edits nothing, but generating every
-combination would compete with the playback timer. Inspect Stimulus and Play
-Selected stay enabled, since neither edits the bank.
+Combinations and Play Selected are disabled too: neither edits the bank, but
+generating or stepping combinations would compete with the playback timer for
+the items it is presenting. Inspect Stimulus stays enabled.
+
+### When controls are enabled
+
+On top of the run lock, `sync_control_enable_` keeps a control off while its
+precondition is missing, so nothing is offered that cannot work:
+
+| Control | Enabled only when |
+| --- | --- |
+| Load Protocol (menu, toolbar, Recent Protocols) | a host is attached |
+| Remove, Duplicate, Play (button, menu, toolbar), Show All Combinations, Export Signal | a bank item is selected |
+| Play All | a bank item is selected (or a cycle is running: it is then its Stop) |
+| Play | additionally, no Play All cycle is running |
+| Export All Signals, Export Bank as StimType Objects | the bank is not empty |
+| Output dropdown | there is a hardware route (host or `CaptureAdapter`); its tooltip says so when there is none |
+
+It runs after every change to one of those inputs (selection, bank contents,
+host, `CaptureAdapter`, preview output, end of a Play All) and at the end of
+`lock_bank_controls_`, so unlocking after a run cannot re-enable a control
+that still cannot work. The keyboard shortcuts check the same `Enable` state.
+
+### Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+N` / `Ctrl+D` | Add / Duplicate stimulus (**Bank** menu) |
+| `Delete` | Remove selected stimulus (asks first) |
+| `Ctrl+Enter` | Play selected |
+| `F5` | Run / Stop (only while the Run button is shown) |
+| Left / Right | Step combination |
+| `Ctrl+P` / `Ctrl+L` / `Ctrl+S` | Load Protocol / Load Bank / Save Bank |
+| `Ctrl+K` | Load Calibration |
+| `Ctrl+I` / `Ctrl+G` / `Ctrl+M` | Inspect / Show All Combinations / Capture |
+
+`Ctrl+C` is deliberately unbound (it used to load a calibration) because it is
+Copy in every text field; `F5` is used rather than Space for the same reason.
+The `Ctrl+<letter>` keys are menu accelerators; the rest are handled by the
+figure's `WindowKeyPressFcn`, which also sees keys typed into a field. Delete
+and the arrows, which edit text, are therefore ignored while the control
+last clicked is a text-entry one (judged from the figure's `CurrentObject`).
+A field reached with Tab rather than a click is not detected, which is one
+reason Remove always asks before deleting.
 
 The microphone button, Capture Selected, sits after Play Selected. It follows
 its own rule rather than `lock_bank_controls_` alone: it is enabled only when
@@ -404,7 +445,11 @@ Selecting `Calibrated HW` requires a host or a `CaptureAdapter` and raises
 `stimgen:StimPlayer:NoHardwareHost` with neither; the dropdown callback
 reverts the selection so the GUI never displays a route that cannot play.
 Switching onto hardware adopts the host's sample rate (when it reports one)
-so the bank is regenerated at the rate the converters run at; at play time
+so the bank is regenerated at the rate the converters run at. Both happen in
+`set.PlaybackOutput` **before** the value is committed, so a switch refused
+for either reason (including `stimgen:StimPlayer:SampleRateNotSupported`,
+when an item cannot be generated at the hardware rate) leaves the property
+on the old route, agreeing with the reverted dropdown. At play time
 the rate is verified against the hardware and a mismatch raises
 `stimgen:StimPlayer:HardwareRateMismatch` rather than playing a waveform at
 the wrong pitch and duration. Waveforms peaking beyond ±10 V are refused
@@ -434,8 +479,9 @@ bank items apply it, a warning when the calibration's sample rate differs
 from the bank rate, and a reminder that a hardware Run always plays the
 generated (calibrated) waveform regardless of the preview output. The label
 is maintained by `update_calibration_status_`, called after every event that
-can change the answer: loading a calibration, adding or removing bank items,
-loading a bank, and switching the preview output.
+can change the answer: loading a calibration, adding, duplicating or removing
+bank items, loading a bank, switching the preview output, and every parameter
+edit (toggling **Apply Calibration** changes how many items apply it).
 
 ## Hiding session controls (host takeover)
 
@@ -488,18 +534,43 @@ At run time the class:
 
 1. Resolves hardware parameters through `host.findParameter`.
 2. Adopts the host's sample rate, when it reports one.
-3. Regenerates signals for every bank item.
-4. Starts a fixed-rate timer.
+3. Asks for confirmation when the run will do something the operator may not
+   expect (see [Before a run starts](#before-a-run-starts)); Cancel abandons it.
+4. Starts a fixed-rate timer, whose start function resets every count and
+   starts each bank item's variant sequence (see
+   [Variant combinations in a run](#variant-combinations-in-a-run)).
 5. Chooses the next bank index using the player-level `SelectionType`.
 6. Writes the stimulus waveform into one of two hardware buffers, inverted
    on every other presentation of a variant whose stimulus alternates
    polarity (see below).
 7. Toggles the matching trigger parameter.
-8. Logs presentation order, elapsed trigger time, and the sign played
-   (`StimOrder`, `StimOrderTime`, `StimPolarity`).
+8. Logs presentation order, elapsed trigger time, the sign played and the
+   variant combination played (`StimOrder`, `StimOrderTime`, `StimPolarity`,
+   `StimVariant`, row-aligned), and shows it in the status line as
+   `Presenting <item> [combo i/n] (k/N)`. When the timer stops the status line
+   says `Run complete: N presentations.` or
+   `Playback stopped after k of N presentations.`
+9. Lets the presented stimulus select its next combination.
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
+
+### Pause and resume
+
+**Pause** (or `playback_control("Pause")`) holds a running session; it does
+not stop it. The timer keeps running and `timer_runtimefcn` returns at once
+while the private `Paused_` flag is set, so nothing is presented, but nothing
+is torn down either: the rep counts, the presentation log, each item's variant
+cursor, the buffer already loaded for the next trial and the hardware
+connection all survive, and the bank stays locked. **Resume**
+(`playback_control("Resume")`) shifts `lastTrigTime` forward by the length of
+the pause, so the interval that was in progress when Pause was pressed
+continues with the time it had left. `StimOrderTime` is real elapsed time and
+therefore includes the pause.
+
+A pause is still a session holding the hardware: hardware preview, capture
+and protocol loading stay refused until the session is stopped. `"Pause"`
+while already paused and `"Resume"` while running are no-ops.
 
 ### Alternating polarity
 
@@ -525,10 +596,24 @@ parameter names:
 - `x_Trigger_0`
 - `x_Trigger_1`
 
-If any are missing, `Run` still starts the timer, but the player logs that
-hardware output is unavailable. Local preview through `Play Stim` still
-works because that path uses MATLAB audio playback from the underlying
-stimulus object.
+With a host attached, a Run that would have no hardware output -- no
+protocol loaded, the hardware not connected, or any of these parameters
+missing (the dialog names which) -- is never started silently: Run asks
+first, and **Cancel** (the default) leaves everything as it was. Confirming
+starts a dry run: the timer runs and the presentation log fills, but nothing
+is played. Without a host the player is offline by construction (the status
+bar says `HW: speaker preview only`) and Run does not ask.
+
+A run that **started** with hardware output is held to it. Should a
+parameter disappear or the connection drop mid-run, the next trial raises
+`stimgen:StimPlayer:HardwareLost` instead of triggering nothing, and the
+session stops; a failed buffer write likewise raises
+`stimgen:StimPlayer:HardwareWriteFailed` and stops it, rather than letting
+the next trigger play whatever the slot last held. The check comes before a
+trial is logged, so the log holds only presentations that were triggered.
+
+Local preview through `Play` still works without these parameters because
+that path uses MATLAB audio playback, or the host's calibration adapter.
 
 ## Scheduling behavior
 
@@ -547,9 +632,99 @@ That separation lets you do things like:
 `select_next_idx()` returns `-1` when every bank item has reached its target
 repetition count, which ends the session cleanly.
 
+### Variant combinations in a run
+
+Which combination of a vectorized stimulus is presented is decided by the
+stimulus's own `VariantSelectionMode` (`Serial`, `ShuffleUniform`,
+`ShuffleLeastUsed` or `CustomSelector` -- see
+[stimgen_StimType.md](stimgen_StimType.md)), not by the player:
+
+- At the start of a run (`timer_startfcn` -> `initialize_variants_`) every
+  stimulus calls `reset_variant_selection()` -- the `Serial` cursor returns to
+  combination 1, `ShuffleLeastUsed` counts are zeroed, a custom selector is
+  rebuilt and `initialize()`d again -- and then `update_signal()`, which
+  makes the run's first selection through the mode. Previews, combination
+  stepping and earlier runs therefore do not shape the order.
+- After each presentation, `advance_variant_` calls `update_signal()` on the
+  stimulus just presented, which selects its next combination the same way
+  and regenerates it.
+- The combination index each presentation was generated from is logged in
+  `StimVariant`, row-aligned with `StimOrder`. With a shuffled mode that log
+  is the only record of the order.
+
+Combination stepping (the `<`/`>` buttons and the arrow keys) is disabled
+while a session holds the bank: the next trial's buffer is already loaded,
+and the log records the combination it was made from.
+
+**Reps is per bank item, not per combination.** A run presents exactly `Reps`
+presentations of each bank item (of each stimulus object it holds), shared
+among its combinations; it never rounds `Reps` to a multiple of the
+combination count, so a saved bank always produces the same number of trials.
+How the presentations fall on the combinations depends on the mode:
+
+| Mode | Per-combination count |
+| --- | --- |
+| `Serial` | `floor(Reps/n)` or `ceil(Reps/n)`; combinations `1..mod(Reps,n)` get the extra one |
+| `ShuffleLeastUsed` | `floor(Reps/n)` or `ceil(Reps/n)`; which ones get the extra one is random |
+| `ShuffleUniform` | random -- drawn with replacement, expected `Reps/n` |
+| `CustomSelector` | whatever the selector returns |
+
+The bank panel's combination line shows the split for the selected item
+(`Combo: 2 / 6 | 3-4 reps each`), in amber when a balanced mode cannot split
+`Reps` evenly. Run lists every such item in its confirmation dialog and logs
+each one as a warning.
+
+### Before a run starts
+
+`confirm_run_` runs after the hardware is resolved and before the timer
+exists. Each finding is logged; when there is any, a single dialog lists them
+all and **Cancel** (the default) abandons the run without changing anything:
+
+- a host is attached but the run would have no hardware output -- no
+  protocol, not connected, or the named playback parameters missing (see
+  [Required hardware parameters](#required-hardware-parameters));
+- a bank item whose `Reps` is not a multiple of its combination count under a
+  balanced selection mode (see above).
+
+`playback_control("Run")` shows the same dialog, so a host driving the
+session programmatically is asked too. `"Run"` while a session is already
+running is refused rather than restarting it.
+
 ## Saving and loading banks
 
 `StimPlayer` persists banks as `.spl` files saved with MATLAB `save -v7`.
+
+### Current file and unsaved changes
+
+`BankFile` (read-only) is the `.spl` file the bank was last loaded from or
+saved to, `""` until there is one. **File > Save Bank** (`Ctrl+S`,
+`save_bank()`) writes there without asking; with no file yet, or one whose
+folder has gone, it falls through to **File > Save Bank As...**
+(`save_bank_as()`), which asks and opens on `BankFile` (else `StimBank.spl`
+in `DataPath`). `save_bank(ffn)` writes to `ffn` and makes it the current
+file.
+
+Every bank edit made through the player -- add, open, duplicate, remove, a
+parameter, action button or label edit, `Reps`, `ISI`, order, a sample-rate
+change (including one adopted from the hardware), applying a calibration --
+marks the bank unsaved, shown as a `*` after the file name in the window
+title. Then:
+
+- **closing the window** offers Save / Discard / Cancel (and, if a session is
+  running or paused, first warns that closing stops it and discards its
+  presentation log);
+- **Load Bank** (and the Recent Banks entries) offers Save / Discard / Cancel
+  before replacing the bank;
+- **Remove** always asks, since a removal cannot be undone.
+
+Choosing Save in those dialogs saves as above; a cancelled Save As dialog or
+a failed save cancels the close or load. A successful load or save marks the
+bank saved, except that a load which had to change the bank (mixed sample
+rates unified) leaves it unsaved. A load that fails part-way leaves the
+current bank, its `ISI` and its order untouched; if it fails after the bank
+was replaced, the result is marked unsaved with no current file, so Save
+cannot overwrite either file without asking. Programmatic edits made
+directly on `StimPlayObjs` are not tracked.
 
 `save_bank()` stores:
 

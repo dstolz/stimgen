@@ -77,6 +77,7 @@ classdef StimPlayer < handle
         rec = capture_stim(obj, src, event)
         dlg = edit_capture_settings(obj)
         save_bank(obj, ffn)
+        save_bank_as(obj)
         load_bank(obj, ffn)
         set_control_visibility(obj, options)
         set_computing_(obj, tf)
@@ -161,6 +162,14 @@ classdef StimPlayer < handle
         LastCapture = []
     end
 
+    % --- Bank file ---
+    properties (SetAccess = protected)
+        % The .spl file the bank was last loaded from or saved to ("" = none
+        % yet). save_bank writes here without asking; save_bank_as asks,
+        % offering it as the default.
+        BankFile (1,1) string = ""
+    end
+
     % --- Calibration state ---
     properties (SetAccess = protected)
         % stimgen.StimCalibration loaded via the Calibration menu, or [].
@@ -184,6 +193,7 @@ classdef StimPlayer < handle
         StimOrder (:,1) double = double.empty(0,1)     % Presentation log: index into StimPlayObjs
         StimOrderTime (:,1) double = double.empty(0,1) % Presentation log: time since start (s)
         StimPolarity (:,1) double = double.empty(0,1)  % Presentation log: sign played (+1/-1)
+        StimVariant (:,1) double = double.empty(0,1)   % Presentation log: variant combination index played
 
         nextPolarity_ (1,1) double = 1                 % Sign applied to the buffered (next) presentation
     end
@@ -210,6 +220,19 @@ classdef StimPlayer < handle
         CaptureLocked_ (1,1) logical = false % True while a session holds the bank (lock_bank_controls_)
 
         PolarityCount_ = {}                  % Per bank item: presentations so far of each variant
+
+        Paused_ (1,1) logical = false        % True while a running session is held by Pause
+        HardwareRun_ (1,1) logical = false   % True when the current run started with hardware output
+
+        Dirty_ (1,1) logical = false         % Bank edited since it was last loaded or saved
+        PauseStartedAt_ (1,1) double = 0     % timeSinceStart when the current pause began
+    end
+
+    % --- Hardware parameter contract ---
+    properties (Constant, Access = private)
+        % Names a host circuit must expose for a hardware Run (StimGenCircuit.rcx).
+        RequiredParams_ = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
+                           'x_Trigger_0','x_Trigger_1'}
     end
 
     % --- Dependent ---
@@ -240,6 +263,7 @@ classdef StimPlayer < handle
             obj.update_protocol_status_;
             obj.load_capture_settings_;
             obj.sync_capture_controls_;
+            obj.sync_control_enable_;  % Load Protocol needs the host set above
 
             if nargout == 0, clear obj; end
         end
@@ -284,9 +308,7 @@ classdef StimPlayer < handle
             if isempty(obj.Host) || obj.Host.connectionState() == "None"
                 return
             end
-            required = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
-                        'x_Trigger_0','x_Trigger_1'};
-            tf = all(isfield(obj.PARAMS, required));
+            tf = all(isfield(obj.PARAMS, obj.RequiredParams_));
         end
 
         % -----------------------------------------------------------------
@@ -316,11 +338,17 @@ classdef StimPlayer < handle
         % -----------------------------------------------------------------
         function set.PlaybackOutput(obj, value)
             % Route Play / Play All to speakers or to hardware (the host's
-            % calibration route, else CaptureAdapter). Selecting hardware
-            % with neither is refused up front, so the property never claims
-            % a route that cannot play.
+            % calibration route, else CaptureAdapter). Everything that can
+            % refuse the switch runs BEFORE the value is committed -- no
+            % route at all, or a bank that cannot be regenerated at the
+            % hardware's sample rate -- so a refused switch leaves the
+            % property, and the dropdown reverted from it, on the old route.
             if value == "Hardware"
                 obj.require_hardware_route_;
+                % Generate at the rate the converters run at, so the bank is
+                % ready for hardware. Throws (and rolls the rate back) when
+                % an item cannot be generated at that rate.
+                obj.adopt_host_fs_;
             end
             obj.PlaybackOutput = value;
             obj.on_playback_output_changed_;
@@ -351,6 +379,7 @@ classdef StimPlayer < handle
                 obj.PlaybackOutput = "Speakers";
             end
             obj.update_protocol_status_;
+            obj.sync_control_enable_;  % the Output dropdown follows the route
         end
 
         % -----------------------------------------------------------------
@@ -379,6 +408,12 @@ classdef StimPlayer < handle
 
             obj.sync_fs_field_;
             obj.update_signal_plot;
+
+            % Every bank item stores its rate, so a changed rate is an edit
+            % of the bank -- including one adopted from the hardware.
+            if value ~= previousFs && ~isempty(obj.StimPlayObjs)
+                obj.mark_bank_dirty_;
+            end
         end
 
         % -----------------------------------------------------------------
@@ -653,13 +688,46 @@ classdef StimPlayer < handle
             if isempty(obj.Host)
                 return
             end
-            names = {'BufferData_0','BufferData_1','BufferSize_0','BufferSize_1', ...
-                     'x_Trigger_0','x_Trigger_1'};
+            names = obj.RequiredParams_;
             for k = 1:numel(names)
                 P = obj.Host.findParameter(names{k});
                 if ~isempty(P)
                     obj.PARAMS.(names{k}) = P;
                 end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function reason = hardware_unavailable_reason_(obj)
+            % reason = hardware_unavailable_reason_() - Why a Run would have no hardware output.
+            % "" when HardwareAvailable is true or no host is attached.
+            reason = "";
+            if isempty(obj.Host) || obj.HardwareAvailable
+                return
+            end
+            if ~obj.Host.hasProtocol()
+                reason = "No protocol is loaded, so no hardware is connected.";
+            elseif obj.Host.connectionState() == "None"
+                reason = "The hardware is not connected.";
+            else
+                missing = string(obj.RequiredParams_(~isfield(obj.PARAMS, obj.RequiredParams_)));
+                reason = "The loaded circuit does not expose these parameters: " + ...
+                    strjoin(missing, ", ") + ".";
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function require_run_hardware_(obj)
+            % require_run_hardware_() - Error when a hardware run has lost its hardware.
+            % A run that started with hardware output must not carry on as a
+            % silent dry run because a parameter or the connection went
+            % away: the presentation log would record trials nobody heard.
+            % No-op for a run that started without hardware (confirmed as
+            % a dry run, or offline).
+            if obj.HardwareRun_ && ~obj.HardwareAvailable
+                error('stimgen:StimPlayer:HardwareLost', ...
+                    'Hardware output was lost during the run after %d of %d presentations. %s', ...
+                    obj.presented_count_(), obj.total_count_(), char(obj.hardware_unavailable_reason_()));
             end
         end
 
@@ -779,11 +847,11 @@ classdef StimPlayer < handle
 
         % -----------------------------------------------------------------
         function on_playback_output_changed_(obj)
-            % on_playback_output_changed_() - React to a preview-output switch.
-            % Syncs the dropdown (for programmatic assignment), adopts the
-            % hardware rate when moving onto hardware so the bank is already
-            % generated at the rate the converters run at, and refreshes the
-            % calibration status label, whose meaning depends on the route.
+            % on_playback_output_changed_() - React to a committed preview-output switch.
+            % Syncs the dropdown (for programmatic assignment) and refreshes
+            % the calibration status label, whose meaning depends on the
+            % route. Nothing here may throw: the value is already committed.
+            % (The hardware rate is adopted by set.PlaybackOutput, before.)
 
             h = obj.handles;
             if isfield(h, 'OutputDD') && ~isempty(h.OutputDD) && isvalid(h.OutputDD)
@@ -791,13 +859,13 @@ classdef StimPlayer < handle
             end
 
             if obj.PlaybackOutput == "Hardware"
-                obj.adopt_host_fs_;
                 obj.set_status_("Preview output: calibrated hardware.");
             else
                 obj.set_status_("Preview output: computer speakers.");
             end
 
             obj.update_calibration_status_;
+            obj.sync_control_enable_;
         end
 
         % -----------------------------------------------------------------
@@ -1034,13 +1102,14 @@ classdef StimPlayer < handle
 
             fields = {'AddBtn','DuplicateBtn','RemoveBtn','TypeDropdown','BankList','RepsField', ...
                 'ISIField','FsField','OrderDD','OutputDD','ComboPrevBtn','ComboNextBtn','LoadProtocolMenu', ...
-                'LoadBankMenu','SaveBankMenu','CalibrationMenu','CalibrationGuiMenu', ...
+                'LoadBankMenu','SaveBankMenu','SaveBankAsMenu','CalibrationMenu','CalibrationGuiMenu', ...
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
                 'AddStimTool','DuplicateStimTool','RemoveStimTool', ...
+                'AddStimMenu','DuplicateStimMenu','RemoveStimMenu', ...
                 'CombinationsMenu','CombinationsTool', ...
                 ... % These step or regenerate the bank items the timer is playing.
-                'PlayBtn','PlayAllBtn','PlayTool', ...
+                'PlayBtn','PlayAllBtn','PlayTool','PlayMenu', ...
                 'ExportSignalMenu','ExportAllMenu','ExportObjsMenu'};
             for i = 1:numel(fields)
                 f = fields{i};
@@ -1064,6 +1133,81 @@ classdef StimPlayer < handle
             % to record through.
             obj.CaptureLocked_ = lockState;
             obj.sync_capture_controls_;
+
+            % Unlocking turned everything on; put back off what still
+            % cannot work (no host, no route, no selection).
+            obj.sync_control_enable_;
+            obj.refresh_combo_controls_;
+        end
+
+        % -----------------------------------------------------------------
+        function idx = selected_bank_index_(obj)
+            % idx = selected_bank_index_() - Listbox selection as a bank index, or [].
+            idx = [];
+            h = obj.handles;
+            if ~isfield(h, 'BankList') || isempty(h.BankList) || ~isvalid(h.BankList) ...
+                    || isempty(h.BankList.ItemsData) || isempty(h.BankList.Value)
+                return
+            end
+            v = h.BankList.Value;
+            if isnumeric(v) && isscalar(v) && v >= 1 && v <= numel(obj.StimPlayObjs)
+                idx = v;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function sync_control_enable_(obj)
+            % sync_control_enable_() - Enable each control only when it can work.
+            % The run lock (lock_bank_controls_) disables the bank-editing
+            % controls during a session; on top of that, a control stays
+            % off while its precondition is missing:
+            %   Load Protocol (menu, toolbar, recent) - needs a host
+            %   Remove, Duplicate, Play, Show All Combinations,
+            %   Export Signal                          - need a selected item
+            %   Play All                               - needs a selected item
+            %                                            (or is its own Stop)
+            %   Export All / Export Bank               - need a non-empty bank
+            %   Output dropdown                        - needs a hardware route
+            %                                            (it has one choice
+            %                                            without; left on while
+            %                                            showing "Hardware")
+            % Called after every change to one of those inputs and at the
+            % end of lock_bank_controls_, so unlocking cannot re-enable a
+            % control the lock list knows nothing about.
+            h = obj.handles;
+            unlocked = ~obj.CaptureLocked_;
+            hasSel   = ~isempty(obj.selected_bank_index_());
+            hasItems = ~isempty(obj.StimPlayObjs);
+            hasHost  = ~isempty(obj.Host);
+            hasRoute = obj.has_hardware_route_ || obj.PlaybackOutput == "Hardware";
+
+            rules = { ...
+                {'LoadProtocolMenu','LoadProtocolTool','RecentProtocolsMenu'}, hasHost; ...
+                {'DuplicateBtn','DuplicateStimTool','DuplicateStimMenu', ...
+                 'RemoveBtn','RemoveStimTool','RemoveStimMenu', ...
+                 'CombinationsMenu','CombinationsTool','ExportSignalMenu'}, hasSel; ...
+                {'PlayBtn','PlayTool','PlayMenu'}, hasSel && ~obj.PlayAllActive_; ...
+                {'PlayAllBtn'}, hasSel || obj.PlayAllActive_; ...
+                {'ExportAllMenu','ExportObjsMenu'}, hasItems; ...
+                {'OutputDD'}, hasRoute};
+            for r = 1:size(rules, 1)
+                state = matlab.lang.OnOffSwitchState(unlocked && rules{r, 2});
+                names = rules{r, 1};
+                for k = 1:numel(names)
+                    f = names{k};
+                    if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))
+                        h.(f).Enable = state;
+                    end
+                end
+            end
+
+            if isfield(h, 'OutputDD') && ~isempty(h.OutputDD) && isvalid(h.OutputDD)
+                if obj.has_hardware_route_
+                    h.OutputDD.Tooltip = stimgen.util.tooltip('StimPlayer', 'OutputDD');
+                else
+                    h.OutputDD.Tooltip = stimgen.util.tooltip('StimPlayer', 'OutputDDNoHardware');
+                end
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1119,6 +1263,10 @@ classdef StimPlayer < handle
                 end
                 h.ControlGrid.ColumnWidth = widths;
             end
+
+            % The Bank menu's Run/Stop item (and F5, which checks the same
+            % flag) belongs to whoever owns the Run button.
+            obj.set_widgets_visible_({'RunMenu'}, vis.Run);
         end
 
         % -----------------------------------------------------------------
@@ -1162,6 +1310,108 @@ classdef StimPlayer < handle
 
             h.ProtocolStatusLabel.Text = sprintf('Protocol: %s | HW: %s', ...
                 obj.Host.protocolName(), hwState);
+        end
+
+        % -----------------------------------------------------------------
+        function mark_bank_dirty_(obj)
+            % mark_bank_dirty_() - Record that the bank differs from its file.
+            % Called by every bank edit: add, open, duplicate, remove, a
+            % parameter or label edit, Reps/ISI/order/sample rate, applying a
+            % calibration. Close, Load Bank and Remove ask before losing it.
+            obj.Dirty_ = true;
+            obj.update_title_;
+        end
+
+        % -----------------------------------------------------------------
+        function mark_bank_clean_(obj, ffn)
+            % mark_bank_clean_(ffn) - Record that the bank matches the file ffn.
+            obj.BankFile = string(ffn);
+            obj.Dirty_   = false;
+            obj.update_title_;
+        end
+
+        % -----------------------------------------------------------------
+        function update_title_(obj)
+            % update_title_() - "StimPlayer - <bank file> *" (the star while unsaved).
+            if isempty(obj.hFig) || ~isvalid(obj.hFig)
+                return
+            end
+            t = "StimPlayer";
+            if strlength(obj.BankFile) > 0
+                [~, fn, ext] = fileparts(char(obj.BankFile));
+                t = t + " - " + string([fn ext]);
+            end
+            if obj.Dirty_
+                t = t + " *";
+            end
+            obj.hFig.Name = char(t);
+        end
+
+        % -----------------------------------------------------------------
+        function tf = confirm_discard_changes_(obj, actionText)
+            % tf = confirm_discard_changes_(actionText) - Offer to save unsaved bank edits.
+            % Returns true when it is safe to go on: nothing was unsaved, the
+            % operator saved (and the save succeeded), or chose Discard.
+            % Cancel, a cancelled Save dialog or a failed save return false.
+            %
+            % Parameters:
+            %   actionText - what is about to happen, e.g. "closing"
+            tf = true;
+            if ~obj.Dirty_ || isempty(obj.hFig) || ~isvalid(obj.hFig)
+                return
+            end
+            if strlength(obj.BankFile) > 0
+                [~, fn, ext] = fileparts(char(obj.BankFile));
+                what = sprintf('The bank (%s%s) has', fn, ext);
+            else
+                what = 'The bank has';
+            end
+            msg = sprintf('%s unsaved changes. Save them before %s?', what, char(actionText));
+            choice = uiconfirm(obj.hFig, msg, 'Unsaved Changes', ...
+                'Options', {'Save', 'Discard', 'Cancel'}, ...
+                'DefaultOption', 1, 'CancelOption', 3, 'Icon', 'warning');
+            switch choice
+                case 'Save'
+                    obj.save_bank();
+                    tf = ~obj.Dirty_;
+                case 'Discard'
+                    tf = true;
+                otherwise
+                    tf = false;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function on_close_request_(obj)
+            % on_close_request_() - Figure CloseRequestFcn: confirm before losing work.
+            % A running (or paused) session is stopped by closing and its
+            % presentation log goes with the player, so that is confirmed
+            % first; then unsaved bank edits are offered for saving. A
+            % failure while asking must not leave a window that cannot be
+            % closed, so it is logged and the window closes.
+            try
+                if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
+                    msg = sprintf(['A session is running (%d of %d presentations made). ' ...
+                        'Closing stops it, and its presentation log (StimOrder, ' ...
+                        'StimOrderTime, StimPolarity, StimVariant) is discarded with the player.'], ...
+                        obj.presented_count_(), obj.total_count_());
+                    choice = uiconfirm(obj.hFig, msg, 'Close StimPlayer', ...
+                        'Options', {'Stop and Close', 'Cancel'}, ...
+                        'DefaultOption', 2, 'CancelOption', 2, 'Icon', 'warning');
+                    if ~strcmp(choice, 'Stop and Close')
+                        return
+                    end
+                end
+                if ~obj.confirm_discard_changes_("closing")
+                    return
+                end
+            catch ME
+                stimgen.util.vprintf(0, 1, 'StimPlayer: close confirmation failed; closing anyway.');
+                stimgen.util.vprintf(0, 1, ME);
+            end
+            if ~isempty(obj.hFig) && isvalid(obj.hFig)
+                delete(obj.hFig);  % DeleteFcn deletes the player
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1295,6 +1545,9 @@ classdef StimPlayer < handle
 
                 for i = 1:numel(obj.StimPlayObjs)
                     obj.StimPlayObjs(i).StimObj.Calibration = calObj;
+                end
+                if ~isempty(obj.StimPlayObjs)
+                    obj.mark_bank_dirty_;  % each item saves its calibration
                 end
                 obj.Calibration     = calObj;
                 obj.CalibrationFile = string(ffn);
@@ -1530,13 +1783,25 @@ classdef StimPlayer < handle
             if ~isfield(h,'Counter') || ~isvalid(h.Counter)
                 return
             end
-            if isempty(obj.StimPlayObjs)
-                h.Counter.Text = '0 / 0';
-                return
+            h.Counter.Text = sprintf('%d / %d', obj.presented_count_(), obj.total_count_());
+        end
+
+        % -----------------------------------------------------------------
+        function n = presented_count_(obj)
+            % n = presented_count_() - Presentations so far, summed over the bank.
+            n = 0;
+            if ~isempty(obj.StimPlayObjs)
+                n = sum(arrayfun(@(sp) sp.StimPresented, obj.StimPlayObjs));
             end
-            presented = sum(arrayfun(@(sp) sp.StimPresented, obj.StimPlayObjs));
-            total     = sum(arrayfun(@(sp) sp.StimTotal,     obj.StimPlayObjs));
-            h.Counter.Text = sprintf('%d / %d', presented, total);
+        end
+
+        % -----------------------------------------------------------------
+        function n = total_count_(obj)
+            % n = total_count_() - Presentations a full run makes, summed over the bank.
+            n = 0;
+            if ~isempty(obj.StimPlayObjs)
+                n = sum(arrayfun(@(sp) sp.StimTotal, obj.StimPlayObjs));
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1549,12 +1814,14 @@ classdef StimPlayer < handle
             if isempty(obj.StimPlayObjs)
                 h.BankList.Items = {};
                 h.BankList.ItemsData = {};
+                obj.sync_control_enable_;
                 return
             end
             items = arrayfun(@(sp) sprintf('%s  [%s]', char(sp.Name), sp.Type), ...
                 obj.StimPlayObjs, 'uni', false);
             h.BankList.Items = items;
             h.BankList.ItemsData = num2cell(1:numel(obj.StimPlayObjs));
+            obj.sync_control_enable_;
         end
 
         % -----------------------------------------------------------------
@@ -1575,18 +1842,44 @@ classdef StimPlayer < handle
                 idx = h.BankList.Value;
             end
 
+            COLOR_NORMAL = [0 0 0];
+            COLOR_UNEVEN = [0.80 0.50 0.05];
+
             if isempty(idx)
                 h.ComboPrevBtn.Enable = 'off';
                 h.ComboNextBtn.Enable = 'off';
                 h.ComboStatusLbl.Text = 'Combo: - / -';
+                h.ComboStatusLbl.FontColor = COLOR_NORMAL;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLbl');
                 return
             end
 
-            stimObj = obj.StimPlayObjs(idx).CurrentStimObj;
-            info = stimObj.get_variant_info();
+            sp      = obj.StimPlayObjs(idx);
+            stimObj = sp.CurrentStimObj;
+            info    = stimObj.get_variant_info();
 
-            h.ComboStatusLbl.Text = sprintf('Combo: %d / %d', info.ActiveIndex, info.NumCombinations);
-            if info.NumCombinations > 1
+            % How Reps divides over the combinations, so an uneven split is
+            % visible while the bank is edited, not only when Run warns.
+            [repsText, uneven] = obj.reps_per_combination_(sp.Reps, stimObj);
+            if strlength(repsText) > 0
+                h.ComboStatusLbl.Text = char(sprintf('Combo: %d / %d | %s', ...
+                    info.ActiveIndex, info.NumCombinations, repsText));
+            else
+                h.ComboStatusLbl.Text = sprintf('Combo: %d / %d', info.ActiveIndex, info.NumCombinations);
+            end
+            if uneven
+                h.ComboStatusLbl.FontColor = COLOR_UNEVEN;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLblUneven');
+            else
+                h.ComboStatusLbl.FontColor = COLOR_NORMAL;
+                h.ComboStatusLbl.Tooltip   = stimgen.util.tooltip('StimPlayer', 'ComboStatusLbl');
+            end
+
+            % Stepping changes the combination a bank item will present
+            % next, so it is closed while a session holds the bank: the
+            % buffer for the next trial is already loaded, and the
+            % presentation log records the combination it was made from.
+            if info.NumCombinations > 1 && ~obj.CaptureLocked_
                 h.ComboPrevBtn.Enable = 'on';
                 h.ComboNextBtn.Enable = 'on';
             else
@@ -1596,22 +1889,156 @@ classdef StimPlayer < handle
         end
 
         % -----------------------------------------------------------------
-        function initialize_variants_(obj)
-            % initialize_variants_() - Reset all bank items to combination #1.
-            for i = 1:numel(obj.StimPlayObjs)
-                stimObj = obj.StimPlayObjs(i).CurrentStimObj;
-                stimObj.set_variant_index(1);
+        function [txt, uneven, detail] = reps_per_combination_(~, reps, stimObj)
+            % [txt, uneven, detail] = reps_per_combination_(reps, stimObj)
+            % How a bank item's Reps divides over its variant combinations.
+            %
+            % Reps counts presentations of the bank item (of each stimulus
+            % object it holds), not of each combination, and a Run makes
+            % exactly that many; it is never rounded to a multiple of the
+            % combination count. How the presentations fall on combinations
+            % depends on the stimulus's VariantSelectionMode:
+            %   Serial, ShuffleLeastUsed - balanced: every combination gets
+            %       floor(Reps/n) or ceil(Reps/n); uneven when n does not
+            %       divide Reps (Serial gives the extra one to 1..mod(Reps,n))
+            %   ShuffleUniform - drawn with replacement; counts are random
+            %   CustomSelector - whatever the selector decides
+            %
+            % Returns:
+            %   txt    - short label text ("" for a single combination)
+            %   uneven - true when a balanced mode cannot balance Reps
+            %   detail - one sentence for the Run warning ("" unless uneven)
+            txt = "";
+            uneven = false;
+            detail = "";
+            info  = stimObj.get_variant_info();
+            nComb = info.NumCombinations;
+            if nComb <= 1
+                return
+            end
+            mode = string(stimObj.VariantSelectionMode);
+            switch mode
+                case {"Serial", "ShuffleLeastUsed"}
+                    lo = floor(reps / nComb);
+                    hi = ceil(reps / nComb);
+                    if lo == hi
+                        txt = sprintf("%d reps each", lo);
+                    else
+                        txt = sprintf("%d-%d reps each", lo, hi);
+                        uneven = true;
+                        nHi = mod(reps, nComb);
+                        detail = sprintf("%d reps over %d combinations (%s): %d combination(s) get %d, %d get %d.", ...
+                            reps, nComb, mode, nHi, hi, nComb - nHi, lo);
+                        if mode == "Serial"
+                            detail = detail + sprintf(" Serial order gives the extra presentation to combinations 1-%d.", nHi);
+                        end
+                    end
+                case "ShuffleUniform"
+                    txt = sprintf("~%.3g reps each (random)", reps / nComb);
+                otherwise
+                    txt = "reps set by selector";
             end
         end
 
         % -----------------------------------------------------------------
-        function advance_variant_(obj, bankIdx)
-            % advance_variant_(obj, bankIdx) - Advance one bank item's variant by +1.
-            if bankIdx < 1 || bankIdx > numel(obj.StimPlayObjs)
+        function lines = uneven_reps_report_(obj)
+            % lines = uneven_reps_report_() - Bank items whose Reps a balanced mode cannot split evenly.
+            % One "<name>: <detail>" line per affected stimulus, logged as a
+            % warning too. Empty when every item divides evenly.
+            lines = strings(0, 1);
+            for i = 1:numel(obj.StimPlayObjs)
+                sp = obj.StimPlayObjs(i);
+                for k = 1:numel(sp.StimObj)
+                    [~, uneven, detail] = obj.reps_per_combination_(sp.Reps, sp.StimObj(k));
+                    if uneven
+                        lines(end+1, 1) = string(sp.Name) + ": " + detail; %#ok<AGROW>
+                    end
+                end
+            end
+            for i = 1:numel(lines)
+                stimgen.util.vprintf(1, 1, 'StimPlayer: uneven reps: %s', char(lines(i)));
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function proceed = confirm_run_(obj)
+            % proceed = confirm_run_() - Say what a run will do that may be unexpected; allow a cancel.
+            % Called by Run after the hardware is resolved and before the
+            % timer exists. Each finding is logged; when there is any, one
+            % confirmation dialog lists them all and Cancel (the default)
+            % abandons the run. Nothing is changed to make a finding go
+            % away -- in particular a run always presents exactly the Reps
+            % each bank item asks for.
+            %
+            % Returns:
+            %   proceed - false when the operator cancelled
+            issues = strings(0, 1);
+
+            % A host is attached but the run would drive nothing. Without a
+            % host the player is offline by construction and says so in its
+            % status bar, so that case is not asked about.
+            reason = obj.hardware_unavailable_reason_();
+            if strlength(reason) > 0
+                stimgen.util.vprintf(0, 1, 'StimPlayer: Run has no hardware output: %s', char(reason));
+                issues(end+1, 1) = "No hardware output. " + reason + newline + ...
+                    "This would be a dry run: the timer runs and the presentation log fills, " + ...
+                    "but nothing is played. A hardware Run needs " + ...
+                    strjoin(string(obj.RequiredParams_), ", ") + ".";
+            end
+
+            uneven = obj.uneven_reps_report_();
+            if ~isempty(uneven)
+                issues(end+1, 1) = "Reps does not divide evenly over the variant combinations:" + newline + ...
+                    strjoin(("  - " + uneven).', newline) + newline + ...
+                    "A run presents exactly Reps per bank item, so these combinations will be " + ...
+                    "presented unequal numbers of times. Set Reps to a multiple of the " + ...
+                    "combination count for equal counts.";
+            end
+
+            proceed = true;
+            if isempty(issues) || isempty(obj.hFig) || ~isvalid(obj.hFig)
                 return
             end
-            stimObj = obj.StimPlayObjs(bankIdx).CurrentStimObj;
-            stimObj.step_variant(1);
+            msg = strjoin(issues.', string(newline) + newline) + newline + newline + "Run anyway?";
+            choice = uiconfirm(obj.hFig, char(msg), 'Check Before Running', ...
+                'Options', {'Run', 'Cancel'}, 'DefaultOption', 2, 'CancelOption', 2, ...
+                'Icon', 'warning');
+            proceed = strcmp(choice, 'Run');
+        end
+
+        % -----------------------------------------------------------------
+        function initialize_variants_(obj)
+            % initialize_variants_() - Start each bank item's variant sequence for a run.
+            % Every stimulus forgets its selection history
+            % (reset_variant_selection: Serial cursor back to combination 1,
+            % ShuffleLeastUsed counts zeroed, a custom selector rebuilt) and
+            % then makes the first selection of the run through its own
+            % VariantSelectionMode, by regenerating outside a variant cycle.
+            % Previews and combination stepping before the run therefore do
+            % not shape its order, and Serial still starts at combination 1.
+            for i = 1:numel(obj.StimPlayObjs)
+                sp = obj.StimPlayObjs(i);
+                for k = 1:numel(sp.StimObj)
+                    stimObj = sp.StimObj(k);
+                    stimObj.reset_variant_selection();
+                    stimObj.update_signal();
+                end
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function advance_variant_(~, stimObj)
+            % advance_variant_(stimObj) - Select the next combination of a presented stimulus.
+            % update_signal() outside a variant cycle selects through the
+            % stimulus's own VariantSelectionMode (Serial, ShuffleUniform,
+            % ShuffleLeastUsed or CustomSelector) and regenerates Signal for
+            % it, so the next presentation of this stimulus plays that
+            % combination. step_variant(1) used to be called here, which
+            % pins index+1 and so bypassed every mode but Serial.
+            if isempty(stimObj)
+                return
+            end
+            stimObj.update_signal();
         end
 
         % -----------------------------------------------------------------
@@ -1761,6 +2188,12 @@ classdef StimPlayer < handle
                 case "stimgen:StimPlayer:PreviewVoltageOutOfRange"
                     messageText = string(ME.message) + newline + newline + ...
                         "Lower the stimulus Sound Level so the calibrated drive voltage fits the output range.";
+                case "stimgen:StimPlayer:HardwareLost"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "The session was stopped rather than continued without output. Check the hardware connection and the loaded protocol, then Run again. StimOrder, StimOrderTime, StimPolarity and StimVariant hold the presentations made before the loss.";
+                case "stimgen:StimPlayer:HardwareWriteFailed"
+                    messageText = string(ME.message) + newline + newline + ...
+                        "The next stimulus could not be loaded into the hardware buffer, so the session was stopped rather than trigger a stale buffer. Check the hardware connection, then Run again.";
                 case "stimgen:StimPlayer:PreviewDuringRun"
                     messageText = "The hardware is presenting the bank right now. Stop the session, then preview through hardware.";
                 case "stimgen:StimPlayer:CaptureDuringRun"

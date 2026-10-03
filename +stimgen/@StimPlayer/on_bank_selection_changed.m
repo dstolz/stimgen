@@ -177,6 +177,7 @@ stimObj.set_gui_handles(paramHandles);
 
 obj.update_signal_plot;
 obj.refresh_combo_controls_;
+obj.sync_control_enable_;
 end
 
 
@@ -215,6 +216,10 @@ try
     stimObj.update_signal();
     clear computingCleanup;
     obj.update_signal_plot();
+    % The calibration label counts the items that apply a calibration, so
+    % toggling Apply Calibration (or anything else) must refresh it.
+    obj.update_calibration_status_;
+    obj.mark_bank_dirty_;
     % Only an edit that took is worth carrying to the next stimulus of this type.
     obj.remember_stim_settings_(stimObj);
 catch ME
@@ -256,6 +261,7 @@ catch ME
         "StimPlayer could not complete that action.");
     return
 end
+obj.mark_bank_dirty_;  % an action edits the stimulus (e.g. adds files)
 
 if isfield(obj.handles, 'BankList') && isvalid(obj.handles.BankList)
     obj.on_bank_selection_changed(obj.handles.BankList, []);
@@ -285,6 +291,7 @@ if strlength(nameValue) == 0
 end
 
 obj.StimPlayObjs(idx).Name = nameValue;
+obj.mark_bank_dirty_;
 obj.refresh_listbox_;
 
 if isfield(obj.handles, 'BankList') && isvalid(obj.handles.BankList) && ...

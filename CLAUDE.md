@@ -247,6 +247,15 @@ getters follow this rule through `active_duration_` (locked combination inside a
 `active_variant_values` outside), so a plot refresh reading `Time` does not step the variant.
 `Time` is `(0:N-1)/Fs`.
 
+**A presenter selects variants through the stimulus, never by index.** `update_signal()` called
+outside a variant cycle is the one call that selects the next combination per
+`VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and
+bypass the mode (right for previews and stepping, wrong for a run). `StimPlayer`'s Run calls
+`reset_variant_selection()` then `update_signal()` on every stimulus at start, `update_signal()`
+on the presented one after each trial, and logs the index played in `StimVariant`. `Reps` is per
+bank item, shared among its combinations, and never rounded: an uneven split is shown and warned
+about, not corrected.
+
 **The dB SPL scale is defined in exactly one place.** `Engine.volts_to_spl` (static) and the
 `spl_from_volts` instance wrapper are the only conversion from measured volts to a level:
 `20*log10((v/MicSensitivity)/Engine.ReferencePressurePa)`. `compute_spl_voltage_`,
@@ -282,6 +291,13 @@ shared by `analyze_background_` and the inspector's Bands tab.
 supplies the lookup key (Frequency, ClickDuration, or geometric mean of Start/StopFrequency). A new
 calibration mode therefore requires coordinated edits in `Engine`, `apply_calibration`, and the
 subclass constant.
+
+**StimPlayer enables controls in two layers.** `lock_bank_controls_` holds a fixed list off during
+a session; `sync_control_enable_` then keeps a control off while its precondition is missing (no
+host, no route, no selection, empty bank) and runs at the end of every lock change. A new
+bank-editing control goes in the lock list *and*, if it needs something, in a rule there; keyboard
+shortcuts (`on_keypress_` in `create.m`) check the control's `Enable` rather than re-deriving it.
+Every bank edit calls `mark_bank_dirty_`, or close/Load Bank will not offer to save it.
 
 **Error identifiers** follow `stimgen:Class:Reason`. `StimPlayer.format_gui_error_message_` maps
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
@@ -326,9 +342,11 @@ becomes unconstructable. See `documentation/stimgen_logging.md`.
 
 ## Hardware parameter contract
 
-`StimPlayer` resolves these names from the host at Run time and disables hardware playback if any
-are missing (falling back to speaker preview): `BufferData_0/1`, `BufferSize_0/1`,
-`x_Trigger_0/1`. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
+`StimPlayer` resolves these names from the host at Run time: `BufferData_0/1`, `BufferSize_0/1`,
+`x_Trigger_0/1`. If any are missing (or no protocol is loaded/connected) Run asks before starting a
+dry run that plays nothing, naming what is missing; a run that started with them and loses one
+stops with `stimgen:StimPlayer:HardwareLost` rather than continuing silently. Preview falls back
+to the host's calibration adapter. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
 application's hardware circuit must expose to support hardware-triggered playback.
 
 ## Documentation

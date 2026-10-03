@@ -9,5 +9,6 @@ uilabel(pnl, 'Text', 'Select an item from the bank to edit its parameters.', ...
     'VerticalAlignment', 'center', ...
     'Position', [10 10 380 40]);
 obj.refresh_combo_controls_;
+obj.sync_control_enable_;
 obj.update_signal_plot;
 end

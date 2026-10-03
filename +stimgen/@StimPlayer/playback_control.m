@@ -40,6 +40,16 @@ switch action
                 return
             end
 
+            % Only reachable programmatically (the button reads "Stop"
+            % during a session). Starting over would stop the running timer
+            % after the hardware below was connected, and its StopFcn would
+            % release that hardware again.
+            if ~isempty(obj.Timer) && isvalid(obj.Timer) && strcmp(obj.Timer.Running, 'on')
+                obj.show_gui_message_("A session is already running. Stop it before starting another.", ...
+                    "Session Running", "warning");
+                return
+            end
+
             % A Play All cycle steps the same variant cursors the timer
             % will; end it before the run takes them over.
             if obj.PlayAllActive_
@@ -55,13 +65,26 @@ switch action
             if ~obj.HardwareAvailable
                 stimgen.util.vprintf(1, 'StimPlayer: hardware parameters not found — timer will run without hardware output.');
             end
+            % Fixed for the whole run: a run that started with hardware and
+            % loses it is stopped (timer_runtimefcn), not continued dry.
+            obj.HardwareRun_ = obj.HardwareAvailable;
 
             % The converter rate belongs to the hardware, so let the host
             % override the bank rate whenever it can report one.
             obj.adopt_host_fs_;
 
-            % Prime each bank item to combination #1 so playback stepping is deterministic
-            obj.initialize_variants_;
+            % Last chance to back out: say what this run will do that the
+            % operator may not expect, and let them cancel.
+            if ~obj.confirm_run_()
+                obj.HardwareRun_ = false;
+                obj.disconnect_interfaces_;
+                obj.update_protocol_status_;
+                obj.set_status_("Run cancelled.");
+                return
+            end
+
+            % Each bank item's variant sequence is started by
+            % timer_startfcn (initialize_variants_), once per run.
 
             % Kill this player's stale timer. Not timerfindall: the tag is
             % shared, and that would stop another StimPlayer's run.
@@ -86,8 +109,9 @@ switch action
             obj.lock_bank_controls_(true);
             obj.refresh_combo_controls_;
 
-            start(t);
+            % Before start: a StartFcn failure reports over this, not under it.
             obj.set_status_("Playback started.");
+            start(t);
             obj.update_protocol_status_;
         catch ME
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
@@ -113,7 +137,8 @@ switch action
             h.RunBtn.Text     = 'Run';
             h.PauseBtn.Enable = 'off';
             h.PauseBtn.Text   = 'Pause';
-            obj.set_status_("Playback stopped.");
+            obj.set_status_(sprintf('Playback stopped after %d of %d presentations.', ...
+                obj.presented_count_(), obj.total_count_()));
             obj.disconnect_interfaces_;
             obj.lock_bank_controls_(false);
             obj.update_protocol_status_;
@@ -123,17 +148,34 @@ switch action
         end
 
     case {'pause', 'resume'}
+        % A pause holds the session; it does not stop it. The timer keeps
+        % running and timer_runtimefcn presents nothing while Paused_ is
+        % set, so the rep counts, presentation log, variant cursors, the
+        % buffer already loaded for the next trial and the hardware
+        % connection all survive. Stopping the timer instead would run
+        % timer_stopfcn (unlock the bank, release the hardware) and a
+        % restart would run timer_startfcn (reset every count).
         try
-            if ~isempty(obj.Timer) && isvalid(obj.Timer)
-                if strcmp(obj.Timer.Running, 'on')
-                    stop(obj.Timer);
-                    src.Text = 'Resume';
-                    obj.set_status_("Playback paused.");
-                else
-                    start(obj.Timer);
-                    src.Text = 'Pause';
-                    obj.set_status_("Playback resumed.");
-                end
+            if isempty(obj.Timer) || ~isvalid(obj.Timer) || ~strcmp(obj.Timer.Running, 'on')
+                return  % no session to hold or release
+            end
+            if action == "pause" && ~obj.Paused_
+                obj.Paused_ = true;
+                obj.PauseStartedAt_ = obj.timeSinceStart;
+                h.PauseBtn.Text = 'Resume';
+                obj.set_status_(sprintf('Playback paused after %d of %d presentations.', ...
+                    obj.presented_count_(), obj.total_count_()));
+            elseif action == "resume" && obj.Paused_
+                % Shift the last trigger time by the length of the pause, so
+                % the interval in progress when Pause was pressed resumes
+                % with the time it had left rather than counting the pause
+                % against it (which would trigger at once on resume).
+                % StimOrderTime keeps real elapsed time, pause included.
+                pausedFor = obj.timeSinceStart - obj.PauseStartedAt_;
+                obj.lastTrigTime = obj.lastTrigTime + pausedFor;
+                obj.Paused_ = false;
+                h.PauseBtn.Text = 'Pause';
+                obj.set_status_(sprintf('Playback resumed after a %.1f s pause.', pausedFor));
             end
         catch ME
             obj.report_gui_error_(ME, "Pause Error", ...
