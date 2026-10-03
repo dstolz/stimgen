@@ -8,18 +8,14 @@ classdef AttackModNoise < stimgen.Noise
     
     properties (SetObservable,AbortSet)
         AMRate  (1,:) double {mustBePositive,mustBeFinite} = 5; % Hz
-        OnsetPhase (1,1) double = 0; % degrees
         
         Z     (1,:) double {mustBeGreaterThanOrEqual(Z,-1),mustBeLessThanOrEqual(Z,1)} = .4; % note that this gets converted to ramped/damped z = [1 2]
-        
-        AddOnOffperiods (1,1) logical = false;
         
         EnvelopeOnly (1,1) logical = false;
     end
     
     
     properties (Constant)
-        %IsMultiObj      = false;
         %CalibrationType = "noise"; % defined in stimgen.Noise superclass
         %Normalization = "rms"; % defined in stimgen.Noise superclass
     end
@@ -80,11 +76,6 @@ classdef AttackModNoise < stimgen.Noise
             am(obj.N+1:end) = [];
             am(end+1:obj.N) = 0;
             
-            if obj.AddOnOffperiods
-                [~,i] = max(am);
-                am = [am(i+1:end) am am(1:i)];
-            end
-
             if obj.EnvelopeOnly
                 obj.Signal = am;
             else

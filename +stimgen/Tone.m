@@ -30,7 +30,6 @@ classdef Tone < stimgen.StimType
     
     
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "tone";
         Normalization   = "absmax";
     end

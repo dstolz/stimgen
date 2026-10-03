@@ -22,7 +22,6 @@ classdef FMtone < stimgen.StimType
     
 
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "filter"
         Normalization   = "absmax"
     end

@@ -126,7 +126,6 @@ classdef TORC < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "filter";
         Normalization   = "rms";
     end

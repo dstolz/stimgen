@@ -89,7 +89,6 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     end
 
     properties (Abstract, Constant)
-        IsMultiObj      (1,1) logical
         CalibrationType (1,1) string % "noise","tone","click"
         Normalization   (1,1) string {mustBeMember(Normalization,["absmax","max","min","rms"])}
     end
@@ -147,13 +146,6 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
             end
 
             obj.create_listeners;
-        end
-
-        function set.Calibration(obj,calObj)
-            obj.Calibration = calObj;
-            if obj.IsMultiObj
-                arrayfun(@(x) set(x,'Calibration',calObj), obj.MultiObjects);
-            end
         end
 
         function s = get.StrProps(obj)

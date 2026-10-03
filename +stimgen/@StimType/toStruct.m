@@ -23,7 +23,6 @@ S.ApplyCalibration = obj.ApplyCalibration;
 % Abstract/constant properties (same across instances of subclass)
 S.CalibrationType  = obj.CalibrationType;
 S.Normalization    = obj.Normalization;
-S.IsMultiObj       = obj.IsMultiObj;
 
 % Calibration
 S.Calibration = obj.Calibration.toStruct;

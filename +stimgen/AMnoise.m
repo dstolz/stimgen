@@ -20,7 +20,6 @@ classdef AMnoise < stimgen.Noise
     
 
     properties (Constant)
-        %IsMultiObj      = false;
         %CalibrationType = "noise"; % defined in stimgen.Noise superclass
         %Normalization = "rms"; % defined in stimgen.Noise superclass
     end

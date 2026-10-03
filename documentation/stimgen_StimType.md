@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`, and the `IsMultiObj` property that tells wrappers whether the object expands into multiple presentable stimuli.
+Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`.
 
 ## What The Base Class Provides
 

@@ -126,7 +126,6 @@ carry it load with the field ignored.)
 | --- | --- | --- |
 | `AMRate` | yes | Hz, sets the modulation period `1/AMRate` |
 | `Z` | yes | -1–1, envelope shape: negative ramps up (attack), positive damps down (decay) |
-| `AddOnOffperiods` | no | prepend/append a partial period so the envelope starts and ends near zero crossing |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) |
 
 There is no depth parameter: the envelope always runs from zero to its peak, with its
@@ -136,8 +135,11 @@ changed the output; both have been removed, and an older bank that still lists t
 loads with those fields ignored. (A vectorized `AMDepth` in such a bank made variants
 that were identical waveforms; it no longer adds variants.)
 
-Unlike `AMnoise`, `OnsetPhase` here is scalar and not exposed in `UserProperties` —
-the envelope's phase is fixed by construction (`Z` sign), not by a phase offset.
+Unlike `AMnoise`, there is no `OnsetPhase`: the envelope's phase is fixed by
+construction (one period of the `Z`-shaped envelope, repeated from t = 0). The unused `OnsetPhase`
+and the broken `AddOnOffperiods` option (it doubled the envelope's length, so it either
+errored against the carrier or returned a waveform twice `Duration` long) have been
+removed.
 
 ## FMtone
 

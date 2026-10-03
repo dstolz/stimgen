@@ -130,7 +130,6 @@ classdef CapturedSignal < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false;
         % Nothing here is ever calibrated: the samples are already the
         % measurement. The name is outside the LUT families on purpose, so a
         % stray apply_calibration call could not silently pick one.

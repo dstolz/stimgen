@@ -27,7 +27,6 @@ classdef ClickTrain < stimgen.StimType
 
     
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "click";
         Normalization   = "absmax"
     end

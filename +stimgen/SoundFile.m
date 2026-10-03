@@ -56,7 +56,6 @@ classdef SoundFile < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false;
         % "filter" routes compute_adjusted_voltage to the tone LUT, which is
         % what both Filtered and Direct modes need. apply_calibration is
         % overridden below, so this constant only names the LUT family.

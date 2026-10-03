@@ -215,12 +215,13 @@ than erroring, so a missing tooltip never blocks a GUI. The file is cached and r
 so edits take effect without `clear functions`.
 
 **Class discovery globs filenames, then checks the class.** `StimType.list()` globs `*.m` in
-`+stimgen/`, drops a hardcoded exclusion list plus anything containing `Calib`, and keeps only what
-`meta.class` says is a concrete subclass of `StimType` — so a helper class such as `LogSink` or
-`HardwareHost` dropped into that folder is never offered as a stimulus. A new stimulus file in that
+`+stimgen/` and keeps only what `meta.class` says is a concrete subclass of `StimType` — so a helper
+class such as `LogSink` or `HardwareHost` dropped into that folder is never offered as a stimulus.
+There is no name-based exclusion list (`StimType` and `StimCalibration` live in class folders the
+glob never sees). A new stimulus file in that
 folder is automatically offered in GUI dropdowns. The glob reaches only loose files, so a `StimType` subclass
-that must *not* be offered as a stimulus goes in a class folder rather than onto the exclusion
-list — that is why `stimgen.CapturedSignal` lives in `@CapturedSignal/` despite being a single
+that must *not* be offered as a stimulus goes in a class folder — there is no list to add it to —
+that is why `stimgen.CapturedSignal` lives in `@CapturedSignal/` despite being a single
 short file. Self-excluding by construction beats a name someone has to remember to add.
 
 **A vector property in `UserProperties` is a variant axis.** `get_variant_source_values_` scans

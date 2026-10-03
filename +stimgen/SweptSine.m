@@ -27,7 +27,6 @@ classdef SweptSine < stimgen.StimType
     end
 
     properties (Constant)
-        IsMultiObj      = false
         CalibrationType = "swept_sine"
         Normalization   = "absmax"
     end

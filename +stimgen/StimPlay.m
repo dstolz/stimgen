@@ -82,12 +82,8 @@ classdef (Hidden) StimPlay < handle & matlab.mixin.SetGet
                 S.Calibration = [];
             end
 
-            % Stimulus objects: delegate to StimType.toStruct
-            if obj.StimObj.IsMultiObj
-                S.StimObj = arrayfun(@toStruct, obj.StimObj.MultiObjects);
-            else
-                S.StimObj = obj.StimObj.toStruct;
-            end
+            % Stimulus object: delegate to StimType.toStruct
+            S.StimObj = obj.StimObj.toStruct;
         end
 
         function i = get.StimIdx(obj)
@@ -156,20 +152,12 @@ classdef (Hidden) StimPlay < handle & matlab.mixin.SetGet
             % rather than the 1 Hz placeholder default.
             obj.Fs = fs;
             for i = 1:obj.NStimObj
-                if obj.StimObj.IsMultiObj
-                    obj.StimObj.MultiObjects(i).Fs = fs;
-                else
-                    obj.StimObj(i).Fs = fs;
-                end
+                obj.StimObj(i).Fs = fs;
             end
         end
 
         function update_signal(obj)
-            if obj.StimObj.IsMultiObj
-                arrayfun(@update_signal,obj.StimObj.MultiObjects);
-            else
-                obj.StimObj.update_signal;
-            end
+            obj.StimObj.update_signal;
         end
 
 
@@ -178,19 +166,11 @@ classdef (Hidden) StimPlay < handle & matlab.mixin.SetGet
         end
 
         function so = get.CurrentStimObj(obj)
-            if obj.StimObj.IsMultiObj
-                so = obj.StimObj.MultiObjects(obj.StimIdx);
-            else
-                so = obj.StimObj(obj.StimIdx);
-            end
+            so = obj.StimObj(obj.StimIdx);
         end
                
         function n = get.NStimObj(obj)
-            if obj.StimObj.IsMultiObj
-                n = numel(obj.StimObj.MultiObjects);
-            else
-                n = numel(obj.StimObj);
-            end
+            n = numel(obj.StimObj);
         end
 
         function c = get.LastStim(obj)

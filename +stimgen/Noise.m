@@ -24,7 +24,6 @@ classdef Noise < stimgen.StimType
    
     
     properties (Constant)
-        IsMultiObj      = false;
         CalibrationType = "filter";
         Normalization   = "rms";
     end
