@@ -11,6 +11,11 @@ classdef Noise < stimgen.StimType
         LowPass   (1,:) double {mustBeNonnegative,mustBeFinite} = 20000; % Hz
         
         FilterOrder (1,1) double {mustBePositive,mustBeInteger,mustBeFinite} = 40;
+    end
+
+    % Written by update_signal. Not observable: a PostSet listener on it
+    % would re-enter update_signal from inside its own body.
+    properties (SetAccess = protected)
         digFilter % designfilt object
     end
    

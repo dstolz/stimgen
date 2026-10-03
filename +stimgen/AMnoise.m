@@ -45,11 +45,16 @@ classdef AMnoise < stimgen.Noise
                 return
             end
 
+            % Restore the flag on error too: left set, every later waveform
+            % would skip normalization, calibration and gating.
             obj.temporarilyDisableSignalMods = true;
-            
-            update_signal@stimgen.Noise(obj);
+            try
+                update_signal@stimgen.Noise(obj);
+            catch ME
+                obj.temporarilyDisableSignalMods = false;
+                rethrow(ME)
+            end
             noise = obj.Signal;
-            
             obj.temporarilyDisableSignalMods = false;
            
             
