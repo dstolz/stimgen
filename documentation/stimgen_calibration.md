@@ -912,6 +912,8 @@ otherwise written only by the calibration runs themselves.
 
 After `refine_tones`/`refine_clicks` has run, the refined table (`tone`, `click` or `swept_sine`) also carries a `refinement` sub-struct: `lut_source`, `level_db`, the per-pass `iterations` record (`max_abs_error_db`, `rms_error_db`, `bias_db`, `n_reliable`, `n_corrected`, `max_correction_db`), `initial_`/`final_max_abs_error_db`, `n_unreliable`, `converged`, the criteria applied, and `refinedOn`. The next sweep of that table replaces both together.
 
+A sweep that is cancelled or fails leaves the table it would have replaced exactly as it was. A sweep that completes replaces the table and removes what was derived from the old one: `toneTest` when its `lut_source` names the table, `clickTest` for a click sweep, and the equalizer (`filter` back to `[]`, `filterGrpDelay` to 0, `filterSource`, `filterDesign` and `filterTest` removed) when `filterSource` names it. Removing the filter is logged; run `design_filter` again against the new table.
+
 The `metrics` sub-struct in `tone` and `swept_sine` contains per-frequency diagnostics: `noise_floor_db`, `snr_db`, `thd_db`, `h2_db`, `h3_db`, `repeatability`, and `clipping_headroom`. For `swept_sine`, the distortion fields (`thd_db`, `h2_db`, `h3_db`) are `NaN`: distortion on a chirp requires time-gating the harmonic impulses that precede the linear impulse response, which is not implemented. Swept-sine levels are derived from the deconvolved transfer function, not from the response spectrum — see `stimgen_SweptSineCalibration.md`.
 
 ---

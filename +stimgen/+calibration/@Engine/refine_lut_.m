@@ -50,6 +50,10 @@ end
 
 obj.assert_adapter_();
 
+% One cancellable operation across every test pass: each test_* run would
+% otherwise clear a Stop pressed while the previous pass was being corrected.
+cancelScope = obj.enter_cancel_scope_(); %#ok<NASGU>
+
 % Resolve the table under refinement. "tone" follows ToneLutSource through
 % resolve_tone_lut_, the same single definition of that choice the tests and
 % compute_adjusted_voltage share.

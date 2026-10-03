@@ -3362,9 +3362,10 @@ classdef CalibrationGui < handle
         function on_stop_(obj)
             % Request cancellation of the running calibration. Takes effect at
             % the next measurement boundary, not immediately.
+            % Stop stays enabled: a second press is harmless, and a request
+            % that had to be repeated must not find the button disabled.
             obj.Engine.cancel();
             obj.set_status_('Stopping...', false);
-            obj.BtnStop.Enable = 'off';
         end
 
         function on_reset_calibration_(obj)
@@ -3432,7 +3433,14 @@ classdef CalibrationGui < handle
             obj.set_busy_(true, cancellable);
             drawnow;
             try
-                fcn();
+                if cancellable
+                    % One cancel scope for the whole action, so a Stop that
+                    % lands between its runs (a sweep and its refinement)
+                    % is not cleared by the next run's entry.
+                    obj.Engine.run_cancellable(fcn);
+                else
+                    fcn();
+                end
             catch ME
                 if isequal(ME.identifier, 'stimgen:calibration:Engine:cancelled')
                     obj.set_status_('Calibration cancelled.', false);

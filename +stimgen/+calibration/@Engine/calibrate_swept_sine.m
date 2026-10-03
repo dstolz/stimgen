@@ -182,10 +182,9 @@ try
         swept_sine_data.voltage(i)     = volt;
     end
 catch ME
-    if isstruct(obj.CalibrationData)
-        obj.CalibrationData = stimgen.calibration.Engine.rmfield_safe_(obj.CalibrationData, 'swept_sine');
-    end
-    stimgen.util.vprintf(0, 2, 'Swept sine calibration aborted: %s', ME.message);
+    % Abort: discard this run's partial data. Nothing above writes
+    % CalibrationData, so the table from before the run stays as it was.
+    stimgen.util.vprintf(0, 2, 'Swept sine calibration aborted; any previous swept_sine table is unchanged: %s', ME.message);
     rethrow(ME);
 end
 
@@ -265,6 +264,7 @@ cd_out.swept_sine = struct( ...
         'h3_db', hm.h3_db, ...
         'repeatability', sweptRepeatability, ...
         'clipping_headroom', sweptHeadroom));
+cd_out = obj.drop_stale_dependents_(cd_out, "swept_sine");
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
 

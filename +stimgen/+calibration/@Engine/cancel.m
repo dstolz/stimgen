@@ -8,6 +8,7 @@ function cancel(obj)
 % rather than one frequency; shorten MaxSequenceDuration for a faster stop.
 % No-op if no
 % cancellable run is in progress; the flag is cleared at the start of each
-% run by reset_cancel_.
+% run by reset_cancel_, or only at the start of the whole operation when the
+% runs are chained inside run_cancellable.
 obj.CancelRequested_ = true;
 end
