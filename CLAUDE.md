@@ -10,11 +10,16 @@ Processing Toolbox; Audio Toolbox only for sound-card playback/preview.
 
 ## Working in this repo
 
-There is no build, no test suite, and no CI. Verification is done by running code in MATLAB.
+There is no build. `tests/` holds a `matlab.unittest` suite for the GUI-free, hardware-free
+code (level scale, weighting, band and meter arithmetic, serialization, variants, logging,
+the tooltip catalog, and the calibration engine against `documentation/tools/SimRigAdapter.m`);
+`.github/workflows/tests.yml` runs it in CI on pushes to `main` and on pull requests. GUIs and
+real hardware are still verified by running them. See `tests/README.md`.
 
 ```matlab
 addpath('C:\src\stimgen')   % the ROOT, never +stimgen itself (MATLAB resolves it as a package)
 
+results = runtests('tests');                                     % from the root
 t = stimgen.Tone; t.Frequency = 4000; t.update_signal; t.plot   % smoke test
 stimgen.StimPlayer                        % bank editor/player (offline = speaker preview only)
 stimgen.calibration.CalibrationGui        % offline: inspect/load a .esgc
@@ -24,7 +29,8 @@ stimgen.SpotCheck                         % offline: load/inspect a stimulus; Ru
 After editing a classdef, MATLAB caches the old definition. `clear classes` (or restart) before
 re-testing, otherwise changes appear not to take effect.
 
-`.esgc` files are gitignored — they are calibration output written during local testing.
+`.esgc` files are gitignored — they are calibration output written during local testing. So are
+`.wav`/`.flac` files, except fixtures under `tests/`.
 
 Commit messages follow Conventional Commits (`docs:`, `feat:`, …).
 

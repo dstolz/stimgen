@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine` (loose `.m` files in `+stimgen/`). Subclasses define the constants `CalibrationType` and `Normalization`.
+Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `SoundFile` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
 
 ## What The Base Class Provides
 

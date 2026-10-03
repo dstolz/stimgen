@@ -80,7 +80,7 @@ tone.ApplyCalibration = true;
 tone.update_signal();
 ```
 
-Assigning `Calibration` on a `stimgen.StimPlay` wrapper forwards the object to the wrapped stimulus; `stimgen.StimPlayer` exposes the same through its **File > Calibration** menu.
+Assigning `Calibration` on a `stimgen.StimPlay` wrapper forwards the object to the wrapped stimulus; `stimgen.StimPlayer` exposes the same through its **Calibration > Load Calibration** menu item.
 
 ## Caveats for developers
 

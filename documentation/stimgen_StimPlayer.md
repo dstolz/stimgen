@@ -82,7 +82,7 @@ call it rather than updating the plot itself.
 
 ### Stimulus inspector
 
-The **Inspect Stimulus** toolbar button (also **File > Inspect Stimulus**,
+The **Inspect Stimulus** toolbar button (also **Tools > Inspect Stimulus**,
 `Ctrl+I`) opens [`stimgen.StimInspector`](stimgen_StimInspector.md) on the
 selected bank item, or raises the existing window if one is already open —
 there is only ever one inspector per player.

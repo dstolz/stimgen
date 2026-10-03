@@ -398,7 +398,7 @@ cla(ax);
 if obj.Scale.Acoustic
     levelName = 'Level (dB SPL)';
 else
-    levelName = 'Level (dB re 1)';
+    levelName = 'Amplitude (dB re 1)';
 end
 tbl.ColumnName = {'Harmonic', 'Frequency (Hz)', 'Level (dB re F0)', 'Amplitude (%)', levelName};
 
@@ -411,12 +411,15 @@ end
 rel = M.HarmonicDb - M.HarmonicDb(1);   % dB re fundamental; reference cancels
 n   = numel(rel);
 
-% thd() reports each harmonic's power (a mean square) in dB; its root is the
-% rms a level is taken from.
+% thd() reports each harmonic's power (a mean square) in dB. As sound, its
+% root is the rms a level is taken from. As a signal, it is shown on the
+% Spectrum tab's scale -- a sinusoid's amplitude, sqrt(2*power), so a
+% full-scale sine reads 0 dB -- which is also the scale of the metrics table's
+% Fundamental (dB) row; the power itself would read 3.01 dB lower than both.
 if obj.Scale.Acoustic
     absDb = obj.to_db_(sqrt(10 .^ (M.HarmonicDb / 10)));
 else
-    absDb = M.HarmonicDb;
+    absDb = 20 * log10(sqrt(2 * 10 .^ (M.HarmonicDb / 10)));
 end
 
 % Bars rise from a fixed floor rather than hanging down from 0 dB, so a clean
