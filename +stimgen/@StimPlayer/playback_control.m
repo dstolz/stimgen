@@ -109,8 +109,9 @@ switch action
             obj.lock_bank_controls_(true);
             obj.refresh_combo_controls_;
 
-            start(t);
+            % Before start: a StartFcn failure reports over this, not under it.
             obj.set_status_("Playback started.");
+            start(t);
             obj.update_protocol_status_;
         catch ME
             if ~isempty(obj.Timer) && isvalid(obj.Timer)
@@ -136,7 +137,8 @@ switch action
             h.RunBtn.Text     = 'Run';
             h.PauseBtn.Enable = 'off';
             h.PauseBtn.Text   = 'Pause';
-            obj.set_status_("Playback stopped.");
+            obj.set_status_(sprintf('Playback stopped after %d of %d presentations.', ...
+                obj.presented_count_(), obj.total_count_()));
             obj.disconnect_interfaces_;
             obj.lock_bank_controls_(false);
             obj.update_protocol_status_;

@@ -82,7 +82,7 @@ call it rather than updating the plot itself.
 
 ### Stimulus inspector
 
-The **Inspect Stimulus** toolbar button (also **File > Inspect Stimulus**,
+The **Inspect Stimulus** toolbar button (also **Tools > Inspect Stimulus**,
 `Ctrl+I`) opens [`stimgen.StimInspector`](stimgen_StimInspector.md) on the
 selected bank item, or raises the existing window if one is already open —
 there is only ever one inspector per player.
@@ -364,9 +364,50 @@ Remove Stimulus, Inspect Stimulus, Show All Combinations and Play Selected.
 Toolbar buttons that edit the bank (Load/Save Bank/Protocol, Open Calibration
 GUI, Add/Duplicate/Remove Stimulus) are disabled during playback by
 `lock_bank_controls_`, the same as their menu/button counterparts. Show All
-Combinations is disabled too: it edits nothing, but generating every
-combination would compete with the playback timer. Inspect Stimulus and Play
-Selected stay enabled, since neither edits the bank.
+Combinations and Play Selected are disabled too: neither edits the bank, but
+generating or stepping combinations would compete with the playback timer for
+the items it is presenting. Inspect Stimulus stays enabled.
+
+### When controls are enabled
+
+On top of the run lock, `sync_control_enable_` keeps a control off while its
+precondition is missing, so nothing is offered that cannot work:
+
+| Control | Enabled only when |
+| --- | --- |
+| Load Protocol (menu, toolbar, Recent Protocols) | a host is attached |
+| Remove, Duplicate, Play (button, menu, toolbar), Show All Combinations, Export Signal | a bank item is selected |
+| Play All | a bank item is selected (or a cycle is running: it is then its Stop) |
+| Play | additionally, no Play All cycle is running |
+| Export All Signals, Export Bank as StimType Objects | the bank is not empty |
+| Output dropdown | there is a hardware route (host or `CaptureAdapter`); its tooltip says so when there is none |
+
+It runs after every change to one of those inputs (selection, bank contents,
+host, `CaptureAdapter`, preview output, end of a Play All) and at the end of
+`lock_bank_controls_`, so unlocking after a run cannot re-enable a control
+that still cannot work. The keyboard shortcuts check the same `Enable` state.
+
+### Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `Ctrl+N` / `Ctrl+D` | Add / Duplicate stimulus (**Bank** menu) |
+| `Delete` | Remove selected stimulus (asks first) |
+| `Ctrl+Enter` | Play selected |
+| `F5` | Run / Stop (only while the Run button is shown) |
+| Left / Right | Step combination |
+| `Ctrl+P` / `Ctrl+L` / `Ctrl+S` | Load Protocol / Load Bank / Save Bank |
+| `Ctrl+K` | Load Calibration |
+| `Ctrl+I` / `Ctrl+G` / `Ctrl+M` | Inspect / Show All Combinations / Capture |
+
+`Ctrl+C` is deliberately unbound (it used to load a calibration) because it is
+Copy in every text field; `F5` is used rather than Space for the same reason.
+The `Ctrl+<letter>` keys are menu accelerators; the rest are handled by the
+figure's `WindowKeyPressFcn`, which also sees keys typed into a field. Delete
+and the arrows, which edit text, are therefore ignored while the control
+last clicked is a text-entry one (judged from the figure's `CurrentObject`).
+A field reached with Tab rather than a click is not detected, which is one
+reason Remove always asks before deleting.
 
 The microphone button, Capture Selected, sits after Play Selected. It follows
 its own rule rather than `lock_bank_controls_` alone: it is enabled only when
@@ -438,8 +479,9 @@ bank items apply it, a warning when the calibration's sample rate differs
 from the bank rate, and a reminder that a hardware Run always plays the
 generated (calibrated) waveform regardless of the preview output. The label
 is maintained by `update_calibration_status_`, called after every event that
-can change the answer: loading a calibration, adding or removing bank items,
-loading a bank, and switching the preview output.
+can change the answer: loading a calibration, adding, duplicating or removing
+bank items, loading a bank, switching the preview output, and every parameter
+edit (toggling **Apply Calibration** changes how many items apply it).
 
 ## Hiding session controls (host takeover)
 
@@ -504,7 +546,10 @@ At run time the class:
 7. Toggles the matching trigger parameter.
 8. Logs presentation order, elapsed trigger time, the sign played and the
    variant combination played (`StimOrder`, `StimOrderTime`, `StimPolarity`,
-   `StimVariant`, row-aligned).
+   `StimVariant`, row-aligned), and shows it in the status line as
+   `Presenting <item> [combo i/n] (k/N)`. When the timer stops the status line
+   says `Run complete: N presentations.` or
+   `Playback stopped after k of N presentations.`
 9. Lets the presented stimulus select its next combination.
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating

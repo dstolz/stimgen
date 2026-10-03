@@ -15,6 +15,15 @@ if isfield(h, 'PauseBtn') && isvalid(h.PauseBtn)
     h.PauseBtn.Text   = 'Pause';
 end
 
+% Say how the session ended; a Stop press or an error reports over this.
+presented = obj.presented_count_();
+total     = obj.total_count_();
+if total > 0 && presented >= total
+    obj.set_status_(sprintf('Run complete: %d presentations.', presented));
+else
+    obj.set_status_(sprintf('Playback stopped after %d of %d presentations.', presented, total));
+end
+
 obj.lock_bank_controls_(false);
 obj.disconnect_interfaces_;
 obj.update_protocol_status_;

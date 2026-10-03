@@ -263,6 +263,7 @@ classdef StimPlayer < handle
             obj.update_protocol_status_;
             obj.load_capture_settings_;
             obj.sync_capture_controls_;
+            obj.sync_control_enable_;  % Load Protocol needs the host set above
 
             if nargout == 0, clear obj; end
         end
@@ -378,6 +379,7 @@ classdef StimPlayer < handle
                 obj.PlaybackOutput = "Speakers";
             end
             obj.update_protocol_status_;
+            obj.sync_control_enable_;  % the Output dropdown follows the route
         end
 
         % -----------------------------------------------------------------
@@ -863,6 +865,7 @@ classdef StimPlayer < handle
             end
 
             obj.update_calibration_status_;
+            obj.sync_control_enable_;
         end
 
         % -----------------------------------------------------------------
@@ -1103,9 +1106,10 @@ classdef StimPlayer < handle
                 'RecentProtocolsMenu','RecentBanksMenu','RecentCalibrationsMenu', ...
                 'LoadProtocolTool','LoadBankTool','SaveBankTool','CalibrationGuiTool', ...
                 'AddStimTool','DuplicateStimTool','RemoveStimTool', ...
+                'AddStimMenu','DuplicateStimMenu','RemoveStimMenu', ...
                 'CombinationsMenu','CombinationsTool', ...
                 ... % These step or regenerate the bank items the timer is playing.
-                'PlayBtn','PlayAllBtn','PlayTool', ...
+                'PlayBtn','PlayAllBtn','PlayTool','PlayMenu', ...
                 'ExportSignalMenu','ExportAllMenu','ExportObjsMenu'};
             for i = 1:numel(fields)
                 f = fields{i};
@@ -1129,6 +1133,81 @@ classdef StimPlayer < handle
             % to record through.
             obj.CaptureLocked_ = lockState;
             obj.sync_capture_controls_;
+
+            % Unlocking turned everything on; put back off what still
+            % cannot work (no host, no route, no selection).
+            obj.sync_control_enable_;
+            obj.refresh_combo_controls_;
+        end
+
+        % -----------------------------------------------------------------
+        function idx = selected_bank_index_(obj)
+            % idx = selected_bank_index_() - Listbox selection as a bank index, or [].
+            idx = [];
+            h = obj.handles;
+            if ~isfield(h, 'BankList') || isempty(h.BankList) || ~isvalid(h.BankList) ...
+                    || isempty(h.BankList.ItemsData) || isempty(h.BankList.Value)
+                return
+            end
+            v = h.BankList.Value;
+            if isnumeric(v) && isscalar(v) && v >= 1 && v <= numel(obj.StimPlayObjs)
+                idx = v;
+            end
+        end
+
+        % -----------------------------------------------------------------
+        function sync_control_enable_(obj)
+            % sync_control_enable_() - Enable each control only when it can work.
+            % The run lock (lock_bank_controls_) disables the bank-editing
+            % controls during a session; on top of that, a control stays
+            % off while its precondition is missing:
+            %   Load Protocol (menu, toolbar, recent) - needs a host
+            %   Remove, Duplicate, Play, Show All Combinations,
+            %   Export Signal                          - need a selected item
+            %   Play All                               - needs a selected item
+            %                                            (or is its own Stop)
+            %   Export All / Export Bank               - need a non-empty bank
+            %   Output dropdown                        - needs a hardware route
+            %                                            (it has one choice
+            %                                            without; left on while
+            %                                            showing "Hardware")
+            % Called after every change to one of those inputs and at the
+            % end of lock_bank_controls_, so unlocking cannot re-enable a
+            % control the lock list knows nothing about.
+            h = obj.handles;
+            unlocked = ~obj.CaptureLocked_;
+            hasSel   = ~isempty(obj.selected_bank_index_());
+            hasItems = ~isempty(obj.StimPlayObjs);
+            hasHost  = ~isempty(obj.Host);
+            hasRoute = obj.has_hardware_route_ || obj.PlaybackOutput == "Hardware";
+
+            rules = { ...
+                {'LoadProtocolMenu','LoadProtocolTool','RecentProtocolsMenu'}, hasHost; ...
+                {'DuplicateBtn','DuplicateStimTool','DuplicateStimMenu', ...
+                 'RemoveBtn','RemoveStimTool','RemoveStimMenu', ...
+                 'CombinationsMenu','CombinationsTool','ExportSignalMenu'}, hasSel; ...
+                {'PlayBtn','PlayTool','PlayMenu'}, hasSel && ~obj.PlayAllActive_; ...
+                {'PlayAllBtn'}, hasSel || obj.PlayAllActive_; ...
+                {'ExportAllMenu','ExportObjsMenu'}, hasItems; ...
+                {'OutputDD'}, hasRoute};
+            for r = 1:size(rules, 1)
+                state = matlab.lang.OnOffSwitchState(unlocked && rules{r, 2});
+                names = rules{r, 1};
+                for k = 1:numel(names)
+                    f = names{k};
+                    if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))
+                        h.(f).Enable = state;
+                    end
+                end
+            end
+
+            if isfield(h, 'OutputDD') && ~isempty(h.OutputDD) && isvalid(h.OutputDD)
+                if obj.has_hardware_route_
+                    h.OutputDD.Tooltip = stimgen.util.tooltip('StimPlayer', 'OutputDD');
+                else
+                    h.OutputDD.Tooltip = stimgen.util.tooltip('StimPlayer', 'OutputDDNoHardware');
+                end
+            end
         end
 
         % -----------------------------------------------------------------
@@ -1184,6 +1263,10 @@ classdef StimPlayer < handle
                 end
                 h.ControlGrid.ColumnWidth = widths;
             end
+
+            % The Bank menu's Run/Stop item (and F5, which checks the same
+            % flag) belongs to whoever owns the Run button.
+            obj.set_widgets_visible_({'RunMenu'}, vis.Run);
         end
 
         % -----------------------------------------------------------------
@@ -1731,12 +1814,14 @@ classdef StimPlayer < handle
             if isempty(obj.StimPlayObjs)
                 h.BankList.Items = {};
                 h.BankList.ItemsData = {};
+                obj.sync_control_enable_;
                 return
             end
             items = arrayfun(@(sp) sprintf('%s  [%s]', char(sp.Name), sp.Type), ...
                 obj.StimPlayObjs, 'uni', false);
             h.BankList.Items = items;
             h.BankList.ItemsData = num2cell(1:numel(obj.StimPlayObjs));
+            obj.sync_control_enable_;
         end
 
         % -----------------------------------------------------------------

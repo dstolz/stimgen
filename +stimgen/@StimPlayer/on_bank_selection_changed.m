@@ -177,6 +177,7 @@ stimObj.set_gui_handles(paramHandles);
 
 obj.update_signal_plot;
 obj.refresh_combo_controls_;
+obj.sync_control_enable_;
 end
 
 
@@ -215,6 +216,9 @@ try
     stimObj.update_signal();
     clear computingCleanup;
     obj.update_signal_plot();
+    % The calibration label counts the items that apply a calibration, so
+    % toggling Apply Calibration (or anything else) must refresh it.
+    obj.update_calibration_status_;
     obj.mark_bank_dirty_;
     % Only an edit that took is worth carrying to the next stimulus of this type.
     obj.remember_stim_settings_(stimObj);

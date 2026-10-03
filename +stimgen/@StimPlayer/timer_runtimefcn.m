@@ -56,6 +56,12 @@ try
 
     obj.trialCount_ = obj.trialCount_ + 1;
 
+    % What was just presented, for the operator: bank item, the combination
+    % it was generated from, and the trial count.
+    obj.set_status_(sprintf('Presenting %s [combo %d/%d] (%d/%d)', ...
+        char(presentedSP.Name), presentedVar.ActiveIndex, presentedVar.NumCombinations, ...
+        obj.trialCount_, obj.total_count_()));
+
     % Select next
     obj.nextSPOIdx = obj.select_next_idx;
 

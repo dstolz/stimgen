@@ -281,6 +281,13 @@ supplies the lookup key (Frequency, ClickDuration, or geometric mean of Start/St
 calibration mode therefore requires coordinated edits in `Engine`, `apply_calibration`, and the
 subclass constant.
 
+**StimPlayer enables controls in two layers.** `lock_bank_controls_` holds a fixed list off during
+a session; `sync_control_enable_` then keeps a control off while its precondition is missing (no
+host, no route, no selection, empty bank) and runs at the end of every lock change. A new
+bank-editing control goes in the lock list *and*, if it needs something, in a rule there; keyboard
+shortcuts (`on_keypress_` in `create.m`) check the control's `Enable` rather than re-deriving it.
+Every bank edit calls `mark_bank_dirty_`, or close/Load Bank will not offer to save it.
+
 **Error identifiers** follow `stimgen:Class:Reason`. `StimPlayer.format_gui_error_message_` maps
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
 

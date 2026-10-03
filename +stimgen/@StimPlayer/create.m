@@ -361,8 +361,25 @@ mSaveBankAs = uimenu(mFile, 'Text', 'Save Bank &As...', ...
     'MenuSelectedFcn', @(~,~) obj.save_bank_as());
 mRecentBanks = uimenu(mFile, 'Text', 'Recent Stimulus &Banks');
 
+% Keyboard shortcuts. Ctrl+<letter> are menu accelerators: File P/L/S,
+% Bank N/D, Calibration K, Tools I/G/M. Ctrl+C is deliberately left alone:
+% it is Copy in every text field. Keys a menu accelerator cannot carry --
+% F5, Ctrl+Enter, Delete and the arrow keys -- are handled by on_keypress_
+% and named in the menu text instead.
+mBank = uimenu(f, 'Text', '&Bank');
+mAddStim = uimenu(mBank, 'Text', '&Add Stimulus', 'Accelerator', 'N', ...
+    'MenuSelectedFcn', @obj.add_stim);
+mDuplicateStim = uimenu(mBank, 'Text', '&Duplicate Stimulus', 'Accelerator', 'D', ...
+    'MenuSelectedFcn', @obj.duplicate_stim);
+mRemoveStim = uimenu(mBank, 'Text', '&Remove Stimulus  (Delete)', ...
+    'MenuSelectedFcn', @obj.remove_stim);
+mPlay = uimenu(mBank, 'Text', '&Play Selected  (Ctrl+Enter)', 'Separator', 'on', ...
+    'MenuSelectedFcn', @obj.play_preview);
+mRun = uimenu(mBank, 'Text', 'R&un / Stop  (F5)', ...
+    'MenuSelectedFcn', @(~,~) obj.playback_control());
+
 mCalibrationMenu = uimenu(f, 'Text', '&Calibration');
-mCalibration = uimenu(mCalibrationMenu, 'Text', '&Load Calibration', 'Accelerator', 'C', ...
+mCalibration = uimenu(mCalibrationMenu, 'Text', '&Load Calibration', 'Accelerator', 'K', ...
     'MenuSelectedFcn', @(~,~) obj.load_calibration_());
 mRecentCalibrations = uimenu(mCalibrationMenu, 'Text', 'Recent Calibratio&ns');
 mOpenCalibrationGui = uimenu(mCalibrationMenu, 'Text', 'Open Calibration &GUI', ...
@@ -467,9 +484,15 @@ obj.handles.CaptureSettingsMenu = mCaptureSettings;
 obj.handles.ExportSignalMenu  = mExportSignal;
 obj.handles.ExportAllMenu     = mExportAll;
 obj.handles.ExportObjsMenu    = mExportObjs;
+obj.handles.AddStimMenu       = mAddStim;
+obj.handles.DuplicateStimMenu = mDuplicateStim;
+obj.handles.RemoveStimMenu    = mRemoveStim;
+obj.handles.PlayMenu          = mPlay;
+obj.handles.RunMenu           = mRun;
 
 obj.apply_control_visibility_;
 obj.refresh_recent_menus_;
+obj.sync_control_enable_;
 
 end % create
 
@@ -566,18 +589,79 @@ end
 end
 
 function on_keypress_(obj, evt)
-% Map left/right arrow keys to combo stepping for the selected bank item.
+% Keyboard shortcuts menu accelerators cannot carry (see the Bank menu):
+%   F5          Run / Stop       (only while the Run button is shown)
+%   Ctrl+Enter  Play selected
+%   Delete      Remove selected  (asks first)
+%   Left/Right  Step combination
+% Each fires only when its control is enabled, so the run lock, an empty
+% selection and a Play All in progress apply to the key exactly as to the
+% button. WindowKeyPressFcn also sees keys typed into a text field, so
+% Delete and the arrows -- which edit text -- are ignored while the last
+% clicked control is a text-entry one; F5 and Ctrl+Enter mean nothing to a
+% text field and always apply.
 try
-    switch lower(string(evt.Key))
+    key  = lower(string(evt.Key));
+    mods = lower(string(evt.Modifier));
+    ctrl = any(mods == "control") || any(mods == "command");
+    switch key
+        case "f5"
+            if obj.ControlVisibility.Run
+                obj.playback_control();
+            end
+        case "return"
+            if ctrl && control_enabled_(obj, 'PlayBtn')
+                obj.play_preview();
+            end
+        case "delete"
+            if ~typing_(obj) && control_enabled_(obj, 'RemoveBtn')
+                obj.remove_stim();
+            end
         case "leftarrow"
-            obj.step_combination(-1);
+            if ~typing_(obj) && control_enabled_(obj, 'ComboPrevBtn')
+                obj.step_combination(-1);
+            end
         case "rightarrow"
-            obj.step_combination(1);
+            if ~typing_(obj) && control_enabled_(obj, 'ComboNextBtn')
+                obj.step_combination(1);
+            end
     end
 catch ME
     obj.report_gui_error_(ME, "Key Binding Error", ...
         "StimPlayer could not handle the requested keyboard shortcut.");
 end
+end
+
+function tf = control_enabled_(obj, field)
+% True when handles.(field) exists, is visible and is enabled.
+tf = false;
+h = obj.handles;
+if ~isfield(h, field) || isempty(h.(field)) || ~isvalid(h.(field))
+    return
+end
+c = h.(field);
+tf = logical(matlab.lang.OnOffSwitchState(c.Enable)) && ...
+    logical(matlab.lang.OnOffSwitchState(c.Visible));
+end
+
+function tf = typing_(obj)
+% True when the control last clicked takes text, so Delete and the arrow
+% keys belong to it. Judged from the figure's CurrentObject; a field reached
+% with Tab instead of a click is not seen, which is why Remove still asks.
+tf = false;
+try
+    c = obj.hFig.CurrentObject;
+catch
+    return
+end
+if isempty(c) || ~isvalid(c)
+    return
+end
+tf = isa(c, 'matlab.ui.control.EditField') || ...
+     isa(c, 'matlab.ui.control.NumericEditField') || ...
+     isa(c, 'matlab.ui.control.TextArea') || ...
+     isa(c, 'matlab.ui.control.Spinner') || ...
+     (isa(c, 'matlab.ui.control.DropDown') && c.Editable);
 end
 
 function idx = selected_bank_idx_(obj)
