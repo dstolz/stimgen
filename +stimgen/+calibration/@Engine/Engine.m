@@ -232,6 +232,7 @@ classdef Engine < handle
 
     properties (Access = private)
         CancelRequested_ (1,1) logical = false   % set by cancel(); consumed by throw_if_cancelled_
+        CancelScopeDepth_ (1,1) double = 0      % >0 inside run_cancellable/refine_lut_; nested reset_cancel_ calls are then no-ops
         Monitors_ (1,:) cell = {}   % LiveMonitor objects registered via register_monitor_
         RunTic_                     % tic id of the run in progress; [] outside one
         LiveHookFailed_ (1,1) logical = false  % latched by emit_live_ so a broken listener logs once, not per measurement
@@ -289,8 +290,10 @@ classdef Engine < handle
         r = filter_level_reference(obj, x) % Level reference for running the equalization filter in hardware.
         s = describe(obj) % Describe the calibration in words; prints to the command window when nothing takes the output.
         ffn = save(obj, ffn) % Save calibration to .esgc file; returns the resolved path.
-        restore(obj, s) % Restore engine state from a serialized struct.
+        restore(obj, s, options) % Restore engine state from a serialized struct.
+        s = to_struct(obj) % Persistent engine state as a struct (.esgc contents).
         cancel(obj) % Request cancellation of an in-progress calibration run.
+        varargout = run_cancellable(obj, fcn) % Run fcn() as one cancellable operation, however many runs it makes.
         reset_calibration(obj) % Discard acquired calibration data; keeps adapter and parameters.
 
         function Fs = get.Fs(obj)
@@ -626,6 +629,9 @@ classdef Engine < handle
         cd = commit_cal_data_(obj) % Build calibration output struct.
         results = refine_lut_(obj, which, options) % Measure-correct-remeasure loop behind refine_tones/refine_clicks.
         reset_cancel_(obj) % Clear any pending cancellation request before starting a new run.
+        scope = enter_cancel_scope_(obj) % Clear the request once and hold it across nested runs until scope is cleared.
+        leave_cancel_scope_(obj) % Close one enter_cancel_scope_ level.
+        cd = drop_stale_dependents_(obj, cd, table) % Remove tests/filter derived from a table being replaced.
         throw_if_cancelled_(obj) % Pump the event queue and abort the run if cancel() was called.
 
         function d = ac_couple_filter_(obj, fs, fc)
@@ -681,7 +687,6 @@ classdef Engine < handle
                        'sd_db', nan(1,n));
         end
 
-        restore_from_struct_(obj, s) % Restore engine state from saved struct.
     end
 
     methods (Static)

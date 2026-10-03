@@ -1,11 +1,11 @@
 function duplicate_stim(obj, ~, ~)
 % duplicate_stim(obj) - Add a copy of the selected bank item directly below it.
-% The copy is a freshly constructed StimType given the source's settings --
-% the same base and UserProperties set save_bank/load_bank round-trip --
-% rather than copy(), which would carry over the source's property
-% listeners and GUI widget handles. The calibration is shared, not cloned,
-% so the whole bank keeps one calibration state. Presentation counters
-% start from zero, as for any newly added item.
+% The copy is rebuilt with StimType.fromStruct from the source's toStruct --
+% exactly what save_bank/load_bank round-trip -- rather than copy(), which
+% would carry over the source's property listeners and GUI widget handles.
+% The calibration is shared, not cloned, so the whole bank keeps one
+% calibration state. Presentation counters start from zero, as for any newly
+% added item.
 
 h = obj.handles;
 
@@ -23,30 +23,10 @@ try
 	src    = obj.StimPlayObjs(idx);
 	srcObj = src.CurrentStimObj;
 
-	stimObj = feval(class(srcObj));
-
-	baseProps = {'SoundLevel','Duration','WindowDuration','WindowFcn', ...
-	             'ApplyCalibration','ApplyWindow','Fs', ...
-	             'VariantSelectionMode','VariantCombinationMode', ...
-	             'VariantSelectorClass','VariantSelectorConfig', ...
-	             'VariantReselectOnUpdate','DisplayName'};
-	for j = 1:numel(baseProps)
-		p = baseProps{j};
-		if isprop(srcObj, p)
-			stimObj.(p) = srcObj.(p);
-		end
-	end
-
-	for j = 1:numel(srcObj.UserProperties)
-		p = char(srcObj.UserProperties(j));
-		if isprop(srcObj, p)
-			stimObj.(p) = srcObj.(p);
-		end
-	end
-
-	if isa(srcObj.Calibration, 'stimgen.StimCalibration')
-		stimObj.Calibration = srcObj.Calibration;
-	end
+	% Through the one restore path: it holds calibration off until the
+	% shared calibration is attached, rather than regenerating against the
+	% default, empty one on the way.
+	stimObj = stimgen.StimType.fromStruct(srcObj.toStruct(), srcObj.Calibration);
 
 	% Open on the combination the source is showing.
 	try

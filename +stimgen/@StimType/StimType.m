@@ -76,6 +76,18 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     end
 
 
+    % Base-class properties every serialized stimulus carries, in the order
+    % they are restored. toStruct writes them and fromStruct -- the one
+    % restore path, behind load_bank and duplicate_stim too -- reads them.
+    % ApplyCalibration is not listed: it is written with them but restored
+    % last, after the calibration (see fromStruct).
+    properties (Constant, Hidden)
+        CoreProperties (1,:) string = ["Fs","ApplyWindow","SoundLevel","Duration", ...
+            "WindowDuration","WindowFcn", ...
+            "VariantSelectionMode","VariantCombinationMode", ...
+            "VariantSelectorClass","VariantSelectorConfig","VariantReselectOnUpdate"]
+    end
+
     properties (Abstract, Constant)
         IsMultiObj      (1,1) logical
         CalibrationType (1,1) string % "noise","tone","click"
@@ -271,7 +283,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     end % methods (Static, Access = protected)
 
     methods (Static)
-        obj = fromStruct(S)                                                        % Reconstruct StimType from serialized struct
+        obj = fromStruct(S, calibration)                                           % Reconstruct StimType from serialized struct
         c = list                                                                    % Enumerate available stimgen stimulus classes
         s = display_scale(pm, propName)                                            % GUI display scale factor for a propMeta entry
         sections = group_prop_meta(meta)                                           % Bucket propMeta fields into ordered display groups

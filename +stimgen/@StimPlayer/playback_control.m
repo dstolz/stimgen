@@ -40,6 +40,12 @@ switch action
                 return
             end
 
+            % A Play All cycle steps the same variant cursors the timer
+            % will; end it before the run takes them over.
+            if obj.PlayAllActive_
+                obj.play_all();
+            end
+
             % Prepare runtime and hardware from the currently loaded protocol.
             obj.initialize_runtime_from_protocol_;
 
@@ -57,11 +63,11 @@ switch action
             % Prime each bank item to combination #1 so playback stepping is deterministic
             obj.initialize_variants_;
 
-            % Kill any stale timer
-            t = timerfindall('Tag', 'StimPlayerTimer');
-            if ~isempty(t)
-                stop(t);
-                delete(t);
+            % Kill this player's stale timer. Not timerfindall: the tag is
+            % shared, and that would stop another StimPlayer's run.
+            if ~isempty(obj.Timer) && isvalid(obj.Timer)
+                stop(obj.Timer);
+                delete(obj.Timer);
             end
 
             t = timer( ...

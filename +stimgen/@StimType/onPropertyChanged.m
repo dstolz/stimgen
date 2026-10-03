@@ -11,5 +11,12 @@ if ~isempty(src) && obj.is_variant_policy_property_(string(src.Name))
     obj.variantSelectorObj_ = [];
     return
 end
+
+% A property written from inside update_signal must not start a second,
+% nested generation: the outer one is already producing the signal.
+if obj.variantCycleActive_
+    return
+end
+
 obj.call_update_signal_with_variant_cycle_(); % subclass implementation handles args
 obj.refresh_plot_if_valid;

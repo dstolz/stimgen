@@ -5,7 +5,9 @@ function calibrate_tones(obj, freqs, repeatCount, options)
 % calibrate_tones(obj, freqs, repeatCount, Name=Value)
 %
 % Sweep across frequencies and build the tone calibration LUT.
-% Aborts and clears any prior tone data on error.
+% An abort (error or cancel) leaves any prior tone table untouched. A
+% successful run replaces it and drops what was derived from it (see
+% drop_stale_dependents_).
 %
 % The sweep is pregenerated as one train of gated tone bursts separated by
 % silence and played with a single play_and_record per repeat, instead of one
@@ -219,11 +221,9 @@ try
         tone_data.voltage(i)     = volt;
     end
 catch ME
-    % Abort: do not persist partial data.
-    if isstruct(obj.CalibrationData)
-        obj.CalibrationData = stimgen.calibration.Engine.rmfield_safe_(obj.CalibrationData, 'tone');
-    end
-    stimgen.util.vprintf(0, 2, 'Tone calibration aborted: %s', ME.message);
+    % Abort: discard this run's partial data. Nothing above writes
+    % CalibrationData, so the table from before the run stays as it was.
+    stimgen.util.vprintf(0, 2, 'Tone calibration aborted; any previous tone table is unchanged: %s', ME.message);
     rethrow(ME);
 end
 
@@ -271,6 +271,7 @@ cd_out.tone = struct( ...
         'h3_db', toneH3(:), ...
         'repeatability', toneRepeatability, ...
         'clipping_headroom', toneHeadroom));
+cd_out = obj.drop_stale_dependents_(cd_out, "tone");
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
 

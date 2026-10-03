@@ -4,7 +4,9 @@ function calibrate_clicks(obj, durs, repeatCount)
 % calibrate_clicks(obj, durs, repeatCount)
 %
 % Sweep across click durations and build the click calibration LUT.
-% Aborts and clears any prior click data on error.
+% An abort (error or cancel) leaves any prior click table untouched. A
+% successful run replaces it and drops what was derived from it (see
+% drop_stale_dependents_).
 %
 % Durations shorter than one sample at the current Fs cannot be rendered, so
 % they are dropped with a message rather than aborting the sweep partway
@@ -127,10 +129,9 @@ try
         click_data.voltage(i)     = volt;
     end
 catch ME
-    if isstruct(obj.CalibrationData)
-        obj.CalibrationData = stimgen.calibration.Engine.rmfield_safe_(obj.CalibrationData, 'click');
-    end
-    stimgen.util.vprintf(0, 2, 'Click calibration aborted: %s', ME.message);
+    % Abort: discard this run's partial data. Nothing above writes
+    % CalibrationData, so the table from before the run stays as it was.
+    stimgen.util.vprintf(0, 2, 'Click calibration aborted; any previous click table is unchanged: %s', ME.message);
     rethrow(ME);
 end
 
@@ -155,6 +156,7 @@ cd_out.click = struct( ...
         'h3_db', nan(size(clickThd(:))), ...
         'repeatability', clickRepeatability, ...
         'clipping_headroom', clickHeadroom));
+cd_out = obj.drop_stale_dependents_(cd_out, "click");
 obj.CalibrationData = cd_out;
 obj.CalibrationTimestamp = datetime('now');
 

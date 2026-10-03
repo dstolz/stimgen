@@ -276,16 +276,20 @@ subclass constant.
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
 
 **Serialization.** `toStruct`/`fromStruct` persist only the properties listed in the instance's
-`UserProperties` string array, plus the core base-class set. A subclass property missing from
-`UserProperties` will not survive a save/load round-trip.
+`UserProperties` string array, plus the core base-class set `StimType.CoreProperties` (one
+constant read by both). A subclass property missing from `UserProperties` will not survive a
+save/load round-trip. `StimType.fromStruct` is the only stimulus restore path — `load_bank`,
+`duplicate_stim` (which passes the source's calibration as the optional second argument) and
+`SpotCheck` all call it. Calibration likewise has one field list, `Engine.to_struct`, written by
+`Engine.save` and `StimCalibration.toStruct`/`saveobj`, and one reader, `Engine.restore`, used by
+`Engine.load` and `StimCalibration.loadobj`.
 
-**Restoring holds calibration off until the stimulus is whole.** Both restore paths —
-`StimType.fromStruct` and `StimPlayer.load_bank` — set `ApplyCalibration` false first and assign
-the saved value **last**, after the serialized calibration is back. Each restored property
-regenerates the signal, and doing that against the default, empty `StimCalibration` logged a
-critical `No calibration data available for stim` about a stimulus that was calibrated — the
-same line an uncalibrated one earns. A new restore path has to bracket its assignments the same
-way.
+**Restoring holds calibration off until the stimulus is whole.** `StimType.fromStruct` sets
+`ApplyCalibration` false first and assigns the saved value **last**, after the serialized
+calibration is back. Each restored property regenerates the signal, and doing that against the
+default, empty `StimCalibration` logged a critical `No calibration data available for stim` about
+a stimulus that was calibrated — the same line an uncalibrated one earns. Route any new restore
+through `fromStruct` rather than writing another.
 
 **Logging.** `stimgen.util.vprintf(level, [red], msg, ...)`, gated by the global `GVerbosity`
 (-1 log-only, 0 critical, 1 info, 2 debug, 3 verbose, 4 trace). With values `msg` is a printf

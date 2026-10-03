@@ -42,7 +42,9 @@ end
 y = obj.Signal;
 
 % --- Filter-based calibration: equalize spectrum + apply level gain ---
-if type == "filter" && isfield(C.CalibrationData,'filter')
+% commit_cal_data_ creates the field as [] before any filter is designed, so
+% an empty one means "tone LUT only" exactly as an absent one does.
+if type == "filter" && isfield(C.CalibrationData,'filter') && ~isempty(C.CalibrationData.filter)
 
     Hd = C.CalibrationData.filter;
 

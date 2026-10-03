@@ -63,11 +63,11 @@ What they buy is the one fact a table cannot be checked against later — the kn
 - `compute_adjusted_voltage(...)` — proxy to the Engine; called by `stimgen.StimType.apply_calibration()` to convert a requested dB SPL level into an output voltage.
 - `design_filter(...)` / `filter_level_reference(...)` / `test_filter(...)` / `test_tones(...)` / `test_clicks(...)` — proxies to `Engine.design_filter`, `Engine.filter_level_reference`, `Engine.test_filter`, `Engine.test_tones` and `Engine.test_clicks`, arguments and all.
 - `load_calibration(filename)` / `save_calibration(filename)` — read/write `.esgc` files. Called with no argument, each prompts for a file. `load_calibration` replaces the `Engine` outright.
-- `toStruct()` / `saveobj()` / `loadobj(s)` — serialization. `loadobj` rebuilds an offline instance and repopulates it through `Engine.restore(s)`.
+- `toStruct()` / `saveobj()` / `loadobj(s)` — serialization. `saveobj` returns `toStruct`, whose engine fields are `Engine.to_struct` — the same list a `.esgc` file holds. `loadobj` rebuilds an offline instance and repopulates it through `Engine.restore(s)`.
 
 ### Restoring engine state
 
-The `Engine` measurement properties are `SetAccess = protected`, so `StimCalibration` cannot assign them directly. `stimgen.calibration.Engine.restore(s)` is the supported entry point, used by `loadobj` whenever a calibration is rebuilt from a serialized `StimType` or a `.spl` bank. It accepts either field naming in circulation — `ExcitationVoltage` (`.esgc` / `Engine.save`) or `ExcitationSignalVoltage` (`StimCalibration.toStruct`) — and leaves any missing field at its current value, so partial structs from older files are safe.
+The `Engine` measurement properties are `SetAccess = protected`, so `StimCalibration` cannot assign them directly. `stimgen.calibration.Engine.restore(s)` is the supported entry point, used by `loadobj` whenever a calibration is rebuilt from a serialized `StimType` or a `.spl` bank. `Engine.load` reads a `.esgc` through it too, so there is one restore path for both. It accepts either field naming in circulation — `ExcitationVoltage` (`Engine.to_struct`, which both `.esgc` files and `StimCalibration.toStruct` now use) or `ExcitationSignalVoltage` (`StimCalibration` structs written before that; still written alongside for older readers) — and leaves any missing field at its current value, so partial structs from older files are safe.
 
 ## Attaching calibration to stimuli
 

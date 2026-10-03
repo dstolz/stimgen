@@ -92,25 +92,24 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
         function S = toStruct(obj)
             % S = toStruct(obj)
             % Serialize to a plain struct for protocol persistence.
-            S                         = struct;
-            S.Class                   = "stimgen.StimCalibration";
-            % Same schema version as a .esgc, and for the same reason: a
-            % calibration carried into a .spl bank or a protocol file has to
-            % say which level scale its tables were built on. Version 2 is the
-            % 20 uPa-only scale; see stimgen.calibration.Engine.volts_to_spl.
-            S.version                 = 2;
-            S.CalibrationData         = obj.CalibrationData;
-            S.MicSensitivity          = obj.MicSensitivity;
-            S.NormativeValue          = obj.NormativeValue;
-            S.ReferenceLevel          = obj.ReferenceLevel;
-            S.ReferenceFrequency      = obj.ReferenceFrequency;
-            S.ExcitationSignalVoltage = obj.ExcitationSignalVoltage;
-            S.ToneLutSource           = obj.ToneLutSource;
-        S.AdcGain                 = obj.AdcGain;
-        S.DacAttenuation          = obj.DacAttenuation;
-            S.Notes                   = obj.Notes;
-            S.CalibrationTimestamp    = obj.CalibrationTimestamp;
-            S.Fs                      = obj.Fs;
+            %
+            % The engine fields are Engine.to_struct, the same list a .esgc
+            % holds, so a calibration carried into a .spl bank or a protocol
+            % file keeps everything the file would -- ToneLutSource, which
+            % decides which table serves tone lookups, among them -- and its
+            % schema version (2: the 20 uPa-only level scale; see
+            % stimgen.calibration.Engine.volts_to_spl). Engine.restore reads
+            % it back.
+            S = struct('Class', "stimgen.StimCalibration");
+            e = obj.Engine.to_struct();
+            fn = fieldnames(e);
+            for k = 1:numel(fn)
+                S.(fn{k}) = e.(fn{k});
+            end
+            % The name this struct used before it shared Engine.to_struct;
+            % kept for readers that predate the change.
+            S.ExcitationSignalVoltage = e.ExcitationVoltage;
+            S.Fs = obj.Fs;
         end
 
         % ---------------------------------------------------------- %
@@ -278,18 +277,9 @@ classdef StimCalibration < handle & matlab.mixin.SetGet
     % ------------------------------------------------------------------ %
     methods
         function s = saveobj(obj)
-            % Serialize for MATLAB session saves.
-            s.version                = 2;   % see toStruct
-            s.CalibrationData        = obj.Engine.CalibrationData;
-            s.MicSensitivity         = obj.Engine.MicSensitivity;
-            s.NormativeValue         = obj.Engine.NormativeValue;
-            s.ReferenceLevel         = obj.Engine.ReferenceLevel;
-            s.ReferenceFrequency     = obj.Engine.ReferenceFrequency;
-            s.ExcitationSignalVoltage = obj.Engine.ExcitationVoltage;
-            s.AdcGain                = obj.Engine.AdcGain;
-            s.DacAttenuation         = obj.Engine.DacAttenuation;
-            s.Notes                  = obj.Engine.Notes;
-            s.CalibrationTimestamp   = obj.Engine.CalibrationTimestamp;
+            % Serialize for MATLAB session saves: the same struct as
+            % toStruct, so a session save and a bank carry one field list.
+            s = obj.toStruct();
         end
     end
 

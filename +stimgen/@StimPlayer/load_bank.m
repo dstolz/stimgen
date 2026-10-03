@@ -29,63 +29,10 @@ try
     for k = 1:bank.NItems
         S = bank.Items{k};
 
-        % Reconstruct the StimType object from its serialized struct.
-        % toStruct writes the fully-qualified name ("stimgen.Tone"), so strip
-        % any package prefix before the dynamic package-scoped call.
-        stimClass = char(S.StimObj.Class);
-        dotIdx = find(stimClass == '.', 1, 'last');
-        if ~isempty(dotIdx)
-            stimClass = stimClass(dotIdx+1:end);
-        end
-        stimObj   = stimgen.(stimClass)();
-
-        % Calibration is held off until the item is whole, then switched to
-        % the saved setting. Each assignment below regenerates the signal,
-        % and before the item's calibration is back that is against an empty
-        % one -- which logged a critical "No calibration data available for
-        % stim" while loading a bank that was calibrated. See
-        % stimgen.StimType.fromStruct, which restores the same way.
-        applyCal = stimObj.ApplyCalibration;    % class default, if unsaved
-        if isfield(S.StimObj, 'ApplyCalibration')
-            applyCal = S.StimObj.ApplyCalibration;
-        end
-        stimObj.ApplyCalibration = false;
-
-        % Restore base StimType properties
-        baseProps = {'SoundLevel','Duration','WindowDuration','WindowFcn', ...
-                     'ApplyWindow','Fs', ...
-                     'VariantSelectionMode','VariantCombinationMode', ...
-                     'VariantSelectorClass','VariantSelectorConfig', ...
-                     'VariantReselectOnUpdate'};
-        for j = 1:numel(baseProps)
-            p = baseProps{j};
-            if isfield(S.StimObj, p)
-                stimObj.(p) = S.StimObj.(p);
-            end
-        end
-
-        % Restore subclass-specific (UserProperties)
-        if isfield(S.StimObj, 'UserProperties')
-            for j = 1:numel(S.StimObj.UserProperties)
-                p = char(S.StimObj.UserProperties(j));
-                if strcmp(p, 'ApplyCalibration'), continue; end   % restored last
-                if isfield(S.StimObj, p)
-                    stimObj.(p) = S.StimObj.(p);
-                end
-            end
-        end
-
-        if isfield(S.StimObj, 'Calibration')
-            calData = S.StimObj.Calibration;
-            if isa(calData, 'stimgen.StimCalibration')
-                stimObj.Calibration = calData;
-            elseif isstruct(calData)
-                stimObj.Calibration = stimgen.StimCalibration.loadobj(calData);
-            end
-        end
-
-        % Last: the one regeneration made with everything in place.
-        stimObj.ApplyCalibration = applyCal;
+        % Reconstruct the StimType object through the one restore path, so
+        % a bank item comes back with exactly what toStruct wrote. fromStruct
+        % holds calibration off until the item is whole.
+        stimObj = stimgen.StimType.fromStruct(S.StimObj);
 
         sp      = stimgen.StimPlay(stimObj);
         sp.Reps = S.Reps;
