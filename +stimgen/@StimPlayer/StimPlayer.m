@@ -61,7 +61,7 @@ classdef StimPlayer < handle
         duplicate_stim(obj, src, event)
         remove_stim(obj, src, event)
         on_bank_selection_changed(obj, src, event)
-        update_signal_plot(obj)
+        update_signal_plot(obj, stimObj, label)
         playback_control(obj, src, event)
         timer_startfcn(obj, src, event)
         timer_runtimefcn(obj, src, event)

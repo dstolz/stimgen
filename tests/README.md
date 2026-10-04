@@ -42,7 +42,7 @@ every pull request, through `matlab-actions/setup-matlab` and
 | File | Covers |
 | --- | --- |
 | `AcousticsTest.m` | `weighting_db` against IEC 61672-1, `volts_to_spl`/`spl_to_pressure`, `sound_levels` of a 1 Pa sine (93.98 dB SPL), `band_levels` on a flat PSD |
-| `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection |
+| `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection, a pinned `copy()` (Play All, CombinationViewer, capture) leaving its source's combination and selection order alone |
 | `LoggingTest.m` | `vprintf` through a `stimgen.FcnLogSink`: raw messages, the red flag, literal text, the sink's gate, uninstalling |
 | `TooltipCatalogTest.m` | every `propMeta` entry has a tooltip; every literal key passed to `stimgen.util.tooltip` resolves in `tooltips.json` |
 | `LevelConventionTest.m` | a LUT voltage is a sine's peak: every rms-normalized stimulus carries a tone's rms at the same `SoundLevel` (flat table, offline), `filter_level_reference` agrees with `apply_calibration`, and on the simulated rig a Tone, an rms- and a peak-referenced `SoundFile` of the same sine and a narrow noise band all measure at their requested level the way SpotCheck measures |
