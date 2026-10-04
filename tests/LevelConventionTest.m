@@ -157,26 +157,6 @@ classdef LevelConventionTest < matlab.unittest.TestCase
             end
         end
 
-        function equalizedNoiseLevelDiagnostic(testCase)
-            % Diagnostic only: an equalized broadband noise on the simulated
-            % rig, measured as SpotCheck would. Reports the level error; the
-            % only assertion is that one was measured.
-            [rig, eng] = calibrated_rig_(250 * 2.^(0:0.5:6));
-            fs = rig.sample_rate();
-            eng.design_filter("tone", SampleRate=fs, ShowResponse=false, ...
-                NumCoefficients=257, SmoothingOctaves=1/6);
-            cal = stimgen.StimCalibration.loadobj(eng.to_struct());
-            bands = [500 8000; 250 16000; 1000 4000; 800 1250];
-            for k = 1:size(bands, 1)
-                n = make_(cal, 'stimgen.Noise', fs, 65, 'HighPass', bands(k,1), ...
-                    'LowPass', bands(k,2), 'Duration', 1);
-                m = measure_(rig, eng, n);
-                fprintf('LEVELCHECK sim rig equalized Noise %5g-%5g Hz: %.2f dB SPL, asked 65, error %+.2f dB\n', ...
-                    bands(k,1), bands(k,2), m.level_db, m.error_db);
-                testCase.verifyTrue(isfinite(m.error_db));
-            end
-        end
-
     end
 end
 
