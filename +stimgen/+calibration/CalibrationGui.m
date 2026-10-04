@@ -233,11 +233,12 @@ classdef CalibrationGui < handle
         LevelRefLabel
         ConductionDelayLabel
 
-        % Hardware & Analysis Settings window (Options menu). Created on
-        % demand, so these handles are empty until it is first opened and
-        % dead once it is closed -- everything that writes them guards on
-        % validity. The settings themselves live on the Engine; the window is
-        % only a view of them.
+        % Hardware & Analysis Settings window (Options menu): a
+        % stimgen.calibration.SettingsDialog made with this object, whose
+        % figure is built on demand. The field handles below are empty until
+        % it is first opened and dead once it is closed -- everything that
+        % writes them guards on the dialog being open. The settings
+        % themselves live on the Engine; the window is only a view of them.
         HardwareDialog_
         MaxOutputField
         AcCoupleCheck
@@ -355,6 +356,7 @@ classdef CalibrationGui < handle
             obj.Engine = eng;
             obj.Host   = host;
 
+            obj.create_settings_dialogs_();
             obj.build_ui_();
             obj.restore_settings_prefs_();
             obj.bind_engine_listeners_();
@@ -743,34 +745,45 @@ classdef CalibrationGui < handle
                 'BtnDelay', @(~,~) obj.on_measure_delay_());
         end
 
+        function create_settings_dialogs_(obj)
+            % The three Options windows. Each is a stimgen.calibration.
+            % SettingsDialog: built on demand from the build_*_dialog_ rows
+            % below, raised rather than duplicated when reopened, kept in
+            % step with the engine by its sync_*_dialog_, and closed with
+            % this window. Sizes and offsets place each over the controls
+            % column, below the top of the main window.
+            obj.HardwareDialog_ = stimgen.calibration.SettingsDialog( ...
+                "Hardware and Analysis Settings", [400 334], [40 426], ...
+                {24 24 24 12 20 24 24 12 20 24 24 26}, ...
+                @(g) obj.build_hardware_dialog_(g), @() obj.sync_hardware_dialog_());
+            % The delay window's fifth row is its wrapped hint, with a line's
+            % slack over what the text needs at the default font, since a rig
+            % running a larger system font wraps it further.
+            obj.DelayDialog_ = stimgen.calibration.SettingsDialog( ...
+                "Conduction Delay Settings", [420 242], [70 360], ...
+                {24 24 8 24 76 26}, ...
+                @(g) obj.build_delay_dialog_(g), @() obj.sync_delay_dialog_());
+            obj.ExcitationDialog_ = stimgen.calibration.SettingsDialog( ...
+                "Excitation Settings", [380 102], [55 184], ...
+                {24 24 26}, ...
+                @(g) obj.build_excitation_dialog_(g), @() obj.sync_excitation_dialog_());
+        end
+
         function on_hardware_settings_(obj)
             % Open (or refocus) the Hardware and Analysis Settings window: the
             % facts the adapter reports, the settings that describe the signal
             % path it acquires through, and how the acquired record is
             % transformed to a spectrum. Modal, like the other two settings
-            % windows -- see modal_settings_figure_. The conduction delay is
-            % not here: it is measured per acquisition rather than set once
-            % per rig, so it lives in the column footer where it stays visible
-            % while a sweep runs.
-            if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
-                figure(obj.HardwareDialog_);
-                return
-            end
+            % windows -- see stimgen.calibration.SettingsDialog. The
+            % conduction delay is not here: it is measured per acquisition
+            % rather than set once per rig, so it lives in the column footer
+            % where it stays visible while a sweep runs.
+            obj.HardwareDialog_.open(obj.Figure);
+        end
 
-            pos = obj.Figure.Position;
-            obj.HardwareDialog_ = modal_settings_figure_( ...
-                'Hardware and Analysis Settings', ...
-                [pos(1)+40 pos(2)+pos(4)-426 400 334]);
-
-            g = uigridlayout(obj.HardwareDialog_, [12 2]);
-            g.RowHeight = {24 24 24 12 20 24 24 12 20 24 24 26};
-            % Same split as the controls column's sections: captions carry
-            % the units, the fields hold a few digits.
-            g.ColumnWidth = {'1.3x', '1x'};
-            g.Padding = [8 8 8 8];
-            g.RowSpacing = 4;
-            g.ColumnSpacing = 8;
-
+        function build_hardware_dialog_(obj, g)
+            % Rows of the Hardware and Analysis Settings window (see
+            % create_settings_dialogs_); SettingsDialog adds the Close row.
             obj.SampleRateLabel = readout_row_(g, 1, 'Sample Rate', 'No adapter', '');
 
             obj.MaxOutputField = numeric_row_(g, 2, 'Max Output Voltage (V)', ...
@@ -829,9 +842,6 @@ classdef CalibrationGui < handle
             obj.SpectralWindowDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
             obj.SpectralFftDrop.ValueChangedFcn = @(~,~) obj.on_spectral_setting_changed_();
 
-            close_row_(obj.HardwareDialog_, g, 12);
-
-            obj.sync_hardware_dialog_();
             obj.refresh_sample_rate_label_();
         end
 
@@ -878,7 +888,7 @@ classdef CalibrationGui < handle
             % The engine owns these settings; the window, when open, is only
             % a view of them. Called wherever the engine may have changed
             % under the window -- construction, load, engine swap.
-            if isempty(obj.HardwareDialog_) || ~isvalid(obj.HardwareDialog_)
+            if isempty(obj.HardwareDialog_) || ~obj.HardwareDialog_.isOpen()
                 return
             end
             obj.MaxOutputField.Value = obj.Engine.MaxOutputVoltage;
@@ -902,26 +912,12 @@ classdef CalibrationGui < handle
             % probe is also the one measurement worth repeating back to back --
             % move the microphone, measure again -- which a prompt in front of
             % it made three actions instead of one.
-            if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
-                figure(obj.DelayDialog_);
-                return
-            end
+            obj.DelayDialog_.open(obj.Figure);
+        end
 
-            pos = obj.Figure.Position;
-            obj.DelayDialog_ = modal_settings_figure_( ...
-                'Conduction Delay Settings', ...
-                [pos(1)+70 pos(2)+pos(4)-360 420 242]);
-
-            g = uigridlayout(obj.DelayDialog_, [6 2]);
-            % The last row is the wrapped hint; it gets a line's slack over
-            % what the text needs at the default font, since a rig running a
-            % larger system font wraps it further.
-            g.RowHeight = {24 24 8 24 76 26};
-            g.ColumnWidth = {'1.3x', '1x'};
-            g.Padding = [8 8 8 8];
-            g.RowSpacing = 4;
-            g.ColumnSpacing = 8;
-
+        function build_delay_dialog_(obj, g)
+            % Rows of the Conduction Delay Settings window (see
+            % create_settings_dialogs_); SettingsDialog adds the Close row.
             obj.DelayMaxField = numeric_row_(g, 1, 'Largest Delay to Search (ms)', ...
                 [0.01, 10000], '%.1f', ...
                 stimgen.util.tooltip('CalibrationGui', 'DelayMaxDelay'));
@@ -955,10 +951,6 @@ classdef CalibrationGui < handle
             obj.DelayMaxField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
             obj.DelayClicksField.ValueChangedFcn = @(~,~) obj.on_delay_setting_changed_();
             obj.AmbientTempField.ValueChangedFcn = @(~,~) obj.on_ambient_temp_changed_();
-
-            close_row_(obj.DelayDialog_, g, 6);
-
-            obj.sync_delay_dialog_();
         end
 
         function on_delay_setting_changed_(obj)
@@ -985,7 +977,7 @@ classdef CalibrationGui < handle
         function sync_delay_dialog_(obj)
             % Same contract as sync_hardware_dialog_: whoever owns a value
             % writes the field, never the other way round.
-            if isempty(obj.DelayDialog_) || ~isvalid(obj.DelayDialog_)
+            if isempty(obj.DelayDialog_) || ~obj.DelayDialog_.isOpen()
                 return
             end
             obj.DelayMaxField.Value = obj.DelayMaxMs_;
@@ -1003,26 +995,15 @@ classdef CalibrationGui < handle
             % Open (or refocus) the Excitation Settings window: the drive
             % voltage every sweep plays at, and the per-edge rise/fall time
             % every tone burst is gated with. Modal, like the other two
-            % settings windows (see modal_settings_figure_), and pushes to the
-            % engine the moment either field changes -- the window is gone by
-            % the time a sweep can be started.
-            if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
-                figure(obj.ExcitationDialog_);
-                return
-            end
+            % settings windows (see stimgen.calibration.SettingsDialog), and
+            % pushes to the engine the moment either field changes -- the
+            % window is gone by the time a sweep can be started.
+            obj.ExcitationDialog_.open(obj.Figure);
+        end
 
-            pos = obj.Figure.Position;
-            obj.ExcitationDialog_ = modal_settings_figure_( ...
-                'Excitation Settings', ...
-                [pos(1)+55 pos(2)+pos(4)-184 380 102]);
-
-            g = uigridlayout(obj.ExcitationDialog_, [3 2]);
-            g.RowHeight = {24 24 26};
-            g.ColumnWidth = {'1.3x', '1x'};
-            g.Padding = [8 8 8 8];
-            g.RowSpacing = 4;
-            g.ColumnSpacing = 8;
-
+        function build_excitation_dialog_(obj, g)
+            % Rows of the Excitation Settings window (see
+            % create_settings_dialogs_); SettingsDialog adds the Close row.
             obj.ExcitationField = numeric_row_(g, 1, 'Excitation Voltage (V)', ...
                 [eps, 10], '%.3f');
             obj.ToneRampField = numeric_row_(g, 2, 'Tone Rise/Fall Time (ms)', ...
@@ -1031,10 +1012,6 @@ classdef CalibrationGui < handle
 
             obj.ExcitationField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
             obj.ToneRampField.ValueChangedFcn = @(~,~) obj.on_excitation_setting_changed_();
-
-            close_row_(obj.ExcitationDialog_, g, 3);
-
-            obj.sync_excitation_dialog_();
         end
 
         function on_excitation_setting_changed_(obj)
@@ -1052,7 +1029,7 @@ classdef CalibrationGui < handle
         function sync_excitation_dialog_(obj)
             % Same contract as sync_hardware_dialog_: the engine owns these
             % values, the window is only a view of them.
-            if isempty(obj.ExcitationDialog_) || ~isvalid(obj.ExcitationDialog_)
+            if isempty(obj.ExcitationDialog_) || ~obj.ExcitationDialog_.isOpen()
                 return
             end
             obj.ExcitationField.Value = obj.Engine.ExcitationVoltage;
@@ -1656,14 +1633,10 @@ classdef CalibrationGui < handle
             end
             % The settings windows are satellites of this one and have
             % no reason to outlive it.
-            if ~isempty(obj.HardwareDialog_) && isvalid(obj.HardwareDialog_)
-                delete(obj.HardwareDialog_);
-            end
-            if ~isempty(obj.DelayDialog_) && isvalid(obj.DelayDialog_)
-                delete(obj.DelayDialog_);
-            end
-            if ~isempty(obj.ExcitationDialog_) && isvalid(obj.ExcitationDialog_)
-                delete(obj.ExcitationDialog_);
+            for dlg = {obj.HardwareDialog_, obj.DelayDialog_, obj.ExcitationDialog_}
+                if ~isempty(dlg{1}) && isvalid(dlg{1})
+                    dlg{1}.close();
+                end
             end
             delete(fig);
         end
@@ -3669,54 +3642,6 @@ btn = uibutton(g, Text=labelText, ButtonPushedFcn=callback);
 btn.Layout.Row = row;
 btn.Layout.Column = columns;
 btn.Tooltip = stimgen.util.tooltip('CalibrationGui', tooltipKey);
-end
-
-% -------------------------------------------------------------------------
-function fig = modal_settings_figure_(name, position)
-% fig = modal_settings_figure_(name, position)
-% The window every Options settings dialog is built on. Modal: it takes the
-% rig's settings out of the main window's way while they are being read and
-% changed, and there is nothing on the main window worth reaching with one of
-% these open -- each is a handful of fields answered in a moment.
-%
-% Modal does not make the fields pending. They still apply as they are
-% committed (each window's ValueChangedFcn), because the engine, not the
-% window, is what a sweep reads: a value has to be in the engine whether the
-% operator closed this window or MATLAB did.
-%
-% The cost, and the reason the delay window's instruction says to close it
-% first: a modal window blocks the main window, so a measurement cannot be
-% started or watched from behind one.
-fig = uifigure(Name=name, Position=position, Resize='off', WindowStyle='modal');
-end
-
-% -------------------------------------------------------------------------
-function btn = close_row_(fig, g, row)
-% btn = close_row_(fig, g, row)
-% Dismiss button for a settings window, in the field column so it lines up
-% under the fields instead of stretching the width of the window. It only
-% closes: every field on these windows reaches the engine as it is committed,
-% so there is nothing pending to confirm and nothing staged to cancel. It
-% exists because a window with no button at all reads as unfinished -- an
-% operator looks for the one that makes the typed value count -- and because
-% these windows are modal, which makes dismissing one the way back to the
-% rest of the GUI rather than merely tidy.
-btn = uibutton(g, Text='Close', ButtonPushedFcn=@(~,~) delete(fig));
-btn.Layout.Row = row;
-btn.Layout.Column = 2;
-btn.Tooltip = stimgen.util.tooltip('CalibrationGui', 'SettingsClose');
-
-% Escape does the same, which is what a window carrying a single dismiss
-% button invites. Not Return: these windows are numeric edit fields, where
-% Return commits the field being typed in.
-fig.WindowKeyPressFcn = @(~,evt) close_on_escape_(fig, evt);
-end
-
-% -------------------------------------------------------------------------
-function close_on_escape_(fig, evt)
-if strcmp(evt.Key, 'escape')
-    delete(fig)
-end
 end
 
 % -------------------------------------------------------------------------
