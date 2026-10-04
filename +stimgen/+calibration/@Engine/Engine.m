@@ -769,6 +769,12 @@ classdef Engine < handle
     methods (Static)
         [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
         r = spectral_rms(x, freq, fs, options) % Estimate RMS amplitude at a frequency.
+        % Report text for a single measurement, kept next to describe (the
+        % whole calibration in words) rather than in the GUI that shows it.
+        s = background_summary(r) % One-line summary of a measure_background result.
+        s = background_report(r) % Full text of a measure_background result.
+        s = conduction_delay_summary(d) % One-line summary of a measure_conduction_delay result.
+        s = conduction_delay_report(d, maxDelayMs) % Full text of a measure_conduction_delay result.
 
         function spl = volts_to_spl(vrms, micSensitivity)
             % spl = stimgen.calibration.Engine.volts_to_spl(vrms, micSensitivity)

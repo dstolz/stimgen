@@ -234,6 +234,29 @@ classdef CalibrationEngineTest < matlab.unittest.TestCase
             testCase.verifyTrue(found, 'the dropped duplicate was not logged');
         end
 
+        function reportTextForMeasurements(testCase)
+            % The report builders behind CalibrationGui's status line and
+            % result dialogs, run on real results from the simulated rig.
+            rig = SimRigAdapter('CalibratorOn', true);
+            eng = stimgen.calibration.Engine(rig);
+            eng.calibrate_reference();
+            rig.CalibratorOn = false;
+
+            r = eng.measure_background(0.5, 2);
+            s = stimgen.calibration.Engine.background_summary(r);
+            testCase.verifyTrue(startsWith(s, sprintf('Background: %.1f dB SPL', r.spl_db)));
+            s = stimgen.calibration.Engine.background_report(r);
+            testCase.verifyTrue(contains(s, sprintf('Broadband        %.1f dB SPL', r.spl_db)));
+            testCase.verifyTrue(contains(s, 'Across records'));   % two records
+
+            d = eng.measure_conduction_delay(MaxDelay=0.02);
+            testCase.assertTrue(d.valid);
+            s = stimgen.calibration.Engine.conduction_delay_summary(d);
+            testCase.verifyTrue(startsWith(s, sprintf('Conduction delay: %.2f ms', d.delay_s * 1e3)));
+            s = stimgen.calibration.Engine.conduction_delay_report(d, 20);
+            testCase.verifyTrue(contains(s, sprintf('Delay            %.3f ms', d.delay_s * 1e3)));
+        end
+
         function loadRejectsOtherExtensions(testCase)
             tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
             ffn = fullfile(tmp.Folder, 'old.sgc');

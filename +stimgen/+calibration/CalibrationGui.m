@@ -1773,14 +1773,14 @@ classdef CalibrationGui < handle
             obj.set_transfer_view_("background");
 
             hasFindings = ~isempty(r.flags);
-            obj.set_status_(background_summary_(r), hasFindings);
+            obj.set_status_(stimgen.calibration.Engine.background_summary(r), hasFindings);
 
             if hasFindings
                 icon = 'warning';
             else
                 icon = 'info';
             end
-            uialert(obj.Figure, background_report_(r), 'Background Noise', Icon=icon);
+            uialert(obj.Figure, stimgen.calibration.Engine.background_report(r), 'Background Noise', Icon=icon);
         end
 
         function [p, wasCancelled] = prompt_background_parameters_(obj)
@@ -1854,14 +1854,14 @@ classdef CalibrationGui < handle
             obj.set_transfer_view_("latency");
             drawnow;
 
-            obj.set_status_(conduction_delay_summary_(d), ~d.valid);
+            obj.set_status_(stimgen.calibration.Engine.conduction_delay_summary(d), ~d.valid);
 
             if d.valid
                 icon = 'info';
             else
                 icon = 'warning';
             end
-            uialert(obj.Figure, conduction_delay_report_(d, maxDelayMs), ...
+            uialert(obj.Figure, stimgen.calibration.Engine.conduction_delay_report(d, maxDelayMs), ...
                 'Conduction Delay', Icon=icon);
         end
 
@@ -4089,171 +4089,4 @@ if isempty(eng)
     eng = stimgen.calibration.Engine();
 end
 eng = eng(1);
-end
-
-% -------------------------------------------------------------------------
-function s = background_summary_(r)
-% s = background_summary_(r)
-% One-line status-bar summary of a background capture.
-s = sprintf('Background: %.1f dB SPL (%.1f dB(A)), loudest band %.0f Hz at %.1f dB SPL.', ...
-    r.spl_db, r.spl_dba, r.worst_band.frequency, r.worst_band.level_db);
-if ~isempty(r.flags)
-    s = sprintf('%s %d finding(s) -- see the report.', s, numel(r.flags));
-end
-end
-
-% -------------------------------------------------------------------------
-function s = background_report_(r)
-% s = background_report_(r)
-% Full text of a background capture, for the dialog shown after a run.
-%
-% The plots carry the shape of the noise; this carries the numbers that are
-% awkward to read off a curve -- the broadband levels, the quietest and
-% loudest bands, the tonal components and what they line up with, and whatever
-% the analysis flagged as worth acting on.
-lines = {};
-lines{end+1} = sprintf('%g s x %d record(s) at %g Hz, %s', ...
-    round(r.duration_s, 2), r.repeat_count, r.fs, ...
-    char(datetime(r.measuredOn, Format='dd-MMM-yyyy HH:mm')));
-lines{end+1} = '';
-lines{end+1} = sprintf('Broadband        %.1f dB SPL   |   A-weighted  %.1f dB(A)', ...
-    r.spl_db, r.spl_dba);
-lines{end+1} = sprintf('Below normative  %.1f dB (normative %g dB SPL)', ...
-    r.headroom_to_normative_db, r.normative_value_db);
-
-if r.repeat_count > 1
-    lines{end+1} = sprintf('Across records   %.1f dB spread, SD %.2f dB (%s)', ...
-        r.range_db, r.sd_db, steadiness_(r.stable));
-end
-lines{end+1} = sprintf('Input            peak %.4f V, %.1f dB below full scale, crest %.0f dB', ...
-    r.peak_v, r.headroom_db, r.crest_factor_db);
-
-lines{end+1} = '';
-lines{end+1} = sprintf('1/%d-octave bands (%d):', r.bands.fraction, numel(r.bands.frequency));
-if isempty(r.bands.frequency)
-    lines{end+1} = '  none resolvable at this duration and sample rate';
-else
-    [~, iHi] = max(r.bands.level_db);
-    [~, iLo] = min(r.bands.level_db);
-    lines{end+1} = sprintf('  loudest   %6.0f Hz   %.1f dB SPL', ...
-        r.bands.frequency(iHi), r.bands.level_db(iHi));
-    lines{end+1} = sprintf('  quietest  %6.0f Hz   %.1f dB SPL', ...
-        r.bands.frequency(iLo), r.bands.level_db(iLo));
-    lines{end+1} = sprintf('  span      %6.0f-%.0f Hz', ...
-        r.bands.frequency(1), r.bands.frequency(end));
-end
-
-lines{end+1} = '';
-if isempty(r.peaks.frequency)
-    lines{end+1} = sprintf('Tonal components: none more than %g dB above the local floor.', ...
-        r.tonal_prominence_db);
-else
-    lines{end+1} = sprintf('Tonal components (>= %g dB above the local floor):', ...
-        r.tonal_prominence_db);
-    for k = 1:numel(r.peaks.frequency)
-        lines{end+1} = sprintf('  %7.1f Hz   %.1f dB SPL   (+%.0f dB)', ...
-            r.peaks.frequency(k), r.peaks.level_db(k), r.peaks.prominence_db(k));
-    end
-    if isfinite(r.mains.frequency)
-        lines{end+1} = sprintf('  %d of these are %g Hz mains harmonics, %.1f dB SPL combined.', ...
-            r.mains.n_harmonics, r.mains.frequency, r.mains.level_db);
-    end
-end
-
-if ~isempty(r.flags)
-    lines{end+1} = '';
-    lines{end+1} = 'Findings:';
-    for k = 1:numel(r.flags)
-        lines{end+1} = sprintf('  - %s', r.flags(k));
-    end
-end
-
-s = strjoin(string(lines), newline);
-end
-
-% -------------------------------------------------------------------------
-function s = conduction_delay_summary_(d)
-% s = conduction_delay_summary_(d)
-% One-line status-bar summary of a standalone conduction delay probe.
-if d.valid
-    s = sprintf('Conduction delay: %.2f ms (~%.2f m of air at %.1f m/s, %.1f °C).', ...
-        d.delay_s * 1e3, d.path_m, d.speed_of_sound_ms, d.temperature_c);
-else
-    s = 'Conduction delay could not be measured -- see the report.';
-end
-end
-
-% -------------------------------------------------------------------------
-function s = conduction_delay_report_(d, maxDelayMs)
-% s = conduction_delay_report_(d, maxDelayMs)
-% Full text of a standalone conduction delay probe, for the dialog shown
-% after it runs.
-%
-% A failed probe gets more text than a successful one, and deliberately: the
-% reading itself is two numbers, while a failure is only actionable once it
-% says which of the two ways it failed -- nothing came back, or something
-% came back that no delay within the search bound explains.
-lines = {};
-if d.valid
-    lines{end+1} = sprintf('Delay            %.3f ms   (%d samples at %.10g Hz)', ...
-        d.delay_s * 1e3, d.delay_samples, d.fs);
-    lines{end+1} = sprintf('Equivalent path  %.3f m of air at %.1f m/s (%.1f °C)', ...
-        d.path_m, d.speed_of_sound_ms, d.temperature_c);
-    lines{end+1} = '';
-    lines{end+1} = ['The path is an upper bound on the speaker-to-microphone distance, ' ...
-        'not a measurement of it: the converters'' round-trip latency is inside the ' ...
-        'delay and cannot be told apart from time of flight. A path well above the ' ...
-        'actual distance means that latency dominates, which is normal for some ' ...
-        'devices but worth knowing.'];
-    lines{end+1} = '';
-    lines{end+1} = ['The distance is only as good as the temperature it was ' ...
-        'converted at: the speed of sound moves about 0.6 m/s per °C, so a ' ...
-        'room 6 °C off the Ambient Temperature setting puts a 1% error on ' ...
-        'the path. The delay itself does not depend on it.'];
-elseif d.peak_v <= 10 * max(d.noise_v, eps)
-    lines{end+1} = 'No click response.';
-    lines{end+1} = '';
-    lines{end+1} = ['The record holds nothing standing above its own noise, so there ' ...
-        'is no response to time. Check that the speaker is driven and the ' ...
-        'microphone is connected and powered, then raise Excitation Voltage if ' ...
-        'the rig is simply quiet.'];
-else
-    lines{end+1} = sprintf('Response found, but no delay within %.1f ms explains it.', ...
-        maxDelayMs);
-    lines{end+1} = '';
-    lines{end+1} = ['Something came back and it is well above the noise, but no lag ' ...
-        'inside the search bound puts the click where the response actually sits. ' ...
-        'The true delay is probably larger than the bound: raise the largest delay ' ...
-        'to search and measure again.'];
-end
-
-% The evidence, on both paths: a valid reading is only as good as the
-% response it was read from, and an invalid one is diagnosed from the same
-% two numbers.
-lines{end+1} = '';
-lines{end+1} = sprintf('Click response   %.5f V peak over %.5f V noise', ...
-    d.peak_v, d.noise_v);
-lines{end+1} = sprintf('Correlation      %.3f at the chosen lag', d.corr);
-if d.at_bound
-    lines{end+1} = sprintf('                 correlation peaked on the %.1f ms bound', ...
-        maxDelayMs);
-end
-lines{end+1} = sprintf('Measured         %s', ...
-    char(datetime(d.measuredOn, Format='dd-MMM-yyyy HH:mm:ss')));
-
-lines{end+1} = '';
-lines{end+1} = ['This probe stands on its own and nothing consumes it: a tone ' ...
-    'calibration or tone table test measures its own delay per acquisition, ' ...
-    'because the latency need not repeat between records of different lengths.'];
-
-s = strjoin(string(lines), newline);
-end
-
-% -------------------------------------------------------------------------
-function s = steadiness_(tf)
-if tf
-    s = 'steady';
-else
-    s = 'not steady';
-end
 end
