@@ -271,42 +271,69 @@ end
 
 function t = answer_dialog_(testCase, title, texts)
 % Answer the next parameter window called title: fill its text fields, in
-% the order given, then press OK. If OK does not close it (a value refused)
-% the next tick presses Cancel instead, so a test can never hang on it; the
-% timer's UserData says which happened.
+% the order given, then press OK. The window is left one tick after it
+% appears before OK is pressed, so the dialog is waiting by then; if OK
+% still leaves it open, an accepted value is resumed again and a refused
+% one (or a window that will not go) is cancelled, so a test can never hang
+% on it. The timer's UserData says which happened.
 t = timer('ExecutionMode', 'fixedSpacing', 'Period', 0.25, 'TasksToExecute', 240, ...
-    'UserData', "waiting", 'TimerFcn', @(tm, ~) answer_tick_(tm, title, texts));
+    'UserData', struct('state', "waiting", 'tries', 0), ...
+    'TimerFcn', @(tm, ~) answer_tick_(tm, title, texts));
 testCase.addTeardown(@() stop_and_delete_(t));
 start(t);
 end
 
 
 function answer_tick_(tm, title, texts)
+u = tm.UserData;
 f = findall(groot, 'Type', 'figure', 'Name', title);
 if isempty(f)
+    if u.state == "answered"
+        u.state = "done";
+        tm.UserData = u;
+        stop(tm);
+    end
     return
 end
 f = f(1);
-if tm.UserData == "waiting"
-    edits = findall(f, 'Type', 'uieditfield');
-    edits = flip(edits(:).');          % creation order
-    for k = 1:min(numel(texts), numel(edits))
-        edits(k).Value = texts{k};
-    end
-    ok = findall(f, 'Type', 'uibutton', 'Text', 'OK');
-    tm.UserData = "answered";
-    feval(ok(1).ButtonPushedFcn, ok(1), []);
-else
-    msg = findall(f, 'Type', 'uilabel');
-    tm.UserData = "refused: " + strjoin(string({msg.Text}), ' | ');
-    cancel = findall(f, 'Type', 'uibutton', 'Text', 'Cancel');
-    feval(cancel(1).ButtonPushedFcn, cancel(1), []);
+switch u.state
+    case "waiting"
+        u.state = "seen";                % let the dialog reach uiwait
+    case "seen"
+        edits = findall(f, 'Type', 'uieditfield');
+        edits = flip(edits(:).');        % creation order
+        for k = 1:min(numel(texts), numel(edits))
+            edits(k).Value = texts{k};
+        end
+        ok = findall(f, 'Type', 'uibutton', 'Text', 'OK');
+        u.state = "answered";
+        tm.UserData = u;
+        feval(ok(1).ButtonPushedFcn, ok(1), []);
+        return
+    case "answered"
+        u.tries = u.tries + 1;
+        accepted = isstruct(f.UserData) && isfield(f.UserData, 'ok') && f.UserData.ok;
+        if accepted && u.tries < 8
+            uiresume(f);                 % accepted before the wait began
+        else
+            msg = findall(f, 'Type', 'uilabel');
+            u.state = "refused: " + strjoin(string({msg.Text}), ' | ');
+            tm.UserData = u;
+            cancel = findall(f, 'Type', 'uibutton', 'Text', 'Cancel');
+            feval(cancel(1).ButtonPushedFcn, cancel(1), []);
+            return
+        end
 end
+tm.UserData = u;
 end
 
 
 function verify_answered_(testCase, t)
-testCase.verifyEqual(t.UserData, "answered", 'the parameter window was not accepted');
+% The action has returned, so an accepted window is gone: "answered" or
+% "done" both mean it was accepted.
+state = t.UserData.state;
+testCase.verifyTrue(any(state == ["answered", "done"]), ...
+    sprintf('the parameter window was not accepted (%s)', state));
 stop_and_delete_(t);
 end
 
