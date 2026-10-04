@@ -25,7 +25,7 @@ row.Padding = [0 0 0 0];
 row.ColumnSpacing = 8;
 
 obj.BtnTones = action_button_(row, 1, 1, 'Calibrate Tones', ...
-    'BtnTones', @(~,~) obj.on_calibrate_tones_());
+    'BtnTones', @(~,~) obj.on_calibrate_lut_("tone"));
 
 % Follows each tone or click sweep with Engine.refine_tones/
 % refine_clicks: the finished table is tested at its own points
@@ -38,7 +38,7 @@ obj.IterativeCheck.Layout.Row = 1;
 obj.IterativeCheck.Layout.Column = 2;
 
 obj.BtnClicks = action_button_(g, 3, 1, 'Calibrate Clicks', ...
-    'BtnClicks', @(~,~) obj.on_calibrate_clicks_());
+    'BtnClicks', @(~,~) obj.on_calibrate_lut_("click"));
 obj.BtnSweptSine = action_button_(g, 3, 2, 'Calibrate Swept Sine', ...
     'BtnSweptSine', @(~,~) obj.on_calibrate_swept_sine_());
 

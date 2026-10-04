@@ -186,15 +186,56 @@ classdef GuiSmokeTest < matlab.unittest.TestCase
         end
 
         function calibrationGuiLive(testCase)
+            % The measurement buttons on a live engine with the simulated rig,
+            % each parameter window answered by a timer the way an operator
+            % would answer it. with_busy_state_ reports a failure in the
+            % window rather than throwing, so each step is checked by what it
+            % left in the engine.
             if ~testCase.GuiOk
                 fprintf('GUISMOKE skipped calibrationGuiLive\n');
                 return
             end
-            eng = stimgen.calibration.Engine(SimRigAdapter());
+            rig = SimRigAdapter('CalibratorOn', true);
+            eng = stimgen.calibration.Engine(rig);
+            eng.calibrate_reference();
+            rig.CalibratorOn = false;
+
             g = stimgen.calibration.CalibrationGui(eng);
             testCase.addTeardown(@() delete_if_valid_(g));
-            g.set_adapter(SimRigAdapter());
             g.show();
+
+            t = answer_dialog_(testCase, 'Measure Background', {});
+            press_(testCase, 'Measure Background');
+            verify_answered_(testCase, t);
+            testCase.verifyTrue(isfield(eng.CalibrationData, 'background'));
+
+            press_(testCase, 'Measure Conduction Delay');   % no parameter window
+            testCase.verifyTrue(eng.ConductionDelay.valid);
+
+            t = answer_dialog_(testCase, 'Tone Calibration', {'500 1000 2000 4000'});
+            press_(testCase, 'Calibrate Tones');
+            verify_answered_(testCase, t);
+            testCase.assertTrue(isfield(eng.CalibrationData, 'tone'));
+            testCase.verifyEqual(eng.CalibrationData.tone.frequency, [500; 1000; 2000; 4000]);
+
+            t = answer_dialog_(testCase, 'Test Tone Lookup Table', {});
+            press_(testCase, 'Test Tones');
+            verify_answered_(testCase, t);
+            testCase.verifyTrue(isfield(eng.CalibrationData, 'toneTest'));
+
+            % Click durations are typed in ms and reach the engine in s.
+            t = answer_dialog_(testCase, 'Click Calibration', {'0.1 0.2 0.4'});
+            press_(testCase, 'Calibrate Clicks');
+            verify_answered_(testCase, t);
+            testCase.assertTrue(isfield(eng.CalibrationData, 'click'));
+            testCase.verifyEqual(eng.CalibrationData.click.duration, [1e-4; 2e-4; 4e-4], ...
+                'AbsTol', 1e-12);
+
+            t = answer_dialog_(testCase, 'Test Click Lookup Table', {});
+            press_(testCase, 'Test Clicks');
+            verify_answered_(testCase, t);
+            testCase.verifyTrue(isfield(eng.CalibrationData, 'clickTest'));
+
             delete(g);
             testCase.verifyFalse(isvalid(g));
         end
@@ -216,6 +257,65 @@ end
 function m = find_menu_(text)
 items = findall(groot, 'Type', 'uimenu');
 m = items(strcmp(strrep(string({items.Text}), "&", ""), text));
+end
+
+
+function press_(testCase, text)
+% Run a button's callback as a click would.
+items = findall(groot, 'Type', 'uibutton');
+b = items(strcmp(string({items.Text}), text));
+testCase.assertNotEmpty(b, sprintf('no button "%s"', text));
+feval(b(1).ButtonPushedFcn, b(1), []);
+end
+
+
+function t = answer_dialog_(testCase, title, texts)
+% Answer the next parameter window called title: fill its text fields, in
+% the order given, then press OK. If OK does not close it (a value refused)
+% the next tick presses Cancel instead, so a test can never hang on it; the
+% timer's UserData says which happened.
+t = timer('ExecutionMode', 'fixedSpacing', 'Period', 0.25, 'TasksToExecute', 240, ...
+    'UserData', "waiting", 'TimerFcn', @(tm, ~) answer_tick_(tm, title, texts));
+testCase.addTeardown(@() stop_and_delete_(t));
+start(t);
+end
+
+
+function answer_tick_(tm, title, texts)
+f = findall(groot, 'Type', 'figure', 'Name', title);
+if isempty(f)
+    return
+end
+f = f(1);
+if tm.UserData == "waiting"
+    edits = findall(f, 'Type', 'uieditfield');
+    edits = flip(edits(:).');          % creation order
+    for k = 1:min(numel(texts), numel(edits))
+        edits(k).Value = texts{k};
+    end
+    ok = findall(f, 'Type', 'uibutton', 'Text', 'OK');
+    tm.UserData = "answered";
+    feval(ok(1).ButtonPushedFcn, ok(1), []);
+else
+    msg = findall(f, 'Type', 'uilabel');
+    tm.UserData = "refused: " + strjoin(string({msg.Text}), ' | ');
+    cancel = findall(f, 'Type', 'uibutton', 'Text', 'Cancel');
+    feval(cancel(1).ButtonPushedFcn, cancel(1), []);
+end
+end
+
+
+function verify_answered_(testCase, t)
+testCase.verifyEqual(t.UserData, "answered", 'the parameter window was not accepted');
+stop_and_delete_(t);
+end
+
+
+function stop_and_delete_(t)
+if isvalid(t)
+    stop(t);
+    delete(t);
+end
 end
 
 
