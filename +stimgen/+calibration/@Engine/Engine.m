@@ -100,6 +100,19 @@ classdef Engine < handle
         % 114 dB calibrator report every level 20 dB high; see
         % volts_to_spl.
         ReferencePressurePa = 20e-6
+
+        % rms, in volts, of the waveform one volt of LUT voltage stands for.
+        %
+        % Every tone/swept-sine table voltage is the PEAK of a sine:
+        % calibrate_tones plays ExcitationVoltage times a unit-amplitude tone,
+        % measures the rms that comes back, and solves for the drive that
+        % gives the table's normative_db. A Tone scaled to that voltage
+        % (absmax normalization) therefore carries V/sqrt(2) rms. A stimulus
+        % normalized to its rms has to carry the same V/sqrt(2) to play at
+        % the same rms dB SPL; scaling it to V put it 3.01 dB high.
+        % apply_calibration, SoundFile and filter_level_reference all read
+        % this constant; nothing else should restate it.
+        LutRmsPerVolt = 1/sqrt(2)
     end
 
     % --- Persistent calibration parameters ---

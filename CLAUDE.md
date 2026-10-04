@@ -291,6 +291,16 @@ drive by however far the field had moved. `.esgc` schema version 3 marks the fie
 stamps older files' tables with the `NormativeValue` saved beside them. Anything that reads a stored
 voltage must go through the table's value too.
 
+**A LUT voltage is the peak of a sine.** `calibrate_tones` plays `ExcitationVoltage` times a
+unit-amplitude tone and solves for the drive that gives `normative_db`, so a tone/swept-sine table
+voltage `V` is a sine's peak and that sine's rms is `V/sqrt(2)`. A peak-normalized (`absmax`)
+stimulus is scaled to `V`; an rms-normalized one (`Noise`, `AMnoise`, `AttackModNoise`, `TORC`,
+`SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
+`apply_calibration`, `SoundFile.apply_calibration` and `filter_level_reference` read that constant;
+do not restate it. Scaling an rms-normalized waveform to `V` itself played it 3.01 dB high, which is
+what `tests/LevelConventionTest.m` pins down (offline on a flat table, and through the simulated rig
+the way SpotCheck measures).
+
 **A level measured at the peak is labelled dB peSPL.** The click table (and anything
 `level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)
 is built from `max(abs(y))/sqrt(2)`: peak-equivalent SPL, baseline-to-peak. It is not comparable

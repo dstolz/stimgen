@@ -681,8 +681,13 @@ classdef SoundFile < stimgen.StimType
             end
 
             % Equalization changes the overall gain; renormalize before the
-            % level scaling, exactly as the base class does.
+            % level scaling, exactly as the base class does. The LUT voltage
+            % is a sine's peak: a peak-referenced file is scaled to it as it
+            % stands, an rms-referenced one is given that sine's rms.
             y = obj.normalize_(y);
+            if obj.LevelReference == "rms"
+                y = y .* stimgen.calibration.Engine.LutRmsPerVolt;
+            end
 
             v = C.compute_adjusted_voltage("filter", value, level);
 

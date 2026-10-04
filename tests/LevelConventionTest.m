@@ -134,7 +134,10 @@ classdef LevelConventionTest < matlab.unittest.TestCase
                 m = measure_(rig, eng, stims{k});
                 fprintf('LEVELCHECK sim rig %-15s mode %-8s %.2f %s, asked %g, error %+.2f dB\n', ...
                     names(k), m.mode, m.level_db, m.level_unit, level, m.error_db);
-                testCase.verifyLessThan(abs(m.error_db), 0.3, ...
+                % A peak reading picks up the rig's distortion and room on top
+                % of the sine's own peak, so it gets a wider allowance.
+                tol = 0.3 + 0.3 * (names(k) == "SoundFile peak");
+                testCase.verifyLessThan(abs(m.error_db), tol, ...
                     sprintf('%s measured %+.2f dB from its requested level', names(k), m.error_db));
             end
         end
