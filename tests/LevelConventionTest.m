@@ -36,6 +36,14 @@ classdef LevelConventionTest < matlab.unittest.TestCase
         end
     end
 
+    methods (TestMethodSetup)
+        function seed(testCase)
+            previous = rng;
+            testCase.addTeardown(@() rng(previous));
+            rng(20261004, 'twister');
+        end
+    end
+
     % ------------------------------------------------------------------ %
     methods (Test)
 
@@ -127,16 +135,23 @@ classdef LevelConventionTest < matlab.unittest.TestCase
             tone = make_(cal, 'stimgen.Tone', fs, level, 'Frequency', 1000, 'Duration', 0.5);
             sRms = sound_file_(cal, ffn, fs, level, "rms");
             sPk  = sound_file_(cal, ffn, fs, level, "peak");
+            % A noise band narrow enough that the speaker is flat across it:
+            % with no equalizer its level is anchored to the 1 kHz table
+            % point, exactly like the tone.
+            % 4 s, so the estimate of a 210 Hz band's power is good to ~0.1 dB.
+            nb = make_(cal, 'stimgen.Noise', fs, level, 'HighPass', 900, 'LowPass', 1110, ...
+                'Duration', 4);
 
-            stims = {tone, sRms, sPk};
-            names = ["Tone", "SoundFile rms", "SoundFile peak"];
+            stims = {tone, sRms, sPk, nb};
+            names = ["Tone", "SoundFile rms", "SoundFile peak", "Noise 900-1110"];
             for k = 1:numel(stims)
                 m = measure_(rig, eng, stims{k});
                 fprintf('LEVELCHECK sim rig %-15s mode %-8s %.2f %s, asked %g, error %+.2f dB\n', ...
                     names(k), m.mode, m.level_db, m.level_unit, level, m.error_db);
                 % A peak reading picks up the rig's distortion and room on top
                 % of the sine's own peak, so it gets a wider allowance.
-                tol = 0.3 + 0.3 * (names(k) == "SoundFile peak");
+                tol = 0.3 + 0.3 * (names(k) == "SoundFile peak") ...
+                          + 0.2 * startsWith(names(k), "Noise");
                 testCase.verifyLessThan(abs(m.error_db), tol, ...
                     sprintf('%s measured %+.2f dB from its requested level', names(k), m.error_db));
             end

@@ -45,6 +45,8 @@ every pull request, through `matlab-actions/setup-matlab` and
 | `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection |
 | `LoggingTest.m` | `vprintf` through a `stimgen.FcnLogSink`: raw messages, the red flag, literal text, the sink's gate, uninstalling |
 | `TooltipCatalogTest.m` | every `propMeta` entry has a tooltip; every literal key passed to `stimgen.util.tooltip` resolves in `tooltips.json` |
+| `LevelConventionTest.m` | a LUT voltage is a sine's peak: every rms-normalized stimulus carries a tone's rms at the same `SoundLevel` (flat table, offline), `filter_level_reference` agrees with `apply_calibration`, and on the simulated rig a Tone, an rms- and a peak-referenced `SoundFile` of the same sine and a narrow noise band all measure at their requested level the way SpotCheck measures |
+| `NoiseBandTest.m` | `Noise`'s band-pass is -6 dB at each cutoff and `StopbandAttenuation` down beyond the transition, the generated spectrum is band-limited, the record does not fade in, an explicit `FilterOrder` keeps the old Hamming design, bad bands are refused |
 | `CalibrationEngineTest.m` | `calibrate_reference` recovering the simulated 50 mV/Pa microphone, its refusal with no calibrator, `.esgc` save/load; `MicSensitivityKnown`/`known_mic_sensitivity` before and after the reference step and across save/load; tone tables recording `normative_db` and lookups scaling from it rather than the live `NormativeValue`; `restore` stamping unversioned tables; a duplicated sweep frequency being dropped and logged |
 
 Test data is generated into temporary folders and deleted afterwards. A

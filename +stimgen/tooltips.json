@@ -39,9 +39,11 @@
   },
 
   "Noise": {
-    "HighPass": "Lower edge of the noise band in Hz. Must be below Low Pass Fc. Vectorizable.",
-    "LowPass": "Upper edge of the noise band in Hz. Must be above High Pass Fc and below Fs/2. Vectorizable.",
-    "FilterOrder": "Order of the FIR band-pass filter (order + 1 taps). Higher = steeper band edges, longer filter. Scalar only."
+    "HighPass": "Lower edge of the noise band in Hz: the -6 dB point of the band-pass. Must be above 0 and below Low Pass Fc. Vectorizable.",
+    "LowPass": "Upper edge of the noise band in Hz: the -6 dB point of the band-pass. Must be above High Pass Fc and below Fs/2. Vectorizable.",
+    "TransitionWidth": "Width in Hz of the transition band centred on each cutoff; outside it the noise is down by Stopband Attenuation. 0 = a tenth of the narrowest of High Pass Fc, the bandwidth, and Fs/2 - Low Pass Fc. Narrower = sharper edges, longer filter. Scalar only.",
+    "StopbandAttenuation": "Minimum rejection in dB outside the transition bands. Scalar only.",
+    "FilterOrder": "0 (default) designs the filter from Transition Width and Stopband Attenuation. A positive value is used as the FIR order with a Hamming window, as earlier versions did at 40; band edges are then only as sharp as that order allows. Scalar only."
   },
 
   "AMnoise": {
