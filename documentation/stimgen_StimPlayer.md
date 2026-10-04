@@ -78,7 +78,17 @@ If no valid bank entry is available, the plot is cleared to `NaN` data.
 changed" — bank selection, parameter edits, combination stepping and
 `Play All` all pass through it — so it is also where the stimulus inspector
 is refreshed. A new code path that changes what should be on screen should
-call it rather than updating the plot itself.
+call it rather than updating the plot itself. `update_signal_plot(stimObj, label)`
+draws a stimulus that is not a bank item and leaves the inspector alone.
+
+`Play All` plays a `copy()` of the selected bank item, made once with
+`VariantReselectOnUpdate` off and pinned to each combination in turn with
+`set_variant_index` — the way `CombinationViewer` and capture generate — so the
+bank item's active combination, selection order, use counts and `Signal` are
+exactly as they were before the cycle. While it plays, the plot shows the copy
+(titled `name [combo i/n]`) and the combo line reads `Play All: combo i / n`;
+when it ends or is stopped both return to the bank item. The inspector stays on
+the bank item throughout.
 
 ### Stimulus inspector
 

@@ -125,10 +125,18 @@ preview still works. New hardware support means a new `HwAdapter` subclass, neve
 
 ## Conventions that will bite you
 
-**Class-folder layout.** `@StimType/`, `@StimPlayer/`, `@StimCalibration/`, `@Engine/` each hold
-one method per file, declared as signature-only lines in the classdef. When adding a method you
-must add both the file and its declaration. A trailing underscore (`select_variant_index_`,
-`commit_cal_data_`) marks a private/protected helper.
+**Class-folder layout.** `@StimType/`, `@StimPlayer/`, `@StimCalibration/`, `@Engine/` and
+`+calibration/@CalibrationGui/` each hold one method per file, declared as signature-only lines in
+the classdef (only constructors, destructors and property get/set methods stay inline). When adding
+a method you must add both the file and its declaration. A trailing underscore
+(`select_variant_index_`, `commit_cal_data_`) marks a private/protected helper; in `StimPlayer` and
+`CalibrationGui` those are declared in a `methods (Access = private)` block. Local functions in a
+method file share the class's access, so they may call private methods. A utility that needs no
+object goes in the class's `private/` folder (`@CalibrationGui/private/` holds the row builders and
+the parameter-dialog functions). Shared GUI plumbing lives outside both windows:
+`stimgen.util.recent_paths` (Recent submenus) and `stimgen.calibration.SettingsDialog` (the Options
+windows); report text for a measurement lives on `Engine` (`background_report`,
+`conduction_delay_report`) next to `describe`.
 
 **`update_signal` must guard the variant cycle.** Every subclass opens with:
 
@@ -228,7 +236,7 @@ in `propMeta`. Lookup walks the class section then each superclass section, so a
 an inherited entry just by declaring the same key — that is how `ClickTrain.Duration` retitles the
 base-class text without editing `@StimType/propMeta.m`. GUI code with no stimulus object passes a
 section name instead (`stimgen.util.tooltip('StimPlayer','RunBtn')`); `@StimPlayer/create.m`,
-`@StimInspector/build_ui_.m` and `+calibration/CalibrationGui.m` all do
+`@StimInspector/build_ui_.m` and `+calibration/@CalibrationGui/` all do
 this for their own controls and toolbars, as does `@SpotCheck/build_ui_.m`. An unknown key returns `''` and logs a warning rather
 than erroring, so a missing tooltip never blocks a GUI. The file is cached and re-read on change,
 so edits take effect without `clear functions`.
@@ -290,6 +298,16 @@ sweep committed it, and `compute_adjusted_voltage` scales from that via
 drive by however far the field had moved. `.esgc` schema version 3 marks the field; `Engine.restore`
 stamps older files' tables with the `NormativeValue` saved beside them. Anything that reads a stored
 voltage must go through the table's value too.
+
+**A LUT voltage is the peak of a sine.** `calibrate_tones` plays `ExcitationVoltage` times a
+unit-amplitude tone and solves for the drive that gives `normative_db`, so a tone/swept-sine table
+voltage `V` is a sine's peak and that sine's rms is `V/sqrt(2)`. A peak-normalized (`absmax`)
+stimulus is scaled to `V`; an rms-normalized one (`Noise`, `AMnoise`, `AttackModNoise`, `TORC`,
+`SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
+`apply_calibration`, `SoundFile.apply_calibration` and `filter_level_reference` read that constant;
+do not restate it. Scaling an rms-normalized waveform to `V` itself played it 3.01 dB high, which is
+what `tests/LevelConventionTest.m` pins down (offline on a flat table, and through the simulated rig
+the way SpotCheck measures).
 
 **A level measured at the peak is labelled dB peSPL.** The click table (and anything
 `level_request` measures in `"peak"` mode — a click, a `SoundFile` with `LevelReference = "peak"`)

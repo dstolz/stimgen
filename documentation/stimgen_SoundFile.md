@@ -161,7 +161,9 @@ correction would land on the wrong frequencies, invisibly. Redesign with
 `apply_normalization` override:
 
 - `"rms"` (default) — `SoundLevel` means dB SPL re: RMS. Correct for natural sounds, where peak
-  level is a poor description of loudness.
+  level is a poor description of loudness. Calibration gives the file the rms of the sine whose
+  peak the LUT voltage is (`V/√2`), so a file and a `Tone` at the same `SoundLevel` play at the
+  same rms dB SPL.
 - `"peak"` — `SoundLevel` is peak-referenced, matching how `absmax` classes behave.
 
 RMS referencing makes the crest factor the binding constraint on output voltage. The base class only

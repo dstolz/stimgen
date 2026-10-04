@@ -66,6 +66,10 @@ if type == "filter" && isfield(C.CalibrationData,'filter') && ~isempty(C.Calibra
         round(C.CalibrationData.filterGrpDelay));
 end
 
+% A LUT voltage is the peak of the sine that defined the table's level, so a
+% peak-normalized waveform is scaled to it directly and an rms-normalized one
+% is given that sine's rms (Engine.LutRmsPerVolt): both then play at the same
+% rms dB SPL for the same SoundLevel.
 switch obj.Normalization
     case "absmax"
         y = y ./ max(abs(y));
@@ -74,7 +78,7 @@ switch obj.Normalization
     case "min"
         y = y ./ min(y);
     case "rms"
-        y = y ./ sqrt(mean(y.^2));
+        y = y ./ sqrt(mean(y.^2)) .* stimgen.calibration.Engine.LutRmsPerVolt;
 end
 
 % Apply level (scalar) calibration for the filtered waveform

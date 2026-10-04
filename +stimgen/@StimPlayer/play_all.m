@@ -9,6 +9,13 @@ function play_all(obj, src, ~)
 % combination. Hardware playback cannot be cut off mid-waveform, so there
 % Stop takes effect once the current combination finishes.
 %
+% The cycle plays a copy() of the bank item, pinned to each combination in
+% turn with VariantReselectOnUpdate off -- the same way CombinationViewer
+% and capture_stim generate -- so the bank item's active combination, its
+% selection order and use counts, and its Signal are exactly as they were
+% before Play All. The plot and the combo line show the copy while it plays
+% and return to the bank item afterwards.
+%
 % Parameters:
 %   src - Optional button handle used to flash active playback state
 
@@ -66,8 +73,14 @@ if ~isempty(activeBtn)
     activeBtn.BackgroundColor = [0.2 1.0 0.2];
 end
 
+% Copied once with reselection off, so set_variant_index on it generates
+% exactly the combination asked for and touches nothing on the bank item.
+playObj = copy(stimObj);
+playObj.VariantReselectOnUpdate = false;
+label = string(sp.Name);
+
 obj.PlayAllActive_  = true;
-obj.PlayAllStimObj_ = stimObj;
+obj.PlayAllStimObj_ = playObj;
 restoreObj = onCleanup(@() restore_play_all_ui_(obj, activeBtn, prevColor));
 
 try
@@ -81,22 +94,18 @@ try
             break
         end
 
-        stimObj.set_variant_index(comboIdx);
-        obj.refresh_combo_controls_;
-        obj.update_signal_plot;
+        obj.set_computing_(true);
+        computingCleanup = onCleanup(@() obj.set_computing_(false));
+        playObj.set_variant_index(comboIdx);
+        clear computingCleanup;
+
+        show_combo_(obj, playObj, label, comboIdx, numCombos);
         drawnow;
         if ~obj.PlayAllActive_   % stopped, or a Run took over, during drawnow
             break
         end
 
-        if isempty(stimObj.Signal)
-            obj.set_computing_(true);
-            computingCleanup = onCleanup(@() obj.set_computing_(false));
-            stimObj.update_signal;
-            clear computingCleanup;
-        end
-
-        if isempty(stimObj.Signal)
+        if isempty(playObj.Signal)
             error('StimPlayer:EmptySignal', ...
                 'Stimulus combination %d did not produce a signal for preview.', comboIdx);
         end
@@ -105,11 +114,11 @@ try
         if obj.PlaybackOutput == "Hardware"
             stimgen.util.vprintf(1, 'StimPlayer: previewing "%s" combo %d/%d via calibrated hardware...', ...
                 sp.Name, comboIdx, numCombos);
-            obj.play_via_hardware_(stimObj);
+            obj.play_via_hardware_(playObj);
         else
             stimgen.util.vprintf(1, 'StimPlayer: previewing "%s" combo %d/%d via speakers...', ...
                 sp.Name, comboIdx, numCombos);
-            stimObj.play;
+            playObj.play;
         end
 
         if ~obj.PlayAllActive_
@@ -138,8 +147,24 @@ clear restoreObj;
 end
 
 
+function show_combo_(obj, playObj, label, comboIdx, numCombos)
+% The copy on the plot, and which combination of how many it is.
+if numCombos > 1
+    label = label + sprintf(' [combo %d/%d]', comboIdx, numCombos);
+end
+obj.update_signal_plot(playObj, label);
+h = obj.handles;
+if isfield(h, 'ComboStatusLbl') && ~isempty(h.ComboStatusLbl) && isvalid(h.ComboStatusLbl)
+    h.ComboStatusLbl.Text = sprintf('Play All: combo %d / %d', comboIdx, numCombos);
+end
+end
+
+
 function restore_play_all_ui_(obj, activeBtn, prevColor)
 h = obj.handles;
+% Back to the bank item, which Play All left as it was.
+obj.refresh_combo_controls_;
+obj.update_signal_plot;
 % Play comes back through the shared rule, which leaves it off when a run
 % started while this cycle was ending holds the lock, or nothing is selected.
 obj.sync_control_enable_;

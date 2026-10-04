@@ -25,7 +25,10 @@ function r = filter_level_reference(obj, x)
 %                  NormativeValue level: multiply the filtered signal — or,
 %                  equivalently, the taps themselves before loading them —
 %                  by this, and unity hardware gain produces NormativeValue
-%                  dB SPL
+%                  dB SPL. It places the filtered rms at lutVoltage *
+%                  Engine.LutRmsPerVolt, the rms of the sine whose peak the
+%                  LUT voltage is, which is where apply_calibration puts an
+%                  rms-normalized stimulus
 %   unityGainSpl - dB SPL the *unscaled* filtered source produces at unity
 %                  hardware gain (NormativeValue - 20*log10(scale))
 %   filteredRms  - RMS of the filtered source, in volts
@@ -90,9 +93,12 @@ end
 % engine errors when no calibration or no tone/swept-sine LUT exists.
 v0 = obj.compute_adjusted_voltage("filter", nan, obj.NormativeValue);
 
+% v0 is a sine's peak; the rms that plays at NormativeValue is that sine's.
+targetRms = v0 * stimgen.calibration.Engine.LutRmsPerVolt;
+
 r = struct( ...
-    'scale',              v0 / filteredRms, ...
-    'unityGainSpl',       obj.NormativeValue + 20 * log10(filteredRms / v0), ...
+    'scale',              targetRms / filteredRms, ...
+    'unityGainSpl',       obj.NormativeValue + 20 * log10(filteredRms / targetRms), ...
     'filteredRms',        filteredRms, ...
     'lutVoltage',         v0, ...
     'normativeValue',     obj.NormativeValue, ...

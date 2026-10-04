@@ -159,6 +159,32 @@ classdef StimTypeTest < matlab.unittest.TestCase
             testCase.verifyEqual(v4.Frequency, 2000);
         end
 
+        function pinnedCopyLeavesTheSourceAlone(testCase)
+            % How StimPlayer's Play All, CombinationViewer and capture
+            % generate: copy once, reselection off, then set_variant_index on
+            % the copy. The source keeps its combination, its Signal and the
+            % order its next update_signal selects in.
+            t = stimgen.Tone('Fs', 48000, 'ApplyCalibration', false, 'Duration', 0.01, ...
+                'Frequency', [1000 2000 4000]);
+            t.update_signal();                    % combination 1
+            sig = t.Signal;
+
+            c = copy(t);
+            c.VariantReselectOnUpdate = false;
+            for k = 1:3
+                c.set_variant_index(k);
+                testCase.verifyEqual(c.active_variant_values().Frequency, ...
+                    1000 * 2^(k - 1));
+            end
+
+            testCase.verifyTrue(t.VariantReselectOnUpdate);
+            testCase.verifyEqual(t.get_variant_info().ActiveIndex, 1);
+            testCase.verifyEqual(t.active_variant_values().Frequency, 1000);
+            testCase.verifyEqual(t.Signal, sig);
+            t.update_signal();                    % Serial: the next is 2, as before
+            testCase.verifyEqual(t.active_variant_values().Frequency, 2000);
+        end
+
         function activeVariantValuesIsEmptyWithoutVariants(testCase)
             t = stimgen.Tone('Fs', 48000, 'ApplyCalibration', false, 'Duration', 0.01);
             t.update_signal();

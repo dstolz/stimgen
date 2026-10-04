@@ -1,0 +1,9 @@
+function refresh_recent_menus_(obj)
+% refresh_recent_menus_() - Rebuild all three Recent submenus.
+obj.refresh_recent_menu_('RecentProtocolsMenu', 'RecentProtocols', ...
+    @(p) obj.load_protocol_(p));
+obj.refresh_recent_menu_('RecentBanksMenu', 'RecentBanks', ...
+    @(p) obj.load_bank(p));
+obj.refresh_recent_menu_('RecentCalibrationsMenu', 'RecentCalibrations', ...
+    @(p) obj.load_calibration_(p));
+end

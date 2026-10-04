@@ -77,23 +77,43 @@ whatever was stored.
 
 ## Noise
 
-Gaussian noise band-limited between `HighPass` and `LowPass` with an FIR bandpass
-filter of order `FilterOrder` (`FilterOrder` + 1 taps).
+Gaussian noise band-limited between `HighPass` and `LowPass` by a linear-phase FIR
+band-pass designed from what its edges must achieve.
 
 - [+stimgen/Noise.m](../+stimgen/Noise.m)
 
 | Property | Vectorizable | Meaning |
 | --- | --- | --- |
-| `HighPass` | yes | Hz, filter low cutoff |
-| `LowPass` | yes | Hz, filter high cutoff |
-| `FilterOrder` | no | FIR order used by `designfilt` (default 40); editable in the GUI and saved with the stimulus |
+| `HighPass` | yes | Hz, lower band edge: the -6 dB point |
+| `LowPass` | yes | Hz, upper band edge: the -6 dB point |
+| `TransitionWidth` | no | Hz, full width of the transition band centred on each edge. `0` (default) = a tenth of the narrowest of `HighPass`, `LowPass - HighPass` and `Fs/2 - LowPass` |
+| `StopbandAttenuation` | no | dB, minimum rejection outside the transition bands (default 60) |
+| `FilterOrder` | no | `0` (default) designs from the two settings above. A positive order is used as given with a Hamming window at the cutoffs — the design earlier versions used, at 40 — so a saved stimulus that names an order gets its filter back |
 
-`LowPass` must exceed `HighPass`; a violation raises
-`stimgen:Noise:InvalidBand`. The digital filter is rebuilt on every `update_signal`
-via `update_digFilter` and cached on the object as `digFilter`, not recomputed
-per-sample, so a new `FilterOrder` takes effect on the next waveform. `Noise` is also the superclass for `AMnoise` and `AttackModNoise`, which
-reuse its carrier generation (`temporarilyDisableSignalMods` guards the base class's
-own normalize/calibrate/gate calls while the carrier is only an intermediate signal).
+With `FilterOrder = 0` the filter is a Kaiser-window design whose order comes from
+`kaiserord` (with a dB of margin): each cutoff sits in the middle of a transition band
+`TransitionWidth` wide and everything beyond it is down by at least
+`StopbandAttenuation`. At the defaults (500 Hz - 20 kHz at 97656.25 Hz) the transition
+is 50 Hz and the filter about 7,000 taps; `tests/NoiseBandTest.m` checks the edges and
+the generated spectrum. The 40-tap filter this replaced had a transition several kHz
+wide at that rate, so a 500 Hz high-pass left most of the energy below 500 Hz in place.
+A positive `FilterOrder` — including the 40 that banks saved by the previous release
+carry — keeps that old behaviour; set it to 0 to get edges that mean what they say.
+
+Filters that long run through `fftfilt`, and as many extra samples of noise as the filter's order are
+generated and discarded so every kept sample has a full filter history: the record does
+not fade in over the filter's length. The taps of the last waveform are on the object
+as `FilterCoefficients`, with `DesignedOrder` and `DesignedTransition` (NaN for an
+explicit order); they are redesigned only when the band, `Fs` or one of the three
+settings changes.
+
+`HighPass` must be above 0, `LowPass` above `HighPass` and below `Fs/2`; a violation
+raises `stimgen:Noise:InvalidBand`. A `TransitionWidth` that does not fit the band
+raises `stimgen:Noise:InvalidTransition`, and a design needing more than 2^20 taps
+raises `stimgen:Noise:FilterTooLong`. `Noise` is also the superclass for `AMnoise` and
+`AttackModNoise`, which reuse its carrier generation (`temporarilyDisableSignalMods`
+guards the base class's own normalize/calibrate/gate calls while the carrier is only an
+intermediate signal).
 
 ## AMnoise
 
@@ -108,7 +128,7 @@ own normalize/calibrate/gate calls while the carrier is only an intermediate sig
 | `OnsetPhase` | yes | degrees, modulator phase at t=0 |
 | `EnvelopeOnly` | no | play the modulator alone (no carrier) — useful for verifying envelope shape |
 
-Inherits `HighPass`/`LowPass`/`FilterOrder` from `Noise`. The modulated waveform is
+Inherits `HighPass`/`LowPass` and the filter settings from `Noise`. The modulated waveform is
 rms-normalized before calibration, so the rms of the delivered waveform does not depend
 on `AMDepth`; no separate power compensation is needed. (An earlier `ApplyViemeisterCorrection`
 option scaled the envelope by a constant that this normalization divided straight back

@@ -627,7 +627,7 @@ no new acoustic assumption is introduced:
 
 | Field | Meaning |
 |-------|---------|
-| `scale` | multiply the filtered signal — or the taps themselves, before loading them — by this, and unity hardware gain produces `NormativeValue` dB SPL |
+| `scale` | multiply the filtered signal — or the taps themselves, before loading them — by this, and unity hardware gain produces `NormativeValue` dB SPL. It places the filtered rms at `lutVoltage / √2`, the rms of the sine the LUT voltage is the peak of — where `apply_calibration` puts an rms-normalized stimulus |
 | `unityGainSpl` | dB SPL the *unscaled* filtered source produces at unity hardware gain |
 | `filteredRms` | RMS of the filtered source, in volts |
 | `lutVoltage` | LUT voltage at `ReferenceFrequency` for `NormativeValue` dB SPL — the anchor used |
@@ -698,6 +698,15 @@ V = eng.compute_adjusted_voltage("click", 0.0001, 80);
 A lookup outside the table's measured span is extrapolated (the table is interpolated with `makima`) and may be well off; the first such lookup per table logs a warning at verbosity 0, re-armed whenever `CalibrationData` changes. `calibrate_tones` and `calibrate_clicks` drop duplicate frequencies/durations (sorted ascending, with a warning) before measuring, since a repeated abscissa would leave a table that cannot be interpolated.
 
 In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.esgc` file is assigned to a stimulus generator — you do not need to call it manually during an experiment.
+
+### What a LUT voltage means
+
+A tone (or swept sine) table voltage is the **peak** of the sine that produces the table's level: `calibrate_tones` plays `ExcitationVoltage` times a unit-amplitude tone, measures the rms that comes back, and solves for the drive that gives `normative_db`. Scaling a waveform to that voltage therefore means different things for different normalizations:
+
+- a peak-normalized (`"absmax"`) stimulus — `Tone`, `FMtone`, `SweptSine` — is scaled to it directly, and carries `V/√2` rms;
+- an rms-normalized stimulus — `Noise`, `AMnoise`, `AttackModNoise`, `TORC`, and `SoundFile` with `LevelReference = "rms"` — is given that same sine's rms, `V · Engine.LutRmsPerVolt` = `V/√2`.
+
+So a tone and a noise at the same `SoundLevel` play at the same rms dB SPL on a flat channel. Until this was fixed, rms-normalized stimuli were scaled to `V` itself and played 3.01 dB above their `SoundLevel`; on the simulated rig in `tests/LevelConventionTest.m` the same 1 kHz sine read +3.04 dB as an rms-referenced `SoundFile` and +0.03 dB as a `Tone`. `filter_level_reference` follows the same rule, so hardware and software agree. Click tables are a separate, peak-equivalent convention (dB peSPL; see *Calibrate Clicks* above), untouched by this.
 
 ---
 
@@ -1018,7 +1027,8 @@ Source: `+stimgen/+calibration/`
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).
 - `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes, one panel per stimulus where the host supplies them. Also draws the off-run views: `show_calibration` (the lookup tables and, given detail axes, the per-stimulus quality plots under them), `show_filter_test` (the equalizer verification, both conditions at once) and `show_background` (a background capture).
-- `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
+- `@CalibrationGui/` — interactive GUI wrapper around all engine operations; `SettingsDialog.m` is the modal window its three Options dialogs are built on.
+- `@Engine/background_report.m`, `conduction_delay_report.m` (and their `_summary` one-liners) — the text the GUI shows for a background capture or a delay probe, static so a script gets the same words.
 
 From `+stimgen/+util/`:
 

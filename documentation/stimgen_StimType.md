@@ -67,6 +67,8 @@ Typical subclass update flow:
 
 All concrete subclasses follow this order. Calibration must precede gating: `apply_calibration` renormalizes the waveform before scaling it to the voltage returned by the calibration lookup, so any onset/offset ramp applied earlier would be undone.
 
+The voltage a tone/swept-sine lookup returns is the peak of a sine at the requested level. A peak-normalized (`"absmax"`) waveform is scaled to it as it stands; an rms-normalized (`"rms"`) waveform is scaled to that sine's rms, `Engine.LutRmsPerVolt` (1/√2) times the voltage, so both play at the same rms dB SPL for the same `SoundLevel`. Uncalibrated waveforms (`ApplyCalibration` false) keep `apply_normalization`'s nominal scale: unit peak or unit rms. See [What a LUT voltage means](stimgen_calibration.md#what-a-lut-voltage-means).
+
 For a `CalibrationType` of `"filter"`, `apply_calibration` first checks that the equalizer was designed for this stimulus's `Fs`. A mismatch raises `stimgen:util:filterRateMismatch` and clears `Signal`, because the taps would otherwise correct the wrong frequencies with nothing in the output to show for it — see [Rate Checking](stimgen_calibration.md#rate-checking).
 
 `refresh_plot_if_valid` keeps open plot handles synchronized.

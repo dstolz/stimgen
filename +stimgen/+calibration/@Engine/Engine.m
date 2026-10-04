@@ -100,6 +100,19 @@ classdef Engine < handle
         % 114 dB calibrator report every level 20 dB high; see
         % volts_to_spl.
         ReferencePressurePa = 20e-6
+
+        % rms, in volts, of the waveform one volt of LUT voltage stands for.
+        %
+        % Every tone/swept-sine table voltage is the PEAK of a sine:
+        % calibrate_tones plays ExcitationVoltage times a unit-amplitude tone,
+        % measures the rms that comes back, and solves for the drive that
+        % gives the table's normative_db. A Tone scaled to that voltage
+        % (absmax normalization) therefore carries V/sqrt(2) rms. A stimulus
+        % normalized to its rms has to carry the same V/sqrt(2) to play at
+        % the same rms dB SPL; scaling it to V put it 3.01 dB high.
+        % apply_calibration, SoundFile and filter_level_reference all read
+        % this constant; nothing else should restate it.
+        LutRmsPerVolt = 1/sqrt(2)
     end
 
     % --- Persistent calibration parameters ---
@@ -756,6 +769,12 @@ classdef Engine < handle
     methods (Static)
         [eng, ffn] = load(ffn) % Load engine calibration from .esgc file; returns the resolved path.
         r = spectral_rms(x, freq, fs, options) % Estimate RMS amplitude at a frequency.
+        % Report text for a single measurement, kept next to describe (the
+        % whole calibration in words) rather than in the GUI that shows it.
+        s = background_summary(r) % One-line summary of a measure_background result.
+        s = background_report(r) % Full text of a measure_background result.
+        s = conduction_delay_summary(d) % One-line summary of a measure_conduction_delay result.
+        s = conduction_delay_report(d, maxDelayMs) % Full text of a measure_conduction_delay result.
 
         function spl = volts_to_spl(vrms, micSensitivity)
             % spl = stimgen.calibration.Engine.volts_to_spl(vrms, micSensitivity)
