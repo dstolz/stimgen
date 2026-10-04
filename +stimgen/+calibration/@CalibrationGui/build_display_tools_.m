@@ -1,0 +1,23 @@
+function build_display_tools_(obj, tb, tip)
+% Second toolbar group: how the panels draw. One overlay each,
+% as toggle tools rather than push tools so the toolbar states
+% what is on screen as well as changing it -- which is what makes
+% it usable as the display readout it is.
+%
+% Which measurement is on screen is not here: that is the plots
+% panel's tab strip, which selects a view and reports it in the
+% same place the view is read. The two toggle tools that used to
+% do it were removed with the shared panel they switched.
+obj.ToolGhost = uitoggletool(tb, Separator='on', ...
+    Tooltip=tip('SpectrumGhost'), ...
+    Icon=stimgen.util.toolbar_icon('ghost'), ...
+    ClickedCallback=@(src,~) obj.set_show_ghost_(logical(src.State)));
+
+obj.ToolVoltage = uitoggletool(tb, Tooltip=tip('TransferVoltage'), ...
+    Icon=stimgen.util.toolbar_icon('voltage'), ...
+    ClickedCallback=@(src,~) obj.set_show_voltage_(logical(src.State)));
+
+obj.ToolLogX = uitoggletool(tb, Tooltip=tip('TransferLogX'), ...
+    Icon=stimgen.util.toolbar_icon('logx'), ...
+    ClickedCallback=@(src,~) obj.set_transfer_log_x_(logical(src.State)));
+end

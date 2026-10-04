@@ -2,7 +2,7 @@
 
 ![CalibrationGui in offline mode: the controls column on the left split into Microphone, Calibration, Verification & Equalization and Display sections with every measurement button disabled, empty Response/Spectrum/Transfer Curve plots on the right, and a "No adapter attached" status message in the pinned footer above the Conduction Delay readout](images/CalibrationGui.png)
 
-Source file: +stimgen/+calibration/CalibrationGui.m  
+Source: `+stimgen/+calibration/@CalibrationGui/` (classdef in `CalibrationGui.m`, one method per file, row builders and parameter-dialog utilities in `private/`); its three Options windows are `stimgen.calibration.SettingsDialog`  
 Related reference: [stimgen_calibration.md](stimgen_calibration.md)
 
 The screenshot above shows the GUI immediately after construction in [offline mode](#constructor), before `File > Initialize Runtime From Protocol...` has attached an adapter — the calibrate buttons are disabled per [Button Enable Rules](#button-enable-rules) and the status label explains the next step.
@@ -13,7 +13,7 @@ It has no knowledge of any particular hardware or experiment framework. Protocol
 
 ## What This File Does
 
-CalibrationGui.m implements:
+The class implements:
 
 1. Constructor wiring (offline default, pre-built Engine, or host-driven).
 2. GUI creation (controls, plot axes, menu actions).

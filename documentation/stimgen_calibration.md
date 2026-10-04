@@ -1027,7 +1027,8 @@ Source: `+stimgen/+calibration/`
 - `LiveUpdate.m` — immutable payload broadcast per measurement by the `LiveUpdate` event.
 - `SpectralOptions.m` — value object resolving the analysis window and transform length every spectral estimator here uses; see [Spectral Analysis Settings](#spectral-analysis-settings).
 - `@LiveMonitor/` — renderer for that stream; owns its own window or attaches to a host's axes, one panel per stimulus where the host supplies them. Also draws the off-run views: `show_calibration` (the lookup tables and, given detail axes, the per-stimulus quality plots under them), `show_filter_test` (the equalizer verification, both conditions at once) and `show_background` (a background capture).
-- `CalibrationGui.m` — interactive GUI wrapper around all engine operations.
+- `@CalibrationGui/` — interactive GUI wrapper around all engine operations; `SettingsDialog.m` is the modal window its three Options dialogs are built on.
+- `@Engine/background_report.m`, `conduction_delay_report.m` (and their `_summary` one-liners) — the text the GUI shows for a background capture or a delay probe, static so a script gets the same words.
 
 From `+stimgen/+util/`:
 
