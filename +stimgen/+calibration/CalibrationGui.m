@@ -2445,26 +2445,9 @@ classdef CalibrationGui < handle
             obj.refresh_recent_menu_(obj.RecentCalibrationsMenu, 'RecentCalibrations', @obj.open_recent_calibration_);
         end
 
-        function refresh_recent_menu_(obj, menu, prefName, openFcn)
+        function refresh_recent_menu_(~, menu, prefName, openFcn)
             % Rebuild a Recent-files submenu (most recent first) from stored preferences.
-            if isempty(menu) || ~isvalid(menu)
-                return
-            end
-            delete(allchild(menu));
-
-            paths = obj.get_recent_paths_(prefName);
-            if isempty(paths)
-                uimenu(menu, Text='(None)', Enable='off');
-                return
-            end
-
-            for idx = 1:numel(paths)
-                filePath = paths{idx};
-                [~, fn, ext] = fileparts(filePath);
-                uimenu(menu, ...
-                    Text=sprintf('%d. %s%s | %s', idx, fn, ext, filePath), ...
-                    MenuSelectedFcn=@(~,~) openFcn(filePath));
-            end
+            stimgen.util.recent_paths('StimCalibrationGui', prefName, "menu", menu, openFcn);
         end
 
         function open_recent_protocol_(obj, filePath)
@@ -2482,57 +2465,23 @@ classdef CalibrationGui < handle
         end
 
         function add_recent_protocol_(obj, filePath)
-            obj.add_recent_path_('RecentProtocols', filePath);
+            stimgen.util.recent_paths('StimCalibrationGui', 'RecentProtocols', "add", filePath);
             obj.refresh_recent_protocols_menu_();
         end
 
         function remove_recent_protocol_(obj, filePath)
-            obj.remove_recent_path_('RecentProtocols', filePath);
+            stimgen.util.recent_paths('StimCalibrationGui', 'RecentProtocols', "remove", filePath);
             obj.refresh_recent_protocols_menu_();
         end
 
         function add_recent_calibration_(obj, filePath)
-            obj.add_recent_path_('RecentCalibrations', filePath);
+            stimgen.util.recent_paths('StimCalibrationGui', 'RecentCalibrations', "add", filePath);
             obj.refresh_recent_calibrations_menu_();
         end
 
         function remove_recent_calibration_(obj, filePath)
-            obj.remove_recent_path_('RecentCalibrations', filePath);
+            stimgen.util.recent_paths('StimCalibrationGui', 'RecentCalibrations', "remove", filePath);
             obj.refresh_recent_calibrations_menu_();
-        end
-
-        function paths = get_recent_paths_(~, prefName)
-            % Recent-file lists are cell arrays and so are kept out of
-            % get_pref_/set_pref_, which coerce every stored value to char.
-            groupName = 'StimCalibrationGui';
-            if ispref(groupName, prefName)
-                paths = getpref(groupName, prefName);
-            else
-                paths = {};
-            end
-            if ischar(paths)
-                paths = {paths};
-            end
-            paths = paths(:).';
-            paths = paths(~cellfun(@isempty, paths));
-        end
-
-        function add_recent_path_(obj, prefName, filePath)
-            filePath = strtrim(char(filePath));
-            if isempty(filePath)
-                return
-            end
-            paths = obj.get_recent_paths_(prefName);
-            paths(strcmpi(paths, filePath)) = [];
-            paths = [{filePath}, paths];
-            paths = paths(1:min(9, numel(paths)));
-            setpref('StimCalibrationGui', prefName, paths);
-        end
-
-        function remove_recent_path_(obj, prefName, filePath)
-            paths = obj.get_recent_paths_(prefName);
-            paths(strcmpi(paths, char(filePath))) = [];
-            setpref('StimCalibrationGui', prefName, paths);
         end
 
         function assert_host_(obj)

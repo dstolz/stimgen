@@ -1582,89 +1582,40 @@ classdef StimPlayer < handle
             if ~isfield(obj.handles, handleField)
                 return
             end
-            menu = obj.handles.(handleField);
-            if isempty(menu) || ~isvalid(menu)
-                return
-            end
-            delete(allchild(menu));
-
-            paths = obj.get_recent_paths_(prefName);
-            if isempty(paths)
-                uimenu(menu, 'Text', '(None)', 'Enable', 'off');
-                return
-            end
-
-            for idx = 1:numel(paths)
-                filePath = paths{idx};
-                [~, fn, ext] = fileparts(filePath);
-                uimenu(menu, ...
-                    'Text', sprintf('%d. %s%s | %s', idx, fn, ext, filePath), ...
-                    'MenuSelectedFcn', @(~,~) openFcn(filePath));
-            end
+            stimgen.util.recent_paths('StimPlayer', prefName, "menu", ...
+                obj.handles.(handleField), openFcn);
         end
 
         % -----------------------------------------------------------------
         function remember_recent_protocol_(obj, filePath)
-            obj.add_recent_path_('RecentProtocols', filePath);
+            obj.remember_recent_('RecentProtocols', "add", filePath);
         end
 
         function forget_recent_protocol_(obj, filePath)
-            obj.remove_recent_path_('RecentProtocols', filePath);
+            obj.remember_recent_('RecentProtocols', "remove", filePath);
         end
 
         function remember_recent_bank_(obj, filePath)
-            obj.add_recent_path_('RecentBanks', filePath);
+            obj.remember_recent_('RecentBanks', "add", filePath);
         end
 
         function forget_recent_bank_(obj, filePath)
-            obj.remove_recent_path_('RecentBanks', filePath);
+            obj.remember_recent_('RecentBanks', "remove", filePath);
         end
 
         function remember_recent_calibration_(obj, filePath)
-            obj.add_recent_path_('RecentCalibrations', filePath);
+            obj.remember_recent_('RecentCalibrations', "add", filePath);
         end
 
         function forget_recent_calibration_(obj, filePath)
-            obj.remove_recent_path_('RecentCalibrations', filePath);
+            obj.remember_recent_('RecentCalibrations', "remove", filePath);
         end
 
         % -----------------------------------------------------------------
-        function paths = get_recent_paths_(~, prefName)
-            % get_recent_paths_() - Read one recent list from stored preferences.
-            groupName = 'StimPlayer';
-            if ispref(groupName, prefName)
-                paths = getpref(groupName, prefName);
-            else
-                paths = {};
-            end
-            if ischar(paths)
-                paths = {paths};
-            end
-            paths = paths(:).';
-            paths = paths(~cellfun(@isempty, paths));
-        end
-
-        % -----------------------------------------------------------------
-        function add_recent_path_(obj, prefName, filePath)
-            % add_recent_path_() - Promote a path to the head of a recent list.
-            filePath = strtrim(char(filePath));
-            if isempty(filePath)
-                return
-            end
-            paths = obj.get_recent_paths_(prefName);
-            paths(strcmpi(paths, filePath)) = [];
-            paths = [{filePath}, paths];
-            paths = paths(1:min(9, numel(paths)));
-            setpref('StimPlayer', prefName, paths);
-            obj.refresh_recent_menus_;
-        end
-
-        % -----------------------------------------------------------------
-        function remove_recent_path_(obj, prefName, filePath)
-            % remove_recent_path_() - Drop a stale path from a recent list.
-            paths = obj.get_recent_paths_(prefName);
-            paths(strcmpi(paths, strtrim(char(filePath)))) = [];
-            setpref('StimPlayer', prefName, paths);
+        function remember_recent_(obj, prefName, action, filePath)
+            % remember_recent_() - Add a path to, or drop it from, a recent
+            % list (stimgen.util.recent_paths), then rebuild the menus.
+            stimgen.util.recent_paths('StimPlayer', prefName, action, filePath);
             obj.refresh_recent_menus_;
         end
 

@@ -1,10 +1,12 @@
 # stimgen tests
 
-Class-based `matlab.unittest` tests for the parts of stimgen that need no GUI,
-no audio device and no hardware: the level scale, frequency weighting, band
-arithmetic and sound level meter; stimulus serialization and the variant
-system; logging through a host sink; the tooltip catalog; and the calibration
-engine against the simulated rig in `documentation/tools/SimRigAdapter.m`.
+Class-based `matlab.unittest` tests for the parts of stimgen that need no audio
+device and no hardware: the level scale and the LUT level convention, frequency
+weighting, band arithmetic and sound level meter; Noise band edges; stimulus
+serialization and the variant system; logging through a host sink; the tooltip
+catalog; recent-file lists; and the calibration engine against the simulated rig
+in `documentation/tools/SimRigAdapter.m`. A smoke test also builds both GUIs
+offline and drives what needs no device or modal dialog.
 
 ## Running
 
@@ -43,10 +45,12 @@ every pull request, through `matlab-actions/setup-matlab` and
 | --- | --- |
 | `AcousticsTest.m` | `weighting_db` against IEC 61672-1, `volts_to_spl`/`spl_to_pressure`, `sound_levels` of a 1 Pa sine (93.98 dB SPL), `band_levels` on a flat PSD |
 | `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection, a pinned `copy()` (Play All, CombinationViewer, capture) leaving its source's combination and selection order alone |
+| `RecentPathsTest.m` | `stimgen.util.recent_paths`: add promotes without duplicates (case-insensitive), nine kept, remove, and the Recent submenu it builds |
 | `LoggingTest.m` | `vprintf` through a `stimgen.FcnLogSink`: raw messages, the red flag, literal text, the sink's gate, uninstalling |
 | `TooltipCatalogTest.m` | every `propMeta` entry has a tooltip; every literal key passed to `stimgen.util.tooltip` resolves in `tooltips.json` |
 | `LevelConventionTest.m` | a LUT voltage is a sine's peak: every rms-normalized stimulus carries a tone's rms at the same `SoundLevel` (flat table, offline), `filter_level_reference` agrees with `apply_calibration`, and on the simulated rig a Tone, an rms- and a peak-referenced `SoundFile` of the same sine and a narrow noise band all measure at their requested level the way SpotCheck measures |
 | `NoiseBandTest.m` | `Noise`'s band-pass is -6 dB at each cutoff and `StopbandAttenuation` down beyond the transition, the generated spectrum is band-limited, the record does not fade in, an explicit `FilterOrder` keeps the old Hamming design, bad bands are refused |
+| `GuiSmokeTest.m` | builds StimPlayer and CalibrationGui offline and drives what needs no audio device, hardware or modal dialog: every stimulus class in a bank, selection, stepping, duplicate, combination viewer, inspector, exports, bank save/load, Fs change; every View item, the summary and the three settings windows on a calibration with every table. Logs and returns where no uifigure can be made |
 | `CalibrationEngineTest.m` | `calibrate_reference` recovering the simulated 50 mV/Pa microphone, its refusal with no calibrator, `.esgc` save/load; `MicSensitivityKnown`/`known_mic_sensitivity` before and after the reference step and across save/load; tone tables recording `normative_db` and lookups scaling from it rather than the live `NormativeValue`; `restore` stamping unversioned tables; a duplicated sweep frequency being dropped and logged |
 
 Test data is generated into temporary folders and deleted afterwards. A
