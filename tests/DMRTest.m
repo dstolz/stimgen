@@ -480,6 +480,79 @@ classdef DMRTest < matlab.unittest.TestCase
             testCase.verifyTrue(isequal(s2.Signal, s.Signal));
         end
 
+        function exportedEnvelopeIsTheOnePlayed(testCase)
+            % export_envelope writes, per seed, the envelope a stimulus
+            % pinned to that seed reports -- and leaves the object it was
+            % called on exactly as it was.
+            tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            s = small_('Seed', [31 32 33]);
+            s.update_signal();                              % combination 1
+            sig = s.Signal;
+
+            ffn = s.export_envelope(fullfile(tmp.Folder, 'env'), 'SampleRate', 1000);
+            testCase.verifyTrue(endsWith(ffn, ".mat"));
+            testCase.verifyTrue(isfile(ffn));
+
+            testCase.verifyTrue(isequal(s.Signal, sig), 'the export changed the source Signal');
+            testCase.verifyEqual(s.get_variant_info().ActiveIndex, 1);
+
+            L = load(ffn);
+            testCase.verifyEqual(L.FormatVersion, 1);
+            testCase.verifyEqual(L.GeneratorVersion, stimgen.DMR.GeneratorVersion);
+            testCase.verifyEqual(L.EnvelopeFs, 1000);
+            testCase.verifyFalse(L.Gated);
+            testCase.verifyEqual(L.Seed, [31 32 33]);
+            testCase.verifyEqual(L.VariantIndex, 1:3);
+            testCase.verifyEqual(L.CombinationVariables, ["C0001" "C0002" "C0003"]);
+
+            c = L.C0002;
+            testCase.verifyEqual(c.Seed, 32);
+            testCase.verifyEqual(c.VariantIndex, 2);
+            testCase.verifyEqual(c.Time, (0:500) ./ 1000, 'AbsTol', 1e-15);   % 0 .. 0.5 s
+            testCase.verifySize(c.Envelope, [13 501]);
+            testCase.verifySize(c.Omega, [1 501]);
+            testCase.verifySize(c.Fm, [1 501]);
+            testCase.verifyEqual(c.Phase(1), 0);
+            testCase.verifyEqual(c.Record.Seed, 32);
+            testCase.verifyEqual(c.Record.GeneratorVersion, stimgen.DMR.GeneratorVersion);
+
+            one = small_('Seed', 32);
+            one.update_signal();
+            testCase.verifyEqual(c.Envelope, one.envelope_at(c.Time));
+            testCase.verifyEqual(c.OctaveAxis, one.OctaveAxis);
+            testCase.verifyEqual(c.CarrierFrequencies, one.CarrierFrequencies);
+            testCase.verifyEqual(L.RawRms(2), one.RawRms);
+            testCase.verifyEqual(L.RawPeak(2), one.RawPeak);
+            % Eq. 1 from the exported trajectories.
+            testCase.verifyEqual(c.Envelope, ...
+                15 .* sin(2*pi .* (c.OctaveAxis(:) * c.Omega) + c.Phase), 'AbsTol', 1e-9);
+
+            % The file names the stimulus it came from.
+            r = stimgen.StimType.fromStruct(L.Source);
+            testCase.verifyClass(r, 'stimgen.DMR');
+            testCase.verifyEqual(r.Seed, [31 32 33]);
+
+            % The source's selection order went on undisturbed.
+            s.update_signal();
+            testCase.verifyEqual(s.generation_record().Seed, 32);
+
+            % A subset, at another rate, into a file that already exists.
+            ffn2 = s.export_envelope(ffn, 'Combinations', 3, 'SampleRate', 800);
+            L2 = load(ffn2);
+            testCase.verifyEqual(L2.Seed, 33);
+            testCase.verifyEqual(L2.CombinationVariables, "C0003");
+            testCase.verifyFalse(isfield(L2, 'C0001'), 'the earlier export was not replaced');
+            testCase.verifyEqual(L2.EnvelopeFs, 800);
+
+            % Below twice the fastest modulation rate (350 Hz) it would alias.
+            low = fullfile(tmp.Folder, 'low.mat');
+            testCase.verifyError(@() s.export_envelope(low, 'SampleRate', 600), ...
+                'stimgen:DMR:EnvelopeRateTooLow');
+            testCase.verifyFalse(isfile(low), 'a refused export left a file behind');
+            testCase.verifyError(@() s.export_envelope(low, 'Combinations', 4), ...
+                'stimgen:DMR:CombinationOutOfRange');
+        end
+
         function reportsCostAndGoldenCandidates(testCase)
             % Printed for the CI log. The timing lines are what synthesis
             % costs on this machine (the class runs inside StimPlayer's

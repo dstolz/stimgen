@@ -451,8 +451,41 @@ correlation, so three things are kept:
 - `[S, x] = s.envelope_at(t)` — the envelope in dB (−M/2 … M/2) at arbitrary times;
   `[S, t, x] = s.dynamic_spectrum(nTime)` on an even grid (the `TORC` contract);
   `tr = s.ripple_trajectory(nTime)` — Ω, Fm and Φ.
+- `s.export_envelope(file, 'SampleRate', 4000)` — writes all of the above to one MAT
+  file for every seed, so an analysis does not depend on this class regenerating the
+  same numbers later (see below).
 - The envelope is **not gated**: the onset/offset window is applied to the waveform
   afterwards and is described by `rec.Gate`.
+
+**Envelope export.** `export_envelope(file, 'SampleRate', fs, 'Combinations', idx)`
+generates each variant combination on a pinned copy — the object it is called on keeps
+its `Signal`, active combination and selection order — and writes a version 7.3 MAT
+file, in double precision, one combination at a time (so only one envelope matrix is in
+memory, and a reader can load one combination without the rest). `SampleRate` defaults
+to 4000 Hz, the rate the paper sampled its envelopes at, and is written into the file;
+a rate below twice the fastest modulation rate raises `stimgen:DMR:EnvelopeRateTooLow`
+before anything is written. An existing file is replaced.
+
+| Variable | Contents |
+| --- | --- |
+| `FormatVersion`, `GeneratorVersion`, `CreatedAt` | 1; the draw contract; local time |
+| `Source` | the stimulus's `toStruct` — restore with `stimgen.StimType.fromStruct` |
+| `EnvelopeFs`, `Gated`, `EnvelopeUnits` | the sample rate used; `false`; text |
+| `Seed`, `VariantIndex`, `RawRms`, `RawPeak` | one value per combination written |
+| `CombinationVariables` | names of the per-combination variables |
+| `C0001`, `C0002`, … | one struct per combination, named by its variant index |
+
+Each `Cnnnn` holds `Seed`, `VariantIndex`, `Time` (`(0:nT-1)/EnvelopeFs`), `OctaveAxis`,
+`CarrierFrequencies`, `Envelope` (carriers × time, dB), `Omega`, `Fm`, `Phase`
+(envelopes × time) and `Record` (that segment's generation record).
+
+```matlab
+s = stimgen.DMR('Duration', 5, 'Seed', 1:40);
+s.export_envelope('dmr_envelopes.mat');          % 40 segments at 4 kHz
+m = matfile('dmr_envelopes.mat');
+c = m.C0007;                                     % the segment StimVariant 7 played
+imagesc(c.Time, c.OctaveAxis, c.Envelope); axis xy
+```
 
 **Level.** `SoundLevel` is the overall rms level of the segment, as for `Noise` and
 `TORC`. The paper states levels per carrier and gives the overall level of its 230-carrier

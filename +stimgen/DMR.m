@@ -395,6 +395,149 @@ classdef DMR < stimgen.StimType
         end
 
 
+        function file = export_envelope(obj, file, options)
+            % file = export_envelope(obj, file)
+            % file = export_envelope(obj, file, 'SampleRate', 4000, 'Combinations', [])
+            % Write the envelope, the ripple parameters and the generation
+            % record of every variant combination (every seed) to one MAT
+            % file, so an analysis does not depend on this class
+            % regenerating the same numbers later.
+            %
+            % Each combination is generated on a pinned copy of the stimulus
+            % (the combination viewer's pattern), so this object's Signal,
+            % active combination and selection order are untouched. It is
+            % generated in full, not just planned, so the file carries each
+            % segment's RawRms.
+            %
+            % Parameters:
+            %   file         - output path; ".mat" is added if it has no extension.
+            %                  An existing file is replaced.
+            %   SampleRate   - envelope sampling rate in Hz (default 4000, the
+            %                  rate the paper sampled its envelopes at for the
+            %                  STRF). Must be at least twice the fastest
+            %                  modulation rate, or the ripple aliases.
+            %   Combinations - variant indices to write (default: all).
+            %
+            % Returns:
+            %   file - the path written, as a string.
+            %
+            % File layout (MAT version 7.3, so one combination can be read
+            % without loading the rest; everything double precision):
+            %   FormatVersion        1
+            %   GeneratorVersion     the draw contract the waveforms follow
+            %   CreatedAt            'yyyy-mm-ddTHH:MM:SS', local time
+            %   Source               this stimulus's toStruct -- restore it
+            %                        with stimgen.StimType.fromStruct
+            %   EnvelopeFs           the SampleRate used, Hz
+            %   Gated                false: envelopes are before the onset/
+            %                        offset gate, which each Record describes
+            %   EnvelopeUnits        text
+            %   Seed, VariantIndex, RawRms, RawPeak
+            %                        one value per combination written
+            %   CombinationVariables names of the per-combination variables
+            %   C0001, C0002, ...    one struct per combination, named by its
+            %                        variant index, with fields:
+            %       Seed, VariantIndex
+            %       Time               1-by-nT, s: (0:nT-1)/EnvelopeFs
+            %       OctaveAxis         1-by-K, octaves above LowFrequency
+            %       CarrierFrequencies 1-by-K, Hz
+            %       Envelope           K-by-nT, dB (envelope_at(Time))
+            %       Omega, Fm, Phase   L-by-nT: cycles/octave, Hz, rad
+            %       Record             generation_record() of that segment
+            arguments
+                obj  (1,1) stimgen.DMR
+                file (1,1) string
+                options.SampleRate   (1,1) double {mustBePositive,mustBeFinite} = 4000
+                options.Combinations (1,:) double {mustBeInteger,mustBePositive} = double.empty(1,0)
+            end
+
+            [folder, name, ext] = fileparts(file);
+            if strlength(ext) == 0
+                file = fullfile(folder, name + ".mat");
+            end
+            file  = string(file);
+            fsEnv = options.SampleRate;
+
+            % One copy, reselection off, pinned combination by combination.
+            pinned = copy(obj);
+            pinned.VariantReselectOnUpdate = false;
+            info = pinned.get_variant_info();
+            nAll = max(1, info.NumCombinations);
+            combos = options.Combinations;
+            if isempty(combos)
+                combos = 1:nAll;
+            end
+            if any(combos > nAll)
+                error('stimgen:DMR:CombinationOutOfRange', ...
+                    'Combinations must be between 1 and %d, the number of variant combinations.', nAll);
+            end
+
+            % Checked before anything is written. The modulation-rate limits
+            % are scalar properties, the same for every combination.
+            fastest = max(abs([obj.ModulationRateMin, obj.ModulationRateMax]));
+            if fsEnv < 2 * fastest
+                error('stimgen:DMR:EnvelopeRateTooLow', ...
+                    ['SampleRate (%g Hz) is less than twice the fastest modulation rate ' ...
+                     '(%g Hz), so the exported envelope would alias. Use at least %g Hz.'], ...
+                    fsEnv, fastest, 2 * fastest);
+            end
+
+            header = struct();
+            header.FormatVersion    = 1;
+            header.GeneratorVersion = stimgen.DMR.GeneratorVersion;
+            header.CreatedAt        = char(datetime('now', 'Format', 'yyyy-MM-dd''T''HH:mm:ss'));
+            header.Source           = obj.toStruct();
+            header.EnvelopeFs       = fsEnv;
+            header.Gated            = false;
+            header.EnvelopeUnits    = ['dB about the middle of the envelope range (-M/2 to M/2), ' ...
+                                       'before the onset/offset gate'];
+            save(file, '-struct', 'header', '-v7.3');
+
+            n = numel(combos);
+            index = struct('Seed', zeros(1, n), 'VariantIndex', zeros(1, n), ...
+                           'RawRms', zeros(1, n), 'RawPeak', zeros(1, n), ...
+                           'CombinationVariables', strings(1, n));
+            for i = 1:n
+                pinned.set_variant_index(combos(i));
+                rec = pinned.generation_record();
+
+                plan = pinned.plan_;
+                t = (0:floor(rec.Duration * fsEnv)) ./ fsEnv;
+                t = t(t <= rec.Duration);
+                [S, x]        = pinned.envelope_at(t);
+                [om, cyc, fm] = stimgen.DMR.trajectories_(plan, t);
+
+                combo = struct();
+                combo.Seed               = rec.Seed;
+                combo.VariantIndex       = combos(i);
+                combo.Time               = t;
+                combo.OctaveAxis         = x;
+                combo.CarrierFrequencies = rec.CarrierFrequencies;
+                combo.Envelope           = S;
+                combo.Omega              = om;
+                combo.Fm                 = fm;
+                combo.Phase              = 2*pi*cyc;
+                combo.Record             = rec;
+
+                % Appended one combination at a time, so only one envelope
+                % matrix is ever held in memory.
+                varName = sprintf('C%04d', combos(i));
+                part = struct();
+                part.(varName) = combo;
+                save(file, '-struct', 'part', '-append');
+
+                index.Seed(i)                 = rec.Seed;
+                index.VariantIndex(i)         = combos(i);
+                index.RawRms(i)               = rec.RawRms;
+                index.RawPeak(i)              = rec.RawPeak;
+                index.CombinationVariables(i) = string(varName);
+                stimgen.util.vprintf(2, 'DMR: exported combination %d (seed %d) to %s', ...
+                    combos(i), rec.Seed, char(file));
+            end
+            save(file, '-struct', 'index', '-append');
+        end
+
+
         function h = plot_dynamic_spectrum(obj, ax, nTime)
             % h = plot_dynamic_spectrum(obj)
             % h = plot_dynamic_spectrum(obj, ax, nTime)
