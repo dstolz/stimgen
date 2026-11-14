@@ -268,6 +268,13 @@ getters follow this rule through `active_duration_` (locked combination inside a
 `active_variant_values` outside), so a plot refresh reading `Time` does not step the variant.
 `Time` is `(0:N-1)/Fs`.
 
+**What a waveform was generated from is `generation_record`.** `StimType.generation_record()`
+describes the waveform in `Signal` — class, rate, length, the active combination and its variant
+values, measured rms and peak — through the same non-advancing readers. It reports variant values
+only, never every property: a `SoundFile` catalog can embed audio. A subclass whose waveform
+depends on more than its property values overrides it, starting from the base call, and adds what
+reconstruction needs.
+
 **A presenter selects variants through the stimulus, never by index.** `update_signal()` called
 outside a variant cycle is the one call that selects the next combination per
 `VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and

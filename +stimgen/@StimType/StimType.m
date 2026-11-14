@@ -229,6 +229,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         value = evalPropertyExpression(obj, propName, expressionText)             % Evaluate a property expression
         info = get_variant_info(obj)                                              % Variant-combination state
         s = active_variant_values(obj)                                           % Active combination's values, without reselecting
+        rec = generation_record(obj)                                              % What the waveform in Signal was generated from
         info = set_variant_index(obj, idx)                                        % Select variant by index
         info = step_variant(obj, step)                                            % Step variant index
         reset_variant_selection(obj)                                              % Forget selection history (cursor, counts, selector)

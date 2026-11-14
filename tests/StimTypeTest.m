@@ -191,6 +191,54 @@ classdef StimTypeTest < matlab.unittest.TestCase
             testCase.verifyEmpty(fieldnames(t.active_variant_values()));
         end
 
+        function generationRecordDescribesTheSignalOnHand(testCase)
+            % The record names the active combination and measures the
+            % samples in Signal, and reading it selects nothing.
+            t = stimgen.Tone('Fs', 48000, 'ApplyCalibration', false, 'Duration', 0.01, ...
+                'Frequency', [1000 2000 4000]);   % Serial selection (default)
+            t.update_signal();                    % combination 1
+            t.update_signal();                    % combination 2
+
+            r = t.generation_record();
+            testCase.verifyEqual(r.RecordVersion, 1);
+            testCase.verifyEqual(r.Class, "stimgen.Tone");
+            testCase.verifyEqual(r.Fs, 48000);
+            testCase.verifyEqual(r.N, numel(t.Signal));
+            testCase.verifyEqual(r.VariantIndex, 2);
+            testCase.verifyEqual(r.NumCombinations, 3);
+            testCase.verifyEqual(r.VariantProperties, "Frequency");
+            testCase.verifyEqual(r.VariantValues.Frequency, 2000);
+            testCase.verifyEqual(r.CalibrationType, "tone");
+            testCase.verifyFalse(r.ApplyCalibration);
+            testCase.verifyEqual(r.SignalRms, sqrt(mean(t.Signal .^ 2)), 'RelTol', 1e-12);
+            testCase.verifyEqual(r.SignalPeak, max(abs(t.Signal)), 'RelTol', 1e-12);
+
+            % Reading it again changes nothing, and the next generation is
+            % the one Serial order would have made anyway.
+            testCase.verifyEqual(t.generation_record().VariantIndex, 2);
+            t.update_signal();
+            testCase.verifyEqual(t.generation_record().VariantIndex, 3);
+        end
+
+        function everyStimTypeGivesAGenerationRecord(testCase)
+            % At its defaults no class has a variant axis, so the record is
+            % one combination with no variant values, sized to the Signal.
+            names = stimgen.StimType.list();
+            for k = 1:numel(names)
+                cls = ['stimgen.' names{k}];
+                obj = feval(cls, 'ApplyCalibration', false);
+                obj.update_signal();
+                r = obj.generation_record();
+                testCase.verifyEqual(r.Class, string(cls), cls);
+                testCase.verifyEqual(r.N, numel(obj.Signal), cls);
+                testCase.verifyEqual(r.VariantIndex, 1, cls);
+                testCase.verifyEqual(r.NumCombinations, 1, cls);
+                testCase.verifyEmpty(fieldnames(r.VariantValues), cls);
+                testCase.verifyEqual(r.SignalPeak, max(abs(double(obj.Signal))), ...
+                    'RelTol', 1e-12, cls);
+            end
+        end
+
     end
 end
 
