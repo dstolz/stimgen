@@ -746,13 +746,15 @@ directly on `StimPlayObjs` are not tracked.
 restore path, which `duplicate_stim` also uses — which:
 
 - creates a new stimulus object from `S.StimObj.Class`
-- restores `DisplayName` and switches `ApplyCalibration` off for the duration
+- restores `DisplayName`, holds regeneration (`hold_updates`) and switches
+  `ApplyCalibration` off for the duration
 - restores the base properties in `StimType.CoreProperties` (`Fs`, `ApplyWindow`,
   `SoundLevel`, `Duration`, `WindowDuration`, `WindowFcn` and the variant policy),
   the same list `toStruct` writes
 - restores the calibration serialized with the item
 - restores the serialized `UserProperties`, in order
 - sets `ApplyCalibration` to the saved value, **last**
+- releases the hold and generates the stimulus **once**
 
 and then `load_bank()`:
 
@@ -760,16 +762,25 @@ and then `load_bank()`:
 - adopting the first item's `Fs` as the bank rate and re-applying it to the
   rest (see [Sample rate](#sample-rate))
 
-`ApplyCalibration` brackets the rest because every restored property
-regenerates the signal, and until the item's calibration is back that would be
-against an empty one. `apply_calibration` answers an empty calibration with a
-critical `No calibration data available for stim`, so loading a **calibrated**
-bank used to log the same line an uncalibrated one earns. Held off,
-`apply_calibration` returns before it looks; the closing assignment is the one
-regeneration made with every property and the calibration in place.
+The stimulus is generated once, after the last property, rather than once per
+restored property. Assigned live, each property regenerated the signal: against
+a stimulus that was only partly restored, advancing the variant selection each
+time, at full synthesis cost each time, and — until the item's calibration was
+back — against an empty calibration, which `apply_calibration` answers with a
+critical `No calibration data available for stim`, the same line an
+uncalibrated bank earns. Consequences of the single generation:
+
+- an item with a variant axis loads on the first combination its selection
+  mode picks (combination 1 in Serial mode);
+- an item that cannot be generated (a missing sound file, a band that reaches
+  Nyquist at the saved rate) still loads, with one critical log line and no
+  signal, instead of costing the bank the rest.
+
 Because this is `StimType.fromStruct`, a stimulus loaded by `SpotCheck` or a
 host application, or duplicated in the bank, is restored identically. A bank item that really has
-no calibration still raises the warning, once.
+no calibration still raises the warning, once. A new item started from its
+type's remembered settings (**Add Stimulus**) is assigned under the same hold
+and generated once.
 
 ### Compatibility note
 

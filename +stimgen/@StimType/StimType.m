@@ -58,6 +58,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
 
     properties (Hidden,Access = protected)
         temporarilyDisableSignalMods (1,1) logical = false;
+        updatesHeld_ (1,1) logical = false;   % set by hold_updates: assignments do not regenerate
         els
         GUIHandles
         calibrationWarningIssued (1,1) logical = false;
@@ -247,6 +248,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     % but is not a StimType subclass, so these cannot be protected.
     methods (Hidden)
         [x, lbl] = build_prop_widget(obj, parent, propName, pm, labelFormat, actionFcn) % Label + widget for one propMeta entry
+        was = hold_updates(obj, tf)                                               % Suspend/resume regeneration on property change
     end % methods (Hidden)
 
     % --- Protected external method declarations ---

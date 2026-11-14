@@ -73,6 +73,20 @@ For a `CalibrationType` of `"filter"`, `apply_calibration` first checks that the
 
 `refresh_plot_if_valid` keeps open plot handles synchronized.
 
+Code that assigns many properties in a row suspends that per-assignment regeneration with
+`hold_updates` (public, hidden) and generates once itself:
+
+```matlab
+was = obj.hold_updates(true);    % returns the state it found
+obj.Duration   = 0.5;
+obj.SoundLevel = 70;
+obj.hold_updates(was);           % releasing does not regenerate
+obj.update_signal();
+```
+
+`StimType.fromStruct` restores this way, so a loaded stimulus is synthesized once rather than once
+per property, and starts on the first combination its selection mode picks.
+
 `Time` is `(0:N-1)/Fs` -- exact 1/`Fs` spacing from 0 -- with
 `N = round(Fs*Duration)` (at least one sample for `Time`). Both read `Duration`
 through `active_duration_`: inside `update_signal` that is the combination being

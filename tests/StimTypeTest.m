@@ -40,9 +40,9 @@ classdef StimTypeTest < matlab.unittest.TestCase
             % every class StimType.list() offers, at its defaults.
             % Calibration off so the restore never looks for a calibration
             % table that a default stimulus does not have. Generated once
-            % first, because the restored object has been (every restored
-            % property regenerates it), so both sides are compared after a
-            % generation.
+            % first, because the restored object has been (fromStruct
+            % generates it once, after the last property), so both sides are
+            % compared after a generation.
             names = stimgen.StimType.list();
             for k = 1:numel(names)
                 cls = ['stimgen.' names{k}];
@@ -220,6 +220,76 @@ classdef StimTypeTest < matlab.unittest.TestCase
             testCase.verifyEqual(t.generation_record().VariantIndex, 3);
         end
 
+        function holdUpdatesSuspendsRegeneration(testCase)
+            t = stimgen.Tone('Fs', 48000, 'ApplyCalibration', false, 'Duration', 0.01);
+            t.update_signal();
+            n = numel(t.Signal);
+            testCase.assertEqual(n, 480);
+
+            testCase.verifyFalse(t.hold_updates(true));   % returns the state it found
+            t.Duration = 0.02;
+            testCase.verifyEqual(numel(t.Signal), n, 'a held assignment regenerated');
+
+            % Releasing does not regenerate; the caller does.
+            testCase.verifyTrue(t.hold_updates(false));
+            testCase.verifyEqual(numel(t.Signal), n);
+            t.update_signal();
+            testCase.verifyEqual(numel(t.Signal), 960);
+
+            % Live again: an assignment regenerates as before.
+            t.Duration = 0.03;
+            testCase.verifyEqual(numel(t.Signal), 1440);
+        end
+
+        function restoreGeneratesOnce(testCase)
+            % fromStruct holds regeneration while it assigns and generates
+            % once at the end, so a restored stimulus with a variant axis
+            % sits on the first combination its selection mode picks -- not
+            % wherever one generation per restored property left it.
+            t = stimgen.Tone('Fs', 48000, 'ApplyCalibration', false, 'Duration', 0.01, ...
+                'Frequency', [1000 2000 4000], 'SoundLevel', 55, 'OnsetPhase', 90);
+            t2 = stimgen.StimType.fromStruct(t.toStruct());
+
+            testCase.verifyEqual(numel(t2.Signal), 480);
+            testCase.verifyEqual(t2.get_variant_info().ActiveIndex, 1);
+            testCase.verifyEqual(t2.active_variant_values().Frequency, 1000);
+
+            % That generation was the first Serial selection: the next is 2.
+            t2.update_signal();
+            testCase.verifyEqual(t2.active_variant_values().Frequency, 2000);
+
+            % The hold was released: an edit regenerates.
+            t2.Duration = 0.02;
+            testCase.verifyEqual(numel(t2.Signal), 960);
+        end
+
+        function restoreSurvivesAFailingGeneration(testCase)
+            % One stimulus that cannot be generated must not cost a bank the
+            % rest: it is returned, ungenerated, with one critical log line.
+            % A TORC whose band reaches Nyquist at the saved rate cannot be.
+            previous = stimgen.util.logSink();
+            testCase.addTeardown(@() stimgen.util.logSink(previous));
+            records = containers.Map('KeyType', 'double', 'ValueType', 'any');
+            stimgen.util.logSink(stimgen.FcnLogSink( ...
+                @(level, red, msg, args) capture_(records, level, msg), ...
+                @(level) level <= 0));
+
+            src = stimgen.TORC('Fs', 48000, 'ApplyCalibration', false);
+            S = src.toStruct();
+            S.Fs = 8000;   % 125 Hz * 2^5 = 4000 Hz = Fs/2
+
+            o = stimgen.StimType.fromStruct(S);
+            testCase.verifyClass(o, 'stimgen.TORC');
+            testCase.verifyEqual(o.Fs, 8000);
+            testCase.verifyEmpty(o.Signal);
+            testCase.verifyEqual(double(records.Count), 1);
+            testCase.verifySubstring(char(records(1).msg), 'could not be generated');
+
+            % The object is live: a rate it can be generated at generates it.
+            o.Fs = 48000;
+            testCase.verifyNotEmpty(o.Signal);
+        end
+
         function everyStimTypeGivesAGenerationRecord(testCase)
             % At its defaults no class has a variant axis, so the record is
             % one combination with no variant values, sized to the Signal.
@@ -263,6 +333,13 @@ for k = 1:numel(fn)
             sprintf('%s: field "%s" did not survive toStruct/fromStruct', cls, fn{k}));
     end
 end
+end
+
+
+function capture_(records, level, msg)
+% Log sink callback: one record per message, keyed in arrival order.
+% records is a containers.Map, a handle, so the caller sees the addition.
+records(records.Count + 1) = struct('level', level, 'msg', {msg}); %#ok<NASGU>
 end
 
 

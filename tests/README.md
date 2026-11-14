@@ -44,7 +44,7 @@ every pull request, through `matlab-actions/setup-matlab` and
 | File | Covers |
 | --- | --- |
 | `AcousticsTest.m` | `weighting_db` against IEC 61672-1, `volts_to_spl`/`spl_to_pressure`, `sound_levels` of a 1 Pa sine (93.98 dB SPL), `band_levels` on a flat PSD |
-| `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection, a pinned `copy()` (Play All, CombinationViewer, capture) leaving its source's combination and selection order alone, `generation_record` describing the waveform on hand without selecting |
+| `StimTypeTest.m` | `StimType.list`, `toStruct`/`fromStruct` for every listed class (and a `SoundFile` with a generated wav), Cartesian and Pairwise combination tables, `active_variant_values` not advancing the selection, a pinned `copy()` (Play All, CombinationViewer, capture) leaving its source's combination and selection order alone, `generation_record` describing the waveform on hand without selecting, `hold_updates` suspending regeneration, `fromStruct` generating once (a restored variant stimulus sits on combination 1; one that cannot be generated is still returned, with one critical log line) |
 | `RecentPathsTest.m` | `stimgen.util.recent_paths`: add promotes without duplicates (case-insensitive), nine kept, remove, and the Recent submenu it builds |
 | `LoggingTest.m` | `vprintf` through a `stimgen.FcnLogSink`: raw messages, the red flag, literal text, the sink's gate, uninstalling |
 | `TooltipCatalogTest.m` | every `propMeta` entry has a tooltip; every literal key passed to `stimgen.util.tooltip` resolves in `tooltips.json` |

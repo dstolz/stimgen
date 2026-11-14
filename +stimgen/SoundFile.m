@@ -94,10 +94,12 @@ classdef SoundFile < stimgen.StimType
             obj = obj@stimgen.StimType( ...
                 'DisplayName', 'Sound File', ...
                 'Catalog', stimgen.SoundFile.empty_catalog(), ...
-                ... % Catalog is listed FIRST: load_bank and fromStruct assign
-                ... % UserProperties in order, and every one of them triggers a
-                ... % regeneration, so the catalog must exist before FileIndex is
-                ... % restored. Duration is omitted because it is derived from the
+                ... % Catalog is listed FIRST: properties are assigned in
+                ... % UserProperties order, and a live assignment triggers a
+                ... % regeneration, so the catalog must exist before FileIndex
+                ... % is. (fromStruct holds regeneration until every property
+                ... % is back, but the order is kept for any other caller.)
+                ... % Duration is omitted because it is derived from the
                 ... % selected file.
                 'UserProperties', ["Catalog","FileIndex","Channel", ...
                                    "CalibrationMode","AnchorFrequency", ...

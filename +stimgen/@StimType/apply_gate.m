@@ -13,8 +13,8 @@ n = length(g);
 % A gate longer than the signal cannot be applied. This is reachable
 % transiently whenever a property that reinterprets WindowDuration is
 % assigned before WindowDuration itself catches up -- switching
-% Tone.WindowMethod, or fromStruct restoring the two in either order --
-% so shrink the window to fit rather than failing on the index.
+% Tone.WindowMethod, or shortening Duration before WindowDuration -- so
+% shrink the window to fit rather than failing on the index.
 nSignal = numel(obj.Signal);
 if n > nSignal
     if n < 2 || nSignal < 2
