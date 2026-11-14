@@ -445,6 +445,15 @@ classdef DMRTest < matlab.unittest.TestCase
             testCase.verifyTrue(s.generation_record().CacheHit, 'ApplyWindow');
             s.NumEnvelopes = 8;
             testCase.verifyTrue(s.generation_record().CacheHit, 'NumEnvelopes in DMR mode');
+            % Nor does the ongoing background the segment is embedded in:
+            % Signal stays the stimulus alone.
+            before = s.Signal;
+            s.Background = "Noise";
+            testCase.verifyTrue(s.generation_record().CacheHit, 'Background');
+            s.BackgroundLevel = 40;
+            testCase.verifyTrue(s.generation_record().CacheHit, 'BackgroundLevel');
+            testCase.verifyTrue(isequal(s.Signal, before), 'a background changed Signal');
+            s.Background = "None";
 
             changes = { ...
                 'LowFrequency', 600; 'HighFrequency', 9000; 'NumCarriers', 14; ...
