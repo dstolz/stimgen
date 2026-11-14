@@ -53,13 +53,23 @@ classdef DMR < stimgen.StimType
     %                steps of alpha from LowFrequency, with HighFrequency the
     %                (unplayed) end of the range: the top carrier is
     %                HighFrequency/alpha.
-    %   erf scale  - the paper says erf maps normal onto uniform amplitudes
-    %                and reports sigma_RN^2 = M^2/12, the variance of a uniform
-    %                distribution on [-M/2, M/2]; that needs c = sqrt(2). Eq. 3
-    %                and the parameter mapping are printed with c = 1, which
-    %                gives sigma_RN^2 = M^2/8.61 and more time near the limits.
-    %                ErfScaling selects: "Uniform" (c = sqrt(2), default) or
-    %                "AsPrinted" (c = 1).
+    %   erf scale  - the paper says erf maps normally distributed amplitudes
+    %                onto uniformly distributed ones: Omega and Fm flat over
+    %                their ranges, and sigma_RN^2 = M^2/12, the variance of a
+    %                uniform distribution on [-M/2, M/2]. For a normal variable
+    %                of standard deviation sigma that is erf(x/(sqrt(2) sigma)),
+    %                with sigma the standard deviation of the signal erf is
+    %                applied to: sigma_DMR = M/sqrt(8) for the ripple-noise sum,
+    %                and sqrt(57/70) = 0.902 -- not 1 -- for the knot sequence,
+    %                because erf is applied after the interpolation and
+    %                interpolating between unit-variance knots lowers the
+    %                variance (KnotInterpolantVariance). The equations are
+    %                printed as erf(x/sigma_DMR) and erf(x), which give
+    %                sigma_RN^2 = M^2/8.61 and trajectories that spend more
+    %                time near their limits (variance 0.104 of range^2, against
+    %                1/12 = 0.083 for flat). ErfScaling selects: "Uniform"
+    %                (default) or "AsPrinted". The trajectories the paper
+    %                shows (Fig. 2A,B) are flat; see the class guide.
     %   Interpolant- the paper used interp1's 'cubic' option, whose meaning
     %                has changed between MATLAB releases. Cubic convolution
     %                (Keys, a = -1/2) is written out here so the generator
@@ -81,6 +91,14 @@ classdef DMR < stimgen.StimType
     % Seed must be a non-negative integer: there is no "reseed randomly"
     % value, because a stimulus whose seed was never recorded cannot be
     % reconstructed.
+    %
+    % Versions. GeneratorVersion 2 is the first to scale the trajectories by
+    % the interpolated sequence's standard deviation under "Uniform".
+    % Version 1 divided by sqrt(2) alone, as if that deviation were 1, which
+    % left Omega and Fm weighted toward mid-range (variance 0.073 of range^2)
+    % and the long-term envelope correlation wider than the paper's Eq. 9. A
+    % version 1 generation record still rebuilds its own waveform: it holds
+    % the divisor that was used.
     %
     % Draw contract (GeneratorVersion). A waveform is a pure function of the
     % properties, Fs and GeneratorVersion. Random numbers come from a private
@@ -164,7 +182,16 @@ classdef DMR < stimgen.StimType
 
         % Version of the draw contract in the class help. Written into every
         % generation record and envelope export.
-        GeneratorVersion = 1;
+        GeneratorVersion = 2;
+
+        % Variance, averaged over time, of the cubic-convolution interpolant
+        % of independent unit-variance knots: the integral over one knot
+        % interval of the sum of the four squared kernel weights, which is
+        % exactly 57/70. It is 1 at a knot and 0.64 midway between two. The
+        % "Uniform" erf scaling divides the interpolated sequence by the
+        % square root of this before erf, which is what makes Omega and Fm
+        % flat over their ranges.
+        KnotInterpolantVariance = 57/70;
 
         % Samples synthesized per pass. Bounds the working memory (the
         % quadrature holds QuadratureOrder values per sample per envelope);
@@ -275,7 +302,11 @@ classdef DMR < stimgen.StimType
             %   Generated         - true when the fields below are present
             %   GeneratedVariantIndex - the combination update_signal had locked
             %   Seed, Generator, NormalTransform, Substreams
-            %   EnvelopeMode, NumEnvelopes, ErfScaling, ErfDivisor
+            %   EnvelopeMode, NumEnvelopes, ErfScaling
+            %   ErfDivisor        - c of the ripple-noise compression,
+            %                       erf(Sbar / (c * M/sqrt(8)))
+            %   TrajectoryErfDivisor - what each knot interpolant is divided
+            %                       by before erf
             %   ModulationDepth, Duration
             %   LowFrequency, HighFrequency, NumCarriers
             %   CarrierFrequencies, CarrierPhases, OctaveAxis
@@ -724,6 +755,7 @@ classdef DMR < stimgen.StimType
             rec.NumEnvelopes          = plan.NumEnvelopes;
             rec.ErfScaling            = plan.ErfScaling;
             rec.ErfDivisor            = plan.ErfDivisor;
+            rec.TrajectoryErfDivisor  = plan.TrajectoryErfDivisor;
             rec.ModulationDepth       = plan.ModulationDepth;
             rec.Duration              = plan.N / plan.Fs;
             rec.LowFrequency          = plan.LowFrequency;
@@ -802,6 +834,7 @@ classdef DMR < stimgen.StimType
             nOm     = floor(T * omRate) + 5;
             nFm     = floor(T * fmRate) + 5;
             c       = stimgen.DMR.erf_divisor_(p.ErfScaling);
+            dTraj   = stimgen.DMR.trajectory_divisor_(p.ErfScaling);
             fmRange = [p.ModulationRateMin, p.ModulationRateMax];
             [xi, wq] = stimgen.DMR.gauss_legendre_();
 
@@ -821,7 +854,7 @@ classdef DMR < stimgen.StimType
                 nI = nFm - 3;                        % intervals j = 0 .. nI-1
                 J  = repmat(0:nI-1, numel(xi), 1);
                 S  = repmat(xi(:), 1, nI);
-                F  = stimgen.DMR.map_(stimgen.DMR.kernel_(zFm, J, S), c, fmRange);
+                F  = stimgen.DMR.map_(stimgen.DMR.kernel_(zFm, J, S), dTraj, fmRange);
                 cycles = [0, cumsum((wq * F) ./ fmRate)];
 
                 env(l).RippleKnotTimes = (-1:nOm-2) ./ omRate;
@@ -851,6 +884,7 @@ classdef DMR < stimgen.StimType
             plan.NumEnvelopes        = L;
             plan.ErfScaling          = p.ErfScaling;
             plan.ErfDivisor          = c;
+            plan.TrajectoryErfDivisor = dTraj;
             plan.ModulationDepth     = p.ModulationDepth;
             plan.LowFrequency        = p.LowFrequency;
             plan.HighFrequency       = p.HighFrequency;
@@ -864,7 +898,7 @@ classdef DMR < stimgen.StimType
             plan.Envelope            = env;
             plan.Rules               = struct( ...
                 'Interpolation',    "cubic convolution (Keys, a = -1/2) over knots j-1..j+2, knot j at j/KnotRate", ...
-                'ErfMapping',       "value = min + (max - min) * (erf(knot interpolant / ErfDivisor) + 1) / 2", ...
+                'ErfMapping',       "value = min + (max - min) * (erf(knot interpolant / TrajectoryErfDivisor) + 1) / 2", ...
                 'PhaseIntegration', sprintf("%d-point Gauss-Legendre per knot interval, accumulated at the knots (RateKnotCycles)", numel(xi)), ...
                 'Phase',            "Phi(t) = 2*pi * integral of Fm from 0 to t; Phi(0) = 0", ...
                 'AmplitudeMapping', "10^((S - M/2)/20), evaluated as exp(log(10)/20 * (S - M/2))", ...
@@ -914,7 +948,7 @@ classdef DMR < stimgen.StimType
             %   cyc - integral of Fm from 0 to t, cycles; Phi = 2*pi*cyc
             %   fm  - temporal modulation rate, Hz
             L  = plan.NumEnvelopes;
-            c  = plan.ErfDivisor;
+            c  = plan.TrajectoryErfDivisor;
             [xi, wq] = stimgen.DMR.gauss_legendre_();
 
             om  = zeros(L, numel(t));
@@ -1002,6 +1036,20 @@ classdef DMR < stimgen.StimType
                 c = 1;
             else
                 c = sqrt(2);
+            end
+        end
+
+
+        function d = trajectory_divisor_(scaling)
+            % d = trajectory_divisor_(scaling)
+            % What the interpolated knot sequence is divided by before erf.
+            % "Uniform": sqrt(2) times that sequence's own standard
+            % deviation, sqrt(KnotInterpolantVariance), so the mapped values
+            % are flat over their range. "AsPrinted": 1, the paper's erf(x).
+            if scaling == "AsPrinted"
+                d = 1;
+            else
+                d = sqrt(2 * stimgen.DMR.KnotInterpolantVariance);
             end
         end
 

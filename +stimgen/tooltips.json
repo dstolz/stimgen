@@ -144,7 +144,7 @@
     "ModulationRateMin": "Lowest temporal modulation rate in Hz. Negative and positive rates move the ripple in opposite directions. Paper: -350. Scalar only.",
     "ModulationRateMax": "Highest temporal modulation rate in Hz. Paper: 350. Scalar only.",
     "ModulationRateChangeRate": "Maximum rate of change of the temporal modulation rate in Hz. Its random knots are drawn at twice this rate. Paper: 1.5. Scalar only.",
-    "ErfScaling": "How erf maps the normal draws onto their range. Uniform: erf(x/(sqrt(2) sigma)), the flat distribution the paper describes. AsPrinted: erf(x/sigma), the paper's equations as printed, which spends more time near the limits.",
+    "ErfScaling": "How erf maps the normal draws onto their range. Uniform: scaled by the standard deviation of what erf is applied to, which makes ripple density and modulation rate flat over their ranges, as the paper describes and shows. AsPrinted: the paper's equations as printed, erf(x), which spends more time near the limits.",
     "Seed": "Non-negative integer that fixes every random draw: the same seed gives the same segment. Vectorizable: 1:40 gives 40 different segments, one variant each.",
     "ModulationDepth": "Peak-to-peak range of the envelope in dB. Paper: 30 or 45. Vectorizable."
   },

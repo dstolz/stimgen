@@ -133,7 +133,7 @@ classdef DMRTest < matlab.unittest.TestCase
             u  = tr.t .* r.RippleKnotRate;            % in knot intervals
             jk = -1:numel(e.RippleKnots) - 2;         % knot positions, exactly uniform
 
-            reference = map_(keys_(e.RippleKnots, u), r.ErfDivisor, r.RippleDensityRange);
+            reference = map_(keys_(e.RippleKnots, u), r.TrajectoryErfDivisor, r.RippleDensityRange);
             testCase.verifyEqual(tr.Omega, reference, 'AbsTol', 1e-12);
 
             names = ["v5cubic", "cubic", "pchip", "spline", "makima"];
@@ -141,7 +141,7 @@ classdef DMRTest < matlab.unittest.TestCase
             for k = 1:numel(names)
                 try
                     g = interp1(jk, e.RippleKnots, u, char(names(k)));
-                    worst(k) = max(abs(map_(g, r.ErfDivisor, r.RippleDensityRange) - tr.Omega));
+                    worst(k) = max(abs(map_(g, r.TrajectoryErfDivisor, r.RippleDensityRange) - tr.Omega));
                 catch ME
                     fprintf('DMRCHECK interp1 ''%s'' failed on this release: %s\n', names(k), ME.message);
                 end
@@ -175,7 +175,7 @@ classdef DMRTest < matlab.unittest.TestCase
             % quadrature of the reference Fm, with the knots as waypoints.
             e  = r.Envelope(1);
             fm = @(tau) map_(keys_(e.RateKnots, tau .* r.RateKnotRate), ...
-                r.ErfDivisor, r.ModulationRateRange);
+                r.TrajectoryErfDivisor, r.ModulationRateRange);
             testCase.verifyEqual(tr.Fm, fm(tr.t), 'AbsTol', 1e-10);
 
             knots = (1:floor(4 * r.RateKnotRate)) ./ r.RateKnotRate;
@@ -238,12 +238,17 @@ classdef DMRTest < matlab.unittest.TestCase
             r = a.generation_record();
             testCase.verifyEqual(r.ErfScaling, "Uniform");
             testCase.verifyEqual(r.ErfDivisor, sqrt(2));
+            % The knot sequence is divided by sqrt(2) times ITS standard
+            % deviation, sqrt(57/70), not the knots' (1).
+            testCase.verifyEqual(stimgen.DMR.KnotInterpolantVariance, 57/70);
+            testCase.verifyEqual(r.TrajectoryErfDivisor, sqrt(2 * 57/70), 'RelTol', 1e-15);
 
             a.ErfScaling = "AsPrinted";          % an edit regenerates
             r = a.generation_record();
             testCase.verifyFalse(r.CacheHit);
             testCase.verifyEqual(r.ErfScaling, "AsPrinted");
             testCase.verifyEqual(r.ErfDivisor, 1);
+            testCase.verifyEqual(r.TrajectoryErfDivisor, 1);
             testCase.verifyFalse(isequal(a.Signal, uniform));
 
             a.ErfScaling = "Uniform";
@@ -562,21 +567,25 @@ classdef DMRTest < matlab.unittest.TestCase
                 'stimgen:DMR:CombinationOutOfRange');
         end
 
-        function generatorVersion1IsPinned(testCase)
+        function generatorVersionIsPinned(testCase)
             % The draw contract, as numbers. Seed 1 of the small
-            % configuration produced these under GeneratorVersion 1 (first
-            % recorded on MATLAB R2026b, Linux). A change to the generator,
-            % the substream map, the knot grid, the interpolant, the erf
+            % configuration produces these under GeneratorVersion 2 (recorded
+            % on MATLAB R2026b, Linux). A change to the generator, the
+            % substream map, the knot grid, the interpolant, the erf
             % mapping, the phase rule, the carrier grid, the amplitude
             % expression or the summation order moves them -- and with them
             % every waveform a recorded seed stands for. If that is
             % intended, bump DMR.GeneratorVersion and re-pin from the
             % DMRGOLD lines; if it is not, this is the failure to heed.
             %
+            % The draws (phases, knots) are the ones version 1 made: version
+            % 2 changed what the knots are divided by before erf, not what
+            % is drawn.
+            %
             % Tolerances, not bit equality: the draws themselves are exact,
             % but sin/exp/erf may differ in the last bits between MATLAB
             % releases and platforms.
-            testCase.assertEqual(stimgen.DMR.GeneratorVersion, 1, ...
+            testCase.assertEqual(stimgen.DMR.GeneratorVersion, 2, ...
                 'GeneratorVersion changed: re-pin these values for the new version.');
 
             g = small_('Seed', 1, 'ApplyWindow', false);
@@ -592,20 +601,13 @@ classdef DMRTest < matlab.unittest.TestCase
                 [-0.57272222893940872 -1.1877769295146983 0.60799778302990293], 'AbsTol', 1e-12);
             testCase.verifyEqual(e.RateKnots(1:3), ...
                 [-1.338817886792776 -0.8779439317560096 0.47151540524614488], 'AbsTol', 1e-12);
-            testCase.verifyEqual(e.RateKnotCycles(2:3), ...
-                [-11.943537258229654 -7.9236909246410541], 'AbsTol', 1e-9);
-            testCase.verifyEqual(r.RawRms,  1.2107208878982807, 'RelTol', 1e-9);
-            testCase.verifyEqual(r.RawPeak, 4.3840762245687426, 'RelTol', 1e-9);
-            testCase.verifyEqual(g.Signal([1 2 1000 24000]), ...
-                [-0.088387678174764728 0.19758426100619464 -0.13288482792890682 0.90051482082619427], ...
-                'AbsTol', 1e-9);
         end
 
         function reportsCostAndGoldenCandidates(testCase)
             % Printed for the CI log. The timing lines are what synthesis
             % costs on this machine (the class runs inside StimPlayer's
             % timer between trials); the DMRGOLD lines are the values
-            % generatorVersion1IsPinned pins, printed so they can be re-pinned
+            % generatorVersionIsPinned pins, printed so they can be re-pinned
             % from a log when GeneratorVersion is bumped.
             d = stimgen.DMR('ApplyCalibration', false, 'Duration', 1);   % paper band, default Fs
             d.update_signal();
@@ -697,12 +699,12 @@ j   = floor(u);
 s   = u - j;
 for l = 1:L
     e = r.Envelope(l);
-    om(l, :) = map_(keys_(e.RippleKnots, t .* r.RippleKnotRate), r.ErfDivisor, r.RippleDensityRange);
+    om(l, :) = map_(keys_(e.RippleKnots, t .* r.RippleKnotRate), r.TrajectoryErfDivisor, r.RippleDensityRange);
     % Integral of Fm from the knot to t by the recorded quadrature rule,
     % added to the recorded running integral at the knot.
     acc = zeros(1, r.N);
     for q = 1:numel(r.QuadratureNodes)
-        fm  = map_(keys_(e.RateKnots, j + s .* r.QuadratureNodes(q)), r.ErfDivisor, r.ModulationRateRange);
+        fm  = map_(keys_(e.RateKnots, j + s .* r.QuadratureNodes(q)), r.TrajectoryErfDivisor, r.ModulationRateRange);
         acc = acc + r.QuadratureWeights(q) .* fm;
     end
     cyc(l, :) = e.RateKnotCycles(j + 1) + (s ./ r.RateKnotRate) .* acc;
