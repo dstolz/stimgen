@@ -413,19 +413,24 @@ every generation record (`rec.Rules`).
   | | variance of Ω, Fm ÷ range² | first zero of the long-term correlation | `σ²_RN` |
   | --- | --- | --- | --- |
   | flat (the paper's statement; Eq. 9) | 0.0833 | 1.43 ms, 0.125 octave | M²/12 |
-  | `"Uniform"` | 0.083 | 1.40–1.47 ms, 0.123–0.128 octave | M²/12 |
-  | `"AsPrinted"` | 0.104–0.107 | 1.24 ms, 0.122 octave | M²/8.61 |
+  | `"Uniform"` | 0.082 (Ω), 0.085 (Fm) | 1.41 ms, 0.122 octave | M²/12 |
+  | `"AsPrinted"` | 0.104 (Ω), 0.107 (Fm) | 1.24 ms, 0.122 octave | M²/8.61 |
+
+  The variances and the `"Uniform"` zeros are what `tests/DMRPaperTest.m` measured in MATLAB
+  on one 600 s record (300 s for `"AsPrinted"`); the `"AsPrinted"` zeros are from a
+  simulation of the method. Simulated 600 s records under `"Uniform"` range over
+  0.080–0.087, 1.40–1.47 ms and 0.123–0.128 octave.
 
   `GeneratorVersion` 1 divided the knot sequences by √2 alone under `"Uniform"`, as if
-  their standard deviation after interpolation were still 1. That gave 0.073–0.075 and
-  1.53 ms: parameters weighted toward mid-range. See
+  their standard deviation after interpolation were still 1. In simulation that gives
+  0.073–0.075 and 1.53 ms: parameters weighted toward mid-range. See
   [Replicating the paper's examples](#replicating-the-papers-examples).
 - **Interpolant.** The meaning of `interp1`'s `'cubic'` option has changed between MATLAB
   releases, and the paper does not say which release it used. The class writes out cubic
   convolution (Keys, a = −½) over the four nearest knots, so the result does not depend on
   the release; `tests/DMRTest.m` compares it with `interp1` on the release the suite runs
   on. On R2026b it equals both `interp1(...,'cubic')` and `interp1(...,'v5cubic')` to
-  rounding (2 × 10⁻¹⁵ cycles/octave) and differs from `'pchip'` by up to 0.25
+  rounding (2 × 10⁻¹⁵ cycles/octave) and differs from `'pchip'` by up to 0.27
   cycles/octave in that test.
 - **Phase integral.** The paper does not say how the integral was evaluated. Here it is a
   fixed 32-point Gauss–Legendre rule per knot interval, accumulated at the knots. Ω(t),
@@ -443,12 +448,12 @@ draws the stimulus panels of its Figures 1 and 2 with the class, for comparison 
 
 | The paper | Checked how | Result |
 | --- | --- | --- |
-| Ω and Fm "uniformly (flat) distributed" over 0–4 cycles/octave and ±350 Hz | variance and time in each tenth of the range, 600 s | flat with `"Uniform"`; see the table above |
+| Ω and Fm "uniformly (flat) distributed" over 0–4 cycles/octave and ±350 Hz | variance and time in each tenth of the range, 600 s | flat with `"Uniform"`: variance 0.082 and 0.085 of range² (flat 0.083), each tenth of the range holding 9.1–10.5% of the time |
 | Fig. 2A,B: Ω(t) and Fm(t) over 15 s | the published traces digitized from the figure (150 dpi) and compared with 1500 simulated 15 s records per scaling | Ω: variance 0.080 of range², 20% of the time in the outer tenths — a flat trajectory's figures, 2.5–2.8 standard deviations from `"AsPrinted"`. Fm: variance 0.081; 29% in the outer tenths, 1.7 standard deviations above flat (45 knots) |
 | Maximum rates of change 3 Hz (Ω) and 1.5 Hz (Fm); sampled at 6 and 3 Hz, upsampled by 7350 and 14,700 at 44.1 kHz | knot rates in the record; maxima counted in the digitized Fig. 2A,B traces and in simulated ones, same detector, at two prominence thresholds | as stated. Published 15 s: 22–23 maxima of Ω, 10–15 of Fm. Simulated: 23–26 ± 2 with 6 Hz knots (12–14 with 3 Hz, 35–41 with 12 Hz) and 12–13 ± 1.5 with 3 Hz knots (6–7 with 1.5 Hz, 23–26 with 6 Hz) |
-| Eq. 9: long-term correlation `σ²·sinc(2Ω_max ξ)·sinc(2F_max τ)`, a central peak "of width 3 msec and one-fourth octave" | `E[cos(2πΩξ + 2πFmτ)]` over 600 s | within 0.03 of the sincs; first zeros 1.40–1.47 ms and 0.123–0.128 octave, so a peak 2.8–2.9 ms by 0.25 octave |
-| Ripple noise has the same long-term correlation; compressing it barely changes that; `σ²_DMR = M²/8`, `σ²_RN = M²/12` | Eq. 2–3 over 60 s at 4 kHz | compressed and uncompressed correlations agree to 0.01 rms; variances within 1–2% |
-| Overall level = per-carrier level + `10·log10(230)` = 23.6 dB | power of the synthesized sum over the mean power of one modulated carrier | 23.6 dB to within 0.1 |
+| Eq. 9: long-term correlation `σ²·sinc(2Ω_max ξ)·sinc(2F_max τ)`, a central peak "of width 3 msec and one-fourth octave" | `E[cos(2πΩξ + 2πFmτ)]` over 600 s | within 0.018 of the sinc in time and 0.027 in frequency; first zeros 1.414 ms (1.429) and 0.1224 octave (0.125), so a peak 2.83 ms by 0.245 octave |
+| Ripple noise has the same long-term correlation; compressing it barely changes that; `σ²_DMR = M²/8`, `σ²_RN = M²/12` | Eq. 2–3 over 60 s at 4 kHz | compressed and uncompressed correlations differ by 0.007 rms in time and 0.008 in frequency; the compressed one is within 0.042 and 0.021 of Eq. 9; variances 112.39 (112.50) and 75.47 (75.00) dB² |
+| Overall level = per-carrier level + `10·log10(230)` = 23.6 dB | power of the synthesized sum over the mean power of one modulated carrier | 23.57 dB (23.62) |
 | Eq. 5: linear envelope between `10^(−M/20)` and 1 | the envelope | holds |
 | Fig. 1C,D: envelopes with a 70 Hz maximum modulation rate | drawn by `dmr_paper_figures`; by eye only | the same kind of picture: curved bands fanning out from the lowest carrier for the DMR, saturated blobs for the noise |
 | Fig. 2D: instantaneous correlation `cos(2πΩξ + 2πFmτ)` at three parameter pairs | follows from Eq. 1, which `DMRTest` checks as arithmetic | not redrawn |
@@ -553,10 +558,10 @@ sample, so ripple noise with 16 envelopes costs about six times a DMR. `StimPlay
 resynthesizes the presented stimulus inside its timer after every trial, so with a new
 seed per trial the ISI has to leave room for it (`generation_record().GenerationSeconds`
 reports what a generation took, and `StimPlayer` logs how late each trigger was in
-`StimLateness`). One measurement, on the CI runner (GitHub-hosted Linux, MATLAB R2026b),
-at the paper's 230 carriers and 97656.25 Hz: 0.92 s of synthesis per second of DMR, and
-6.67 s per second of 16-envelope ripple noise. Measure on the machine that will run the
-experiment. The last synthesis is cached: presenting the same seed
+`StimLateness`). On the CI runner (GitHub-hosted Linux, MATLAB R2026b), at the paper's
+230 carriers and 97656.25 Hz, three runs measured 0.91, 0.92 and 1.18 s of synthesis per
+second of DMR, and 6.67, 6.77 and 8.34 s per second of 16-envelope ripple noise. Measure
+on the machine that will run the experiment. The last synthesis is cached: presenting the same seed
 again, or editing only `SoundLevel`, the gate or the calibration, does not synthesize
 again.
 

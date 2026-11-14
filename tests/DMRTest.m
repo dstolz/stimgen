@@ -601,6 +601,14 @@ classdef DMRTest < matlab.unittest.TestCase
                 [-0.57272222893940872 -1.1877769295146983 0.60799778302990293], 'AbsTol', 1e-12);
             testCase.verifyEqual(e.RateKnots(1:3), ...
                 [-1.338817886792776 -0.8779439317560096 0.47151540524614488], 'AbsTol', 1e-12);
+            % What is computed from them, under version 2's scaling.
+            testCase.verifyEqual(e.RateKnotCycles(2:3), ...
+                [-12.924044015375193 -8.4983137193332681], 'AbsTol', 1e-9);
+            testCase.verifyEqual(r.RawRms,  1.2106855284376581, 'RelTol', 1e-9);
+            testCase.verifyEqual(r.RawPeak, 4.1215235668208159, 'RelTol', 1e-9);
+            testCase.verifyEqual(g.Signal([1 2 1000 24000]), ...
+                [0.71233284987059176 1.5315405829307198 0.22376957296680472 -0.64868251339621807], ...
+                'AbsTol', 1e-9);
         end
 
         function reportsCostAndGoldenCandidates(testCase)
