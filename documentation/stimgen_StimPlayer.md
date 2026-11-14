@@ -770,6 +770,9 @@ all and **Cancel** (the default) abandons the run without changing anything:
   [Required hardware parameters](#required-hardware-parameters));
 - a bank item whose `Reps` is not a multiple of its combination count under a
   balanced selection mode (see above);
+- a bank item longer than the shortest ISI. ISI is measured from one onset to
+  the next, so the next presentation would be triggered while that stimulus
+  is still playing. A vectorized `Duration` counts by its longest value;
 - a bank item with a `Background`. A Run plays each stimulus's `Signal` on its
   own, with silence between presentations: it does **not** play a background,
   and a background modulation plays as a burst of its modulated background. A

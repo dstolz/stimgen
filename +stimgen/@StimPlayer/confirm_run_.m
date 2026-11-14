@@ -32,6 +32,26 @@ if ~isempty(uneven)
         "combination count for equal counts.";
 end
 
+% ISI runs from one onset to the next, so a stimulus longer than the
+% shortest ISI is still playing when the next presentation is triggered.
+% Advisory: if the comparison itself fails, that is logged and the run is
+% not held up by it.
+try
+    late = obj.outlasting_isi_report_();
+catch ME
+    late = strings(0, 1);
+    stimgen.util.vprintf(0, 1, 'StimPlayer: could not compare stimulus durations with the ISI: %s', ...
+        ME.message);
+end
+if ~isempty(late)
+    issues(end+1, 1) = "These bank items are longer than the shortest ISI (" + ...
+        string(sprintf('%.6g', 1e3 * obj.ISI(1))) + " ms):" + newline + ...
+        strjoin(("  - " + late).', newline) + newline + ...
+        "ISI is measured from one onset to the next, so the next presentation would " + ...
+        "be triggered while such a stimulus is still playing. Lengthen ISI or shorten " + ...
+        "the stimulus.";
+end
+
 % A Run plays each stimulus's Signal on its own. A bank item set to be
 % embedded in an ongoing background would be presented WITHOUT it, and the
 % presentation log would not say so.

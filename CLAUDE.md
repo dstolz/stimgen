@@ -488,7 +488,9 @@ becomes unconstructable. See `documentation/stimgen_logging.md`.
 
 `StimPlayer` resolves these names from the host at Run time: `BufferData_0/1`, `BufferSize_0/1`,
 `x_Trigger_0/1`. If any are missing (or no protocol is loaded/connected) Run asks before starting a
-dry run that plays nothing, naming what is missing; a run that started with them and loses one
+dry run that plays nothing, naming what is missing (the same `confirm_run_` dialog lists uneven
+`Reps`, a bank item longer than the shortest ISI — ISI is onset to onset — and items with a
+`Background`); a run that started with them and loses one
 stops with `stimgen:StimPlayer:HardwareLost` rather than continuing silently. Preview falls back
 to the host's calibration adapter. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
 application's hardware circuit must expose to support hardware-triggered playback.

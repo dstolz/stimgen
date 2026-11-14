@@ -152,6 +152,7 @@ classdef StimPlayer < handle
         refresh_combo_controls_(obj)
         [txt, uneven, detail] = reps_per_combination_(obj, reps, stimObj)
         lines = uneven_reps_report_(obj)
+        lines = outlasting_isi_report_(obj)
         n = count_background_items_(obj)
         proceed = confirm_run_(obj)
         bank = bank_struct_(obj)
