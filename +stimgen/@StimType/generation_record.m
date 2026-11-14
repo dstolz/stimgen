@@ -17,7 +17,7 @@ function rec = generation_record(obj)
 %
 % A subclass whose waveform depends on more than its property values (a
 % random draw, a derived trajectory) overrides this and adds what is needed
-% to reconstruct the waveform. An override starts from
+% to reconstruct the waveform; see stimgen.DMR. An override starts from
 % generation_record@stimgen.StimType(obj) so the fields below are always
 % present.
 %

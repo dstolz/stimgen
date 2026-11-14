@@ -41,7 +41,7 @@ that spans them.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
+`SweptSine`, `ClickTrain`, `TORC`, `DMR`, `SoundFile`. The base class owns level/duration/gating/Fs, the
 variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
 `SoundFile` is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
 `FileIndex` as its variant axis, and derives `Duration` from the selected file.
@@ -275,6 +275,23 @@ only, never every property: a `SoundFile` catalog can embed audio. A subclass wh
 depends on more than its property values overrides it, starting from the base call, and adds what
 reconstruction needs.
 
+**`DMR` waveforms are a contract with data already recorded.** `stimgen.DMR` (dynamic moving
+ripple / ripple noise, Escabí & Schreiner 2002) is a pure function of its properties, `Fs` and
+`DMR.GeneratorVersion`: the same seed must give the same segment for as long as that version
+stands. Everything that fixes the waveform is in `plan_from_`, `trajectories_`, `envelope_db_`,
+`kernel_`, `map_` and `render_` — the generator (`mrg32k3a`, `NormalTransform` `Inversion`), the
+substream map (1 carrier phases; 10l+1 and 10l+2 envelope l's ripple-density and modulation-rate
+knots), the knot grid, the cubic-convolution interpolant, the erf mapping, the 32-point
+Gauss–Legendre phase rule, the carrier grid, the amplitude expression, the ripple-noise combination
+and the summation order. Changing any of them bumps `GeneratorVersion` and the golden values in
+`tests/DMRTest.m`. Paper-derived defaults live in one bannered properties block; the places the
+class reads or departs from the paper as printed are listed in the class help and in
+`documentation/stimgen_StimTypes.md#dmr`, and named in every record's `Rules`. `Seed` is a
+non-negative integer with no "reseed randomly" value. Ω(t), Fm(t) and Φ(t) are functions of t
+alone, so `envelope_at` returns the envelope synthesis used at any sampling; do not add a second
+evaluation path. The DMR half of `generation_record` is captured inside `update_signal`, never
+rebuilt at call time.
+
 **A presenter selects variants through the stimulus, never by index.** `update_signal()` called
 outside a variant cycle is the one call that selects the next combination per
 `VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and
@@ -310,7 +327,7 @@ voltage must go through the table's value too.
 unit-amplitude tone and solves for the drive that gives `normative_db`, so a tone/swept-sine table
 voltage `V` is a sine's peak and that sine's rms is `V/sqrt(2)`. A peak-normalized (`absmax`)
 stimulus is scaled to `V`; an rms-normalized one (`Noise`, `AMnoise`, `AttackModNoise`, `TORC`,
-`SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
+`DMR`, `SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
 `apply_calibration`, `SoundFile.apply_calibration` and `filter_level_reference` read that constant;
 do not restate it. Scaling an rms-normalized waveform to `V` itself played it 3.01 dB high, which is
 what `tests/LevelConventionTest.m` pins down (offline on a flat table, and through the simulated rig

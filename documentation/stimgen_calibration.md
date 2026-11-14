@@ -704,7 +704,7 @@ In practice, `stimgen.StimType.apply_calibration` calls this for you when a `.es
 A tone (or swept sine) table voltage is the **peak** of the sine that produces the table's level: `calibrate_tones` plays `ExcitationVoltage` times a unit-amplitude tone, measures the rms that comes back, and solves for the drive that gives `normative_db`. Scaling a waveform to that voltage therefore means different things for different normalizations:
 
 - a peak-normalized (`"absmax"`) stimulus — `Tone`, `FMtone`, `SweptSine` — is scaled to it directly, and carries `V/√2` rms;
-- an rms-normalized stimulus — `Noise`, `AMnoise`, `AttackModNoise`, `TORC`, and `SoundFile` with `LevelReference = "rms"` — is given that same sine's rms, `V · Engine.LutRmsPerVolt` = `V/√2`.
+- an rms-normalized stimulus — `Noise`, `AMnoise`, `AttackModNoise`, `TORC`, `DMR`, and `SoundFile` with `LevelReference = "rms"` — is given that same sine's rms, `V · Engine.LutRmsPerVolt` = `V/√2`.
 
 So a tone and a noise at the same `SoundLevel` play at the same rms dB SPL on a flat channel. Until this was fixed, rms-normalized stimuli were scaled to `V` itself and played 3.01 dB above their `SoundLevel`; on the simulated rig in `tests/LevelConventionTest.m` the same 1 kHz sine read +3.04 dB as an rms-referenced `SoundFile` and +0.03 dB as a `Tone`. `filter_level_reference` follows the same rule, so hardware and software agree. Click tables are a separate, peak-equivalent convention (dB peSPL; see *Calibrate Clicks* above), untouched by this.
 
