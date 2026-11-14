@@ -44,9 +44,26 @@ end
 
 function draw_(h, ax, stimObj, name)
 % The waveform, titled with its name and the parameters it was made from.
+% A stimulus with a Background is drawn embedded in a stretch of it either
+% side (as long as the stimulus itself, to a quarter second), on a time axis
+% whose zero is still the stimulus onset: a gap or an FM epoch is not
+% visible as anything on its own.
 if ~isempty(stimObj.Signal)
     % Axis is labelled in ms (see create.m)
-    set(h.SignalLine, 'XData', stimObj.Time * 1e3, 'YData', stimObj.Signal);
+    t = stimObj.Time;
+    y = stimObj.Signal;
+    try
+        if ~isempty(stimObj.get_background())
+            pad = min(0.25, numel(y) / double(stimObj.Fs));
+            [y, t] = stimObj.embedded_signal(pad, pad);
+        end
+    catch ME
+        % The plot must still show the stimulus when its background cannot
+        % be built (an invalid band, say); the reason is logged once here
+        % and reported in full by whatever plays or exports it.
+        stimgen.util.vprintf(1, 1, 'StimPlayer: background not drawn: %s', ME.message);
+    end
+    set(h.SignalLine, 'XData', t * 1e3, 'YData', y);
     summary = stimObj.current_parameter_summary();
     if strlength(summary) > 0
         title(ax, {char(name), char(summary)});

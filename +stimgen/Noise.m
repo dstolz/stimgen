@@ -54,6 +54,16 @@ classdef Noise < stimgen.StimType
         filterKey_ (1,:) double = []   % [hp lp fs tw att order] the taps were designed for
     end
 
+    % A RandStream to draw the noise from, or [] (default) for the global
+    % stream. It exists so a caller that needs the SAME noise again -- the
+    % seeded background loop, stimgen.util.background_source -- can have it
+    % without reseeding or disturbing the global stream. Not observable
+    % (assigning it must not regenerate), and NonCopyable: a copy() sharing
+    % its source's stream would draw the next numbers, not the same ones.
+    properties (Hidden, NonCopyable)
+        RandomStream = []
+    end
+
     properties (Constant)
         CalibrationType = "filter";
         Normalization   = "rms";
@@ -89,7 +99,12 @@ classdef Noise < stimgen.StimType
 
             % nb - 1 extra samples are the filter's start-up; dropping them
             % leaves n samples that all saw a full filter history.
-            y = fftfilt(b, randn(n + nb - 1, 1));
+            if isempty(obj.RandomStream)
+                x = randn(n + nb - 1, 1);
+            else
+                x = randn(obj.RandomStream, n + nb - 1, 1);
+            end
+            y = fftfilt(b, x);
             obj.Signal = y(nb:end).';
 
             obj.apply_normalization;

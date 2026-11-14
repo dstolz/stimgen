@@ -26,7 +26,14 @@
     "VariantSelectionMode": "Serial = table order; ShuffleUniform = random; ShuffleLeastUsed = random, least-presented first; CustomSelector = custom class.",
     "VariantCombinationMode": "Cartesian = all combinations; PairwiseStrict = element-wise, equal length; PairwiseScalarExpand = element-wise with scalar repeat.",
     "VariantSelectorClass": "Custom variant selector class name. Used only when Selection Mode is CustomSelector.",
-    "VariantReselectOnUpdate": "Reselect variant every update. Off: variant fixed until manually stepped with < / >."
+    "VariantReselectOnUpdate": "Reselect variant every update. Off: variant fixed until manually stepped with < / >.",
+    "Background": "Ongoing sound this stimulus is embedded in by a presenter that plays one continuously (tone in noise). None = presented in quiet. The waveform itself is unchanged; Play auditions the stimulus in its background.",
+    "BackgroundLevel": "Level of the background in dB SPL (rms), independent of Sound Level. Vectorizable, but a presenter plays one background per run, so a series made here runs blocked. Requires loaded calibration.",
+    "BackgroundHighPass": "Lower -6 dB edge of the background noise band in Hz. Vectorizable.",
+    "BackgroundLowPass": "Upper -6 dB edge of the background noise band in Hz. Must be below Fs/2. Vectorizable.",
+    "BackgroundFrequency": "Frequency of the background tone in Hz. Vectorizable, one background per variant.",
+    "BackgroundLoopDuration": "Length in ms of the background noise segment a presenter repeats seamlessly. The same noise recurs with this period.",
+    "BackgroundSeed": "Seed of the background noise segment. Same seed and settings give the same noise; change it for a different token."
   },
 
   "Tone": {
@@ -64,6 +71,33 @@
     "ModulationFrequency": "Sweep rate in Hz. 0 = unmodulated. Vectorizable.",
     "ModulationDepth": "Peak deviation ±Hz from carrier. 0 = unmodulated. Vectorizable.",
     "OnsetPhase": "Starting phase of the carrier in degrees. 0 = zero crossing, 90 = positive peak. Vectorizable."
+  },
+
+  "BackgroundModulation": {
+    "SoundLevel": "Level of the steady background being modulated, in dB SPL (rms). The modulated stretch itself is louder or quieter than this; nothing is renormalized. Requires loaded calibration.",
+    "Background": "The ongoing sound this stimulus modulates. A presenter plays it continuously and applies the modulation at each presentation; on its own the stimulus is that sound for Duration with the modulation applied.",
+    "Duration": "Length of the modulation in ms. The background continues before and after it.",
+    "WindowDuration": "Ramp into + out of the modulation in ms (each half). Shapes the modulation, not the background, which is never gated. Ignored when Apply Window is off.",
+    "ApplyWindow": "Ramp the modulation in and out. Off: it starts and ends abruptly."
+  },
+
+  "BackgroundAM": {
+    "AMRate": "Modulation frequency in Hz. Vectorizable.",
+    "AMDepth": "Depth 0–1 about the steady level: gain swings between 1 - depth and 1 + depth. 0 = unmodulated. Vectorizable.",
+    "OnsetPhase": "Modulator phase in degrees. Default 0 leaves the steady level rising, so the envelope is continuous at onset."
+  },
+
+  "BackgroundGap": {
+    "GapDepth": "Depth 0–1. 1 = silence; less is a level decrement of 20*log10(1 - depth) dB. Vectorizable.",
+    "Duration": "Length of the gap in ms, ramps included. The background continues before and after it. Vectorizable.",
+    "WindowDuration": "Fall + rise of the gap in ms (each half), inside Duration. Ignored when Apply Window is off, which makes the gap rectangular."
+  },
+
+  "BackgroundFM": {
+    "FMRate": "Modulation frequency in Hz. Vectorizable.",
+    "FMDeviation": "Peak deviation ±Hz from the background tone's frequency. 0 = unmodulated. Vectorizable.",
+    "OnsetPhase": "Modulator phase in degrees. Default 0 starts at zero deviation.",
+    "Background": "Frequency modulation needs a tone to act on. A presenter plays the tone continuously and modulates its frequency at each presentation."
   },
 
   "SweptSine": {

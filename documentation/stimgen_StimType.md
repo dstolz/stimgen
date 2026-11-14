@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `DMR`, `SoundFile` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
+Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `DMR`, `SoundFile`, and the background modulations `BackgroundAM`, `BackgroundGap`, `BackgroundFM` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
 
 ## What The Base Class Provides
 
@@ -16,6 +16,7 @@ Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `Cl
 - plotting and preview playback helpers
 - serialization helpers (`toStruct`, `fromStruct`)
 - GUI-generation and property metadata hooks
+- the ongoing background a stimulus is embedded in (`Background`, `BackgroundLevel`, ...) and the methods a presenter reads it through (`get_background`, `get_embedding`, `embedded_signal`) — see [stimgen_Background.md](stimgen_Background.md)
 
 Subclasses implement `update_signal` and set class constants for calibration and normalization behavior.
 
@@ -339,7 +340,8 @@ Every entry in the catalog is.
 ### Parameter grouping
 
 Each `propMeta` entry may also declare `group` (`'Waveform'` | `'Level'` |
-`'Timing'` | `'Variant'`, default `'Waveform'`) and `order` (a numeric sort
+`'Timing'` | `'Background'` | `'Variant'`, default `'Waveform'`; a name not on
+that list is not shown at all) and `order` (a numeric sort
 key within that group, default last-and-by-declaration-order).
 `stimgen.StimType.group_prop_meta(meta)` buckets a `propMeta()` struct into
 `{groupName, propNames}` sections in that fixed group order; `create_gui`
@@ -351,9 +353,17 @@ one lives in the subclass's own properties and the others are inherited —
 between the base class's `Duration` (order 10) and `WindowDuration`
 (order 30) instead of drifting off into the `Waveform` section.
 
+`propMeta` may return a different *set* of rows depending on the object's
+state: the `Background` group lists only the settings its type uses (one row
+for `"None"`). Both generators rebuild their panel when an edit changes that
+set — `interpret_gui` for `create_gui`, `set_prop_` for the bank editor — the
+same rebuild a `'button'` action gets. `on_gui_changed` can retitle a widget
+that exists; it cannot add or remove one.
+
 ## Common Public Methods
 
-- `plot`, `plot_spectrogram`, `play`
+- `plot`, `plot_spectrogram`, `play` (which auditions `audition_signal`: the stimulus in its background when it has one)
+- `get_background`, `get_embedding`, `embedded_signal`, `audition_signal`
 - `selected_value`, `active_variant_values`
 - `generation_record`
 - `current_parameter_summary`

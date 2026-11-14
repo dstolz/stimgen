@@ -308,7 +308,9 @@ function rows = parameter_rows_(stimObj)
 % parameter_rows_(stimObj) - Build the Parameter/Value cell array.
 
 meta  = stimObj.get_prop_meta();
-props = string(stimObj.UserProperties);
+% Not UserProperties itself: that always lists every Background setting, and
+% one the stimulus's Background does not use is not a parameter of it.
+props = stimObj.active_user_properties();
 
 rows = cell(0, 2);
 for k = 1:numel(props)

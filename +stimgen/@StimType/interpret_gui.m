@@ -5,7 +5,13 @@ function interpret_gui(obj, src, event)
 % Widget values are in display units (e.g. milliseconds for time properties)
 % and are divided by the propMeta display scale before assignment.
 % Invalid values are rejected and the widget is reverted to the prior value.
+%
+% An edit that changes WHICH rows propMeta returns (Background: None ->
+% Noise brings four more) rebuilds the panel into its container, the same
+% rebuild a 'button' action gets in create_gui. on_gui_changed can only
+% retitle a widget that already exists; it cannot add or remove one.
 
+metaBefore = fieldnames(obj.propMeta());
 isNumExpr = isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
 scaleValue = stimgen.StimType.display_scale(obj.propMeta(), src.Tag);
 try
@@ -32,6 +38,18 @@ if isNumExpr
 end
 obj.on_gui_changed(src.Tag, event.Value);
 obj.call_update_signal_with_variant_cycle_();
+
+% Last, because it deletes src along with the rest of the grid.
+if ~isequal(metaBefore, fieldnames(obj.propMeta()))
+    g = src.Parent;
+    if ~isempty(g) && isvalid(g)
+        container = g.Parent;
+        delete(g);
+        if ~isempty(container) && isvalid(container)
+            obj.create_gui(container);
+        end
+    end
+end
 end
 
 

@@ -62,6 +62,15 @@ switch string(ME.identifier)
     case "stimgen:StimType:UnknownWindowFcn"
         messageText = string(ME.message) + newline + newline + ...
             "Window Shape names a MATLAB window function. Pick one of the listed shapes, or supply a function on the path that takes a length in samples and returns that many window values.";
+    case {"stimgen:BackgroundFM:NeedsToneBackground", "stimgen:BackgroundModulation:PhaseNeedsTone"}
+        messageText = string(ME.message) + newline + newline + ...
+            "Frequency modulation acts on a steady tone. Set Background to Tone and give its frequency in Background Frequency.";
+    case "stimgen:BackgroundModulation:NoBackground"
+        messageText = string(ME.message) + newline + newline + ...
+            "This stimulus is a change made to an ongoing background, so it needs one. To present a sound in quiet, use a stimulus type that is a sound of its own (Tone, Noise, AM Noise, FM Tone).";
+    case {"stimgen:util:background_source:InvalidFrequency", "stimgen:util:background_source:LoopTooShort"}
+        messageText = string(ME.message) + newline + newline + ...
+            "Check the Background settings of this stimulus against the sample rate.";
     case "stimgen:StimType:NonVectorizableProperty"
         messageText = "This property must stay scalar in StimPlayer. Use a single value rather than a vector or expression that expands to multiple values.";
     case "stimgen:StimType:PairwiseLengthMismatch"

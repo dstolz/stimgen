@@ -1,7 +1,9 @@
 function [propNames, propValues] = get_variant_source_values_(obj)
 % [propNames, propValues] = get_variant_source_values_(obj)
 % Collect UserProperties that have more than one value (vectorized).
-% Non-vectorizable properties and scalar properties are excluded.
+% Non-vectorizable properties and scalar properties are excluded, and so is a
+% Background* property the current Background does not use
+% (is_inactive_background_property_): a vector left there is not an axis.
 %
 % Returns:
 %   propNames  - 1-by-N string array of vectorized property names.
@@ -16,6 +18,9 @@ end
 for k = 1:numel(obj.UserProperties)
     pname = string(obj.UserProperties(k));
     if ~isprop(obj, char(pname))
+        continue
+    end
+    if obj.is_inactive_background_property_(pname)
         continue
     end
     raw = obj.(char(pname));
