@@ -338,7 +338,8 @@ reconstruction needs.
 ripple / ripple noise, Escabí & Schreiner 2002) is a pure function of its properties, `Fs` and
 `DMR.GeneratorVersion`: the same seed must give the same segment for as long as that version
 stands. Everything that fixes the waveform is in `plan_from_`, `trajectories_`, `envelope_db_`,
-`kernel_`, `map_` and `render_` — the generator (`mrg32k3a`, `NormalTransform` `Inversion`), the
+`kernel_`, `map_`, `erf_divisor_`, `trajectory_divisor_` and `render_` — the generator (`mrg32k3a`,
+`NormalTransform` `Inversion`), the
 substream map (1 carrier phases; 10l+1 and 10l+2 envelope l's ripple-density and modulation-rate
 knots), the knot grid, the cubic-convolution interpolant, the erf mapping, the 32-point
 Gauss–Legendre phase rule, the carrier grid, the amplitude expression, the ripple-noise combination
@@ -346,7 +347,14 @@ and the summation order. Changing any of them bumps `GeneratorVersion` and the g
 `tests/DMRTest.m`. Paper-derived defaults live in one bannered properties block; the places the
 class reads or departs from the paper as printed are listed in the class help and in
 `documentation/stimgen_StimTypes.md#dmr`, and named in every record's `Rules`. `Seed` is a
-non-negative integer with no "reseed randomly" value. Ω(t), Fm(t) and Φ(t) are functions of t
+non-negative integer with no "reseed randomly" value. The `"Uniform"` erf scaling divides by the
+standard deviation of *what erf is applied to*: `M/√8` for the ripple-noise sum and
+`√(DMR.KnotInterpolantVariance)` = √(57/70) for a knot sequence — erf comes after the
+interpolation, which lowers the variance of unit-variance knots. Dividing the knot sequence by √2
+alone (version 1) left Ω and Fm weighted toward mid-range instead of flat, which is what the paper
+states and what its Fig. 2A,B show; `tests/DMRPaperTest.m` holds the paper's stated statistics
+(flat parameters, the Eq. 9 correlation and its 3 ms by quarter-octave peak, the ripple-noise
+variances, per-carrier level + 10·log10(230)) and fails for a scaling that is not flat. Ω(t), Fm(t) and Φ(t) are functions of t
 alone, so `envelope_at` returns the envelope synthesis used at any sampling; do not add a second
 evaluation path. `envelope_from_record` and `trajectory_from_record` (static, a record alone, no
 synthesis) are not one: they rebuild a plan from the record (`plan_from_record_`) and go through
