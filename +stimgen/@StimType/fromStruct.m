@@ -12,16 +12,26 @@ function obj = fromStruct(S, calibration)
 % property (one removed since the struct was written) is skipped with a
 % debug-level log line.
 %
-% Calibration is held OFF while the object is rebuilt and switched to the
-% saved setting last. Every observable property assigned below regenerates
-% the signal (create_listeners), and until the serialized calibration has
-% been restored that is against the default, empty StimCalibration:
-% apply_calibration then logs a critical "No calibration data available for
-% stim" about a stimulus that is in fact calibrated -- word for word the line
-% a stimulus with no calibration earns, so a log could not tell the two
-% apart. With ApplyCalibration false, apply_calibration returns before it
-% looks. The closing assignment is the one regeneration made with every
-% property and the calibration in place.
+% The stimulus is generated ONCE, after everything is back. Regeneration on
+% property change is held (hold_updates) while the properties are assigned,
+% and a single update_signal() follows. Assigning them live instead
+% synthesized the waveform once per restored property -- each time against a
+% stimulus that was only partly restored, each time advancing the variant
+% selection, and for a long stimulus each time at full cost. The one
+% generation makes the first selection of the variant sequence, so a
+% restored stimulus with a variant axis starts on the combination its
+% selection mode picks first (combination 1 in Serial mode).
+%
+% Calibration is restored before that generation, and ApplyCalibration last
+% of all, so the one generation runs with the saved calibration in place.
+% Generating against the default, empty StimCalibration logged a critical
+% "No calibration data available for stim" about a stimulus that is in fact
+% calibrated -- word for word the line a stimulus with no calibration earns,
+% so a log could not tell the two apart.
+%
+% A stimulus whose generation fails is still returned -- one item must not
+% cost a bank the rest -- with the failure logged as critical and Signal
+% left empty.
 %
 % Parameters:
 %   S           - struct from toStruct (a .spl bank item's StimObj, etc.)
@@ -42,6 +52,12 @@ applyCal = obj.ApplyCalibration;   % class default, if unsaved
 if isfield(S, 'ApplyCalibration')
     applyCal = S.ApplyCalibration;
 end
+
+% Held until every property is back; released on any exit, so an error in an
+% assignment below cannot leave the object deaf to later edits.
+obj.hold_updates(true);
+release = onCleanup(@() obj.hold_updates(false));
+
 obj.ApplyCalibration = false;      % restored last; see above
 
 core = stimgen.StimType.CoreProperties;
@@ -82,4 +98,16 @@ if isfield(S, 'UserProperties')
 end
 
 obj.ApplyCalibration = applyCal;
+
+clear release   % regeneration on property change is live again
+
+% The one generation. Explicit, because nothing above triggers it: the
+% listeners were held, and the ApplyCalibration assignment is not even an
+% event when the saved value is false (AbortSet).
+try
+    obj.update_signal();
+catch ME
+    stimgen.util.vprintf(0, 1, 'fromStruct: %s could not be generated after restore: %s', ...
+        cls, ME.message);
+end
 end

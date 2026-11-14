@@ -60,6 +60,7 @@ sp.ISI = [0.8 1.2];
 - `stimgen.FMtone` — frequency-modulated tone
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
 - `stimgen.TORC` — temporally orthogonal ripple combination, for STRF estimation by spectrotemporal reverse correlation
+- `stimgen.DMR` — dynamic moving ripple and ripple noise (Escabí & Schreiner 2002), seeded segments whose envelope is reconstructable per trial
 - `stimgen.SoundFile` — playback of pregenerated sound files (vocalizations, phonemes); see [stimgen_SoundFile.md](stimgen_SoundFile.md)
 - `stimgen.BackgroundAM`, `stimgen.BackgroundGap`, `stimgen.BackgroundFM` — a change made to an ongoing background (amplitude modulation, a gap, frequency modulation of a steady tone) rather than a sound of its own
 

@@ -21,11 +21,7 @@ if nargin < 2 || isempty(ffn)
 end
 ffn = char(ffn);
 
-bank = struct();
-bank.ISI           = obj.ISI;
-bank.SelectionType = obj.SelectionType;
-bank.NItems        = numel(obj.StimPlayObjs);
-bank.Items         = arrayfun(@(sp) sp.toStruct, obj.StimPlayObjs, 'uni', false);
+bank = obj.bank_struct_();
 
 try
     save(ffn, '-struct', 'bank', '-v7');

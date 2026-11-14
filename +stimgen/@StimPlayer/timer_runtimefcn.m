@@ -18,6 +18,8 @@ try
 
     isi = obj.currentISI;
     ts  = obj.timeSinceStart;
+    % When this presentation is due: one ISI after the last trigger.
+    scheduled = obj.lastTrigTime + isi;
 
     % Early return if ISI hasn't nearly elapsed (avoid busy-wait overhead)
     if ts - obj.lastTrigTime - isi < src.Period - 0.01
@@ -45,9 +47,26 @@ try
     obj.StimOrderTime(end+1, 1) = obj.timeSinceStart;
     obj.StimPolarity(end+1, 1)  = obj.nextPolarity_;
     obj.StimVariant(end+1, 1)   = presentedVar.ActiveIndex;
+    % How late this trigger is. Zero to within the timer's resolution unless
+    % the callback was busy when it fell due -- generating the next stimulus
+    % after the previous trial took longer than the ISI left for it.
+    obj.StimLateness(end+1, 1)  = obj.StimOrderTime(end) - scheduled;
+    obj.StimRecord{end+1, 1}    = [];   % filled below, after the trigger
 
     % Trigger hardware (no-op if hardware unavailable)
     obj.trigger_stim_playback;
+
+    % What was just triggered, described while the stimulus object still
+    % holds the waveform that was in the buffer -- advance_variant_ below
+    % replaces it. After the trigger, so it costs the presentation nothing;
+    % in its own try, so a record that cannot be made is a log line and an
+    % empty cell, not a stopped session.
+    try
+        obj.StimRecord{end, 1} = presentedObj.generation_record();
+    catch recordError
+        stimgen.util.vprintf(0, 1, 'StimPlayer: no generation record for presentation %d: %s', ...
+            numel(obj.StimOrder), recordError.message);
+    end
 
     % Count the presentation, then let the presented stimulus select its
     % next combination through its own VariantSelectionMode.

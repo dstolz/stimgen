@@ -6,7 +6,7 @@ Source class:
 
 - [+stimgen/@StimType/StimType.m](../../+stimgen/@StimType/StimType.m)
 
-Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `SoundFile`, and the background modulations `BackgroundAM`, `BackgroundGap`, `BackgroundFM` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
+Concrete subclasses: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`, `ClickTrain`, `SweptSine`, `TORC`, `DMR`, `SoundFile`, and the background modulations `BackgroundAM`, `BackgroundGap`, `BackgroundFM` (loose `.m` files in `+stimgen/`; see [stimgen_StimTypes.md](stimgen_StimTypes.md) and [stimgen_SoundFile.md](stimgen_SoundFile.md)). Subclasses define the constants `CalibrationType` and `Normalization`.
 
 ## What The Base Class Provides
 
@@ -74,6 +74,20 @@ For a `CalibrationType` of `"filter"`, `apply_calibration` first checks that the
 
 `refresh_plot_if_valid` keeps open plot handles synchronized.
 
+Code that assigns many properties in a row suspends that per-assignment regeneration with
+`hold_updates` (public, hidden) and generates once itself:
+
+```matlab
+was = obj.hold_updates(true);    % returns the state it found
+obj.Duration   = 0.5;
+obj.SoundLevel = 70;
+obj.hold_updates(was);           % releasing does not regenerate
+obj.update_signal();
+```
+
+`StimType.fromStruct` restores this way, so a loaded stimulus is synthesized once rather than once
+per property, and starts on the first combination its selection mode picks.
+
 `Time` is `(0:N-1)/Fs` -- exact 1/`Fs` spacing from 0 -- with
 `N = round(Fs*Duration)` (at least one sample for `Time`). Both read `Duration`
 through `active_duration_`: inside `update_signal` that is the combination being
@@ -102,6 +116,32 @@ Supporting methods include:
 - `get_variant_info`
 
 This enables deterministic, shuffled, and custom selector-driven traversal of vectorized property combinations.
+
+## Generation Record
+
+`rec = obj.generation_record()` describes the waveform currently in `Signal`: what a
+presenter logs next to a presentation so the stimulus a trial played can be identified
+afterwards. It selects nothing and regenerates nothing — the variant state comes from
+`get_variant_info` and `active_variant_values`, and the level figures are measured from the
+samples on hand.
+
+| Field | Meaning |
+|---|---|
+| `RecordVersion` | Layout version of the base fields (1) |
+| `Class`, `DisplayName` | Class name with package; the stimulus's display name |
+| `Fs`, `N` | Sample rate (Hz) and number of samples in `Signal` |
+| `VariantIndex`, `NumCombinations` | Active combination (1-based) and how many there are |
+| `VariantProperties`, `VariantValues` | The vectorized property names, and a struct of the values the active combination took |
+| `CalibrationType`, `Normalization` | The class constants |
+| `ApplyCalibration`, `ApplyWindow` | Whether calibration and the gate were requested |
+| `SignalRms`, `SignalPeak` | Measured from `Signal` as it stands (`NaN` when empty) |
+
+Only the vectorized properties are reported. A scalar property is the same for every
+presentation and is already in `toStruct`; copying every property would put bulk data (a
+`SoundFile` catalog can embed audio) into every trial.
+
+A subclass whose waveform depends on more than its property values overrides the method,
+starting from `generation_record@stimgen.StimType(obj)`, and adds what reconstruction needs.
 
 ## Expression Evaluation
 
@@ -324,7 +364,8 @@ that exists; it cannot add or remove one.
 
 - `plot`, `plot_spectrogram`, `play` (which auditions `audition_signal`: the stimulus in its background when it has one)
 - `get_background`, `get_embedding`, `embedded_signal`, `audition_signal`
-- `selected_value`
+- `selected_value`, `active_variant_values`
+- `generation_record`
 - `current_parameter_summary`
 - `toStruct`, `fromStruct`
 - `list` (discover available stimulus classes)

@@ -37,8 +37,9 @@ break the generated GUI's `char(obj.(propName))` text branch. A scalar struct is
 
 `Catalog` is absent from `propMeta`, so no widget is generated for it, and present in
 `UserProperties`, so it survives `toStruct`/`fromStruct` and `StimPlayer.save_bank`. It is listed
-**first** in `UserProperties` because `load_bank` restores those properties in order and each
-assignment triggers a regeneration — the catalog has to exist before `FileIndex` is restored.
+**first** in `UserProperties` so that the catalog exists before `FileIndex` is assigned: a
+constructor argument or a live edit regenerates on each assignment. (`fromStruct` itself now holds
+regeneration until every property is back, so a restore no longer depends on the order.)
 
 ### Managing the catalog
 

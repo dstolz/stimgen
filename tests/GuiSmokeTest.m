@@ -128,6 +128,165 @@ classdef GuiSmokeTest < matlab.unittest.TestCase
             testCase.verifyFalse(isvalid(p));
         end
 
+        function presentationLogOfADryRun(testCase)
+            % An offline player has no hardware, so Run is a dry run: the
+            % timer runs, the presentation log fills, and nothing asks for
+            % confirmation. Every presentation carries the generation record
+            % of the stimulus it presented; the log is then saved and read
+            % back. A dry run is not saved automatically.
+            if ~testCase.GuiOk
+                fprintf('GUISMOKE skipped presentationLogOfADryRun\n');
+                return
+            end
+            tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            autoDir = fullfile(tmp.Folder, 'auto');
+
+            p = stimgen.StimPlayer();
+            testCase.addTeardown(@() delete_if_valid_(p));
+            p.Fs = 48000;
+            p.ISI = [0.05 0.05];
+            p.SelectionType = "Serial";
+            p.PresentationLogDir = string(autoDir);
+
+            % Two items, two combinations each, Reps a multiple of the
+            % combination count and every Duration inside the ISI: nothing
+            % for the pre-run check to ask about.
+            p.open_stim(stimgen.Tone('Fs', 48000, 'Duration', 0.02, ...
+                'ApplyCalibration', false, 'Frequency', [1000 2000]), Name="tones");
+            p.open_stim(stimgen.DMR('Fs', 48000, 'Duration', 0.02, ...
+                'ApplyCalibration', false, 'NumCarriers', 13, 'HighFrequency', 8000, ...
+                'Seed', [5 6]), Name="ripples");
+            p.StimPlayObjs(1).Reps = 2;
+            p.StimPlayObjs(2).Reps = 2;
+
+            menu = find_menu_('Export Presentation Log...');
+            testCase.assertNotEmpty(menu);
+            testCase.verifyEqual(string(menu(1).Enable), "off");
+            testCase.verifyError(@() p.save_presentation_log(fullfile(tmp.Folder, 'none.mat')), ...
+                'stimgen:StimPlayer:NoPresentationLog');
+
+            p.playback_control("Run");
+            wait_for_run_(p, 4);
+            testCase.assertEqual(numel(p.StimOrder), 4, 'the dry run did not make its 4 presentations');
+
+            testCase.verifyEqual(p.StimOrder,   [1; 1; 2; 2]);
+            testCase.verifyEqual(p.StimVariant, [1; 2; 1; 2]);
+            testCase.verifySize(p.StimLateness, [4 1]);
+            testCase.verifyGreaterThanOrEqual(min(p.StimLateness), 0);
+            testCase.verifySize(p.StimRecord, [4 1]);
+            for k = 1:4
+                r = p.StimRecord{k};
+                testCase.assertNotEmpty(r, sprintf('presentation %d has no record', k));
+                testCase.verifyEqual(r.VariantIndex, p.StimVariant(k));
+            end
+            testCase.verifyEqual(p.StimRecord{1}.Class, "stimgen.Tone");
+            testCase.verifyEqual(p.StimRecord{1}.VariantValues.Frequency, 1000);
+            testCase.verifyEqual(p.StimRecord{2}.VariantValues.Frequency, 2000);
+            testCase.verifyEqual(p.StimRecord{3}.Class, "stimgen.DMR");
+            testCase.verifyEqual(p.StimRecord{3}.Seed, 5);
+            testCase.verifyEqual(p.StimRecord{4}.Seed, 6);
+
+            testCase.verifyFalse(p.RunInfo.HardwareRun);
+            testCase.verifyTrue(p.RunInfo.Completed);
+            testCase.verifyEqual(p.RunInfo.NPresented, 4);
+            testCase.verifyEqual(p.RunInfo.NTotal, 4);
+            % A dry run is not written anywhere on its own.
+            testCase.verifyEqual(p.PresentationLogFile, "");
+            testCase.verifyFalse(isfolder(autoDir));
+            testCase.verifyEqual(string(menu(1).Enable), "on");
+
+            ffn = p.save_presentation_log(fullfile(tmp.Folder, 'dry'));
+            testCase.verifyTrue(endsWith(ffn, ".mat"));
+            testCase.verifyEqual(p.PresentationLogFile, ffn);
+            L = load(ffn);
+            testCase.verifyEqual(L.FormatVersion, 1);
+            testCase.verifyFalse(L.HardwareRun);
+            testCase.verifyTrue(L.Completed);
+            testCase.verifyEqual(L.NPresented, 4);
+            testCase.verifyEqual(L.Fs, 48000);
+            testCase.verifyEqual(L.ISI, [0.05 0.05]);
+            testCase.verifyEqual(L.BankNames, ["tones"; "ripples"]);
+            testCase.verifyEqual(L.StimOrder,   [1; 1; 2; 2]);
+            testCase.verifyEqual(L.StimVariant, [1; 2; 1; 2]);
+            testCase.verifySize(L.StimLateness, [4 1]);
+            testCase.verifyEqual(L.StimRecord{4}.Seed, 6);
+            testCase.verifyEqual(L.Bank.NItems, 2);
+
+            % The file alone identifies what presentation 4 played: the
+            % bank item restored from the snapshot, pinned to the logged
+            % combination, makes the segment the record describes.
+            r = stimgen.StimType.fromStruct(L.Bank.Items{L.StimOrder(4)}.StimObj);
+            testCase.verifyClass(r, 'stimgen.DMR');
+            r.VariantReselectOnUpdate = false;
+            r.set_variant_index(L.StimVariant(4));
+            again = r.generation_record();
+            testCase.verifyEqual(again.Seed, L.StimRecord{4}.Seed);
+            testCase.verifyEqual(again.RawRms, L.StimRecord{4}.RawRms);
+            testCase.verifyEqual(again.Envelope(1).RateKnots, L.StimRecord{4}.Envelope(1).RateKnots);
+
+            delete(p);
+        end
+
+        function hardwareRunSavesItsLog(testCase)
+            % With hardware output (a host exposing the buffer and trigger
+            % parameters), the log is written to PresentationLogDir when the
+            % run ends, without asking -- it is otherwise in memory only.
+            if ~testCase.GuiOk
+                fprintf('GUISMOKE skipped hardwareRunSavesItsLog\n');
+                return
+            end
+            tmp = testCase.applyFixture(matlab.unittest.fixtures.TemporaryFolderFixture);
+            autoDir = fullfile(tmp.Folder, 'auto');
+
+            host = FakeHardwareHost();
+            p = stimgen.StimPlayer(host);
+            testCase.addTeardown(@() delete_if_valid_(p));
+            p.Fs = 48000;
+            p.ISI = [0.05 0.05];
+            p.SelectionType = "Serial";
+            p.PresentationLogDir = string(autoDir);
+            p.open_stim(stimgen.Tone('Fs', 48000, 'Duration', 0.02, ...
+                'ApplyCalibration', false, 'Frequency', [1000 2000]), Name="tones");
+            p.StimPlayObjs(1).Reps = 2;
+
+            p.playback_control("Run");
+            wait_for_run_(p, 2);
+            testCase.assertEqual(numel(p.StimOrder), 2, 'the run did not make its 2 presentations');
+
+            testCase.verifyTrue(p.RunInfo.HardwareRun);
+            testCase.verifyTrue(p.RunInfo.Completed);
+            % The buffers were loaded and both slots triggered (1 then 0).
+            testCase.verifyEqual(host.Parameters.x_Trigger_0.NumWrites, 2);
+            testCase.verifyEqual(host.Parameters.x_Trigger_1.NumWrites, 2);
+            testCase.verifyEqual(numel(host.Parameters.BufferData_0.Value), p.StimRecord{1}.N + 2);
+            testCase.verifyFalse(host.Connected, 'the hardware was not released after the run');
+
+            ffn = p.PresentationLogFile;
+            testCase.assertTrue(strlength(ffn) > 0, 'the hardware run''s log was not saved');
+            testCase.verifyTrue(isfile(ffn));
+            testCase.verifyTrue(startsWith(ffn, string(autoDir)));
+            [~, name] = fileparts(ffn);
+            testCase.verifyNotEmpty(regexp(char(name), '^stimgen_run_\d{8}_\d{6}$', 'once'));
+
+            L = load(ffn);
+            testCase.verifyTrue(L.HardwareRun);
+            testCase.verifyTrue(L.Completed);
+            testCase.verifyEqual(L.NPresented, 2);
+            testCase.verifyEqual(L.StimVariant, [1; 2]);
+            testCase.verifyEqual(L.StimRecord{2}.VariantValues.Frequency, 2000);
+            testCase.verifyNotEmpty(L.RunStoppedAt);
+
+            % Turned off, a hardware run is not written.
+            p.PresentationLogDir = "";
+            p.playback_control("Run");
+            wait_for_run_(p, 2);
+            testCase.assertEqual(numel(p.StimOrder), 2);
+            testCase.verifyEqual(p.PresentationLogFile, "");
+            testCase.verifyEqual(numel(dir(fullfile(autoDir, '*.mat'))), 1);
+
+            delete(p);
+        end
+
         function backgroundRowsFollowTheDropdown(testCase)
             % Choosing a Background in the bank editor changes WHICH rows the
             % stimulus has, so the panel is rebuilt around the edit -- the
@@ -296,6 +455,20 @@ end
 
 
 % ====================================================================== %
+
+function wait_for_run_(p, nExpected)
+% Let the player's timer run until it has made nExpected presentations and
+% stopped, or 30 s have passed. Timer callbacks run while MATLAB pauses.
+started = tic;
+while toc(started) < 30
+    running = ~isempty(p.Timer) && isvalid(p.Timer) && strcmp(p.Timer.Running, 'on');
+    if numel(p.StimOrder) >= nExpected && ~running
+        return
+    end
+    pause(0.02);
+end
+end
+
 
 function restore_stim_settings_(had, old)
 % Put the remembered-settings pref back as it was before a test edited a

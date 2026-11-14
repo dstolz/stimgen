@@ -12,6 +12,13 @@ if ~isempty(src) && obj.is_variant_policy_property_(string(src.Name))
     return
 end
 
+% Held by hold_updates: the caller is assigning several properties and will
+% regenerate once itself when it is done (fromStruct, StimPlayer's
+% remembered settings).
+if obj.updatesHeld_
+    return
+end
+
 % A property written from inside update_signal must not start a second,
 % nested generation: the outer one is already producing the signal.
 if obj.variantCycleActive_

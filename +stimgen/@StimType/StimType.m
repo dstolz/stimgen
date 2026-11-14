@@ -75,6 +75,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
 
     properties (Hidden,Access = protected)
         temporarilyDisableSignalMods (1,1) logical = false;
+        updatesHeld_ (1,1) logical = false;   % set by hold_updates: assignments do not regenerate
         els
         GUIHandles
         calibrationWarningIssued (1,1) logical = false;
@@ -268,6 +269,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         value = evalPropertyExpression(obj, propName, expressionText)             % Evaluate a property expression
         info = get_variant_info(obj)                                              % Variant-combination state
         s = active_variant_values(obj)                                           % Active combination's values, without reselecting
+        rec = generation_record(obj)                                              % What the waveform in Signal was generated from
         info = set_variant_index(obj, idx)                                        % Select variant by index
         info = step_variant(obj, step)                                            % Step variant index
         reset_variant_selection(obj)                                              % Forget selection history (cursor, counts, selector)
@@ -290,6 +292,7 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
     % but is not a StimType subclass, so these cannot be protected.
     methods (Hidden)
         [x, lbl] = build_prop_widget(obj, parent, propName, pm, labelFormat, actionFcn) % Label + widget for one propMeta entry
+        was = hold_updates(obj, tf)                                               % Suspend/resume regeneration on property change
     end % methods (Hidden)
 
     % --- Protected external method declarations ---

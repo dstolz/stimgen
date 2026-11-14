@@ -132,6 +132,23 @@
     "NumPeriods": "Number of ripple periods in stimulus duration."
   },
 
+  "DMR": {
+    "LowFrequency": "Lowest carrier frequency in Hz; the origin of the octave axis. Paper: 500. Scalar only.",
+    "HighFrequency": "Upper end of the carrier range in Hz. The top carrier sits one carrier step below it and must be under Fs/2. Paper: 20000. Scalar only.",
+    "NumCarriers": "Number of geometrically spaced carriers between Low and High Frequency. Paper: 230 (43.2 per octave). Synthesis time grows with it. Scalar only.",
+    "EnvelopeMode": "DMR: one ripple whose density and modulation rate wander over time. RippleNoise: the sum of several independent DMR envelopes, compressed by erf.",
+    "NumEnvelopes": "Number of independent DMR envelopes summed for ripple noise. Paper: 16. Ignored in DMR mode. Synthesis time grows with it. Scalar only.",
+    "RippleDensityMin": "Lowest ripple density in cycles/octave. Paper: 0. Scalar only.",
+    "RippleDensityMax": "Highest ripple density in cycles/octave. Paper: 4. Scalar only.",
+    "RippleDensityChangeRate": "Maximum rate of change of the ripple density in Hz. Its random knots are drawn at twice this rate. Paper: 3. Scalar only.",
+    "ModulationRateMin": "Lowest temporal modulation rate in Hz. Negative and positive rates move the ripple in opposite directions. Paper: -350. Scalar only.",
+    "ModulationRateMax": "Highest temporal modulation rate in Hz. Paper: 350. Scalar only.",
+    "ModulationRateChangeRate": "Maximum rate of change of the temporal modulation rate in Hz. Its random knots are drawn at twice this rate. Paper: 1.5. Scalar only.",
+    "ErfScaling": "How erf maps the normal draws onto their range. Uniform: erf(x/(sqrt(2) sigma)), the flat distribution the paper describes. AsPrinted: erf(x/sigma), the paper's equations as printed, which spends more time near the limits.",
+    "Seed": "Non-negative integer that fixes every random draw: the same seed gives the same segment. Vectorizable: 1:40 gives 40 different segments, one variant each.",
+    "ModulationDepth": "Peak-to-peak range of the envelope in dB. Paper: 30 or 45. Vectorizable."
+  },
+
   "SoundFile": {
     "BrowseFiles": "Add files to catalog. Files are added, not replaced. Each is one index entry.",
     "UseAllFiles": "Set File Index to every file, making one variant per file.",

@@ -25,6 +25,7 @@ of the onset/offset ramp from a catalog of window functions -- see
 | [`ClickTrain`](#clicktrain) | Periodic train of rectangular clicks | `"click"` | `"absmax"` |
 | [`SweptSine`](#sweptsine) | Logarithmic or linear chirp | `"swept_sine"` | `"absmax"` |
 | [`TORC`](#torc) | Temporally orthogonal ripple combination, for STRF estimation | `"filter"` | `"rms"` |
+| [`DMR`](#dmr) | Dynamic moving ripple and ripple noise, for STRF estimation | `"filter"` | `"rms"` |
 | [`SoundFile`](#soundfile) | Playback of a catalog of sound files | overridden per instance (`CalibrationMode`) | overridden per instance (`LevelReference`) |
 | [`BackgroundAM`](#backgroundam) | Amplitude modulation **of an ongoing background** | `"filter"` | `"rms"` (carrier-referenced) |
 | [`BackgroundGap`](#backgroundgap) | A gap (or level decrement) **in an ongoing background** | `"filter"` | `"rms"` (carrier-referenced) |
@@ -332,6 +333,187 @@ that reading it cannot advance the variant index and decouple S from `Signal`.
 Construction sets `Duration = 0.25` (the paper's value) and disables the inherited
 window (`ApplyWindow = false`, `WindowFcn = ""`): an onset/offset gate breaks the exact
 periodicity the method relies on. Enable it only for single, unrepeated presentations.
+
+## DMR
+
+Dynamic moving ripple (DMR) and ripple noise (RN) — a broadband sound whose
+spectrotemporal envelope is a sinusoidal ripple on a log-frequency axis, with a ripple
+density Ω(t) and a temporal modulation rate Fm(t) that wander slowly and randomly.
+Ripple noise is the same carrier bank driven by the sum of several independent DMR
+envelopes. Implements the stimulus of Escabí & Schreiner (2002), *Nonlinear
+spectrotemporal sound analysis by neurons in the auditory midbrain*, J Neurosci
+22(10):4114–4131, [doi:10.1523/JNEUROSCI.22-10-04114.2002](https://doi.org/10.1523/JNEUROSCI.22-10-04114.2002);
+equation numbers below and in the source refer to that paper.
+
+- [+stimgen/DMR.m](../+stimgen/DMR.m)
+
+| Property | Vectorizable | Default | Meaning |
+| --- | --- | --- | --- |
+| `LowFrequency` | no | 500 | Hz, f₁ — the lowest carrier and the origin of the octave axis |
+| `HighFrequency` | no | 20000 | Hz, the end of the carrier range; the top carrier is one step below it |
+| `NumCarriers` | no | 230 | geometrically spaced carriers |
+| `EnvelopeMode` | no | `"DMR"` | `"DMR"` \| `"RippleNoise"` |
+| `NumEnvelopes` | no | 16 | L, independent DMR envelopes summed for ripple noise; ignored in DMR mode |
+| `RippleDensityMin` / `Max` | no | 0 / 4 | cycles/octave, range of Ω |
+| `RippleDensityChangeRate` | no | 3 | Hz, maximum rate of change of Ω; knots are drawn at twice this |
+| `ModulationRateMin` / `Max` | no | −350 / 350 | Hz, range of Fm (signed: the sign is the direction of travel) |
+| `ModulationRateChangeRate` | no | 1.5 | Hz, maximum rate of change of Fm; knots are drawn at twice this |
+| `ModulationDepth` | yes | 30 | dB peak-to-peak, M (the paper used 30 and 45) |
+| `ErfScaling` | no | `"Uniform"` | `"Uniform"` \| `"AsPrinted"` — see below; not a paper value |
+| `Seed` | yes | 1 | non-negative integer fixing every random draw; not a paper value |
+
+Every default except `ErfScaling` and `Seed` is the value the paper states. Construction
+sets `Duration = 1` s and `WindowDuration = 10` ms, which are toolbox choices: the paper
+presented the stimulus continuously for 10–20 minutes (and a 5 s segment, repeated, to a
+subset of neurons).
+
+Read-only outputs, refreshed by every `update_signal`: `CarrierFrequencies`,
+`CarrierPhases`, `OctaveAxis`, `RawRms`, `RawPeak`.
+
+**What the paper specifies.**
+
+| Item | As stated in the paper |
+| --- | --- |
+| DMR envelope (Eq. 1) | `S(t,X_k) = M/2·sin[2πΩ(t)X_k + Φ(t)]` in dB, `X_k = log2(f_k/f_1)`, `f_1` = 500 Hz, `Φ(t) = ∫₀ᵗ Fm(τ)dτ` |
+| Ω and Fm | independent; flat-distributed on 0–4 cycles/octave and −350…+350 Hz; maximum rates of change 3.0 Hz (Ω) and 1.5 Hz (Fm) |
+| Trajectories | `randn` sequences sampled at 6 Hz (Ω) and 3 Hz (Fm), upsampled with `interp1`'s `'cubic'` option, passed through `erf` to map normal onto uniform amplitudes on −1…+1, then rescaled linearly |
+| Ripple noise (Eq. 2–3) | `S̄ = (1/√L)·Σ S_DMR,l`, L = 16; `S_RN = M/2·erf(S̄/σ_DMR)`; `σ²_DMR = M²/8`, `σ²_RN = M²/12` |
+| Waveform (Eq. 4–5) | `s(t) = Σ_k S_Lin(t,X_k)·sin(2πf_k t + φ_k)`, 230 carriers, `φ_k` random on 0–2π, `S_Lin = 10^((S − M/2)/20)` |
+| Carriers | `f_k = α·f_(k−1)`, α = 1.01617, "43 carriers per octave", 5.32 octaves (500–20,000 Hz) |
+| Sample rate | 44.1 kHz |
+| Envelope for the STRF | sampled at 4 kHz in time, 43 samples per octave |
+
+**Where this class reads or departs from the paper as printed.** Each is also named in
+every generation record (`rec.Rules`).
+
+- **Phase.** Eq. 1 prints `Φ = ∫Fm` without 2π. Fm is in Hz and Eq. 7 has `2πF_m τ`, so
+  the class uses `Φ(t) = 2π∫₀ᵗ Fm`.
+- **Carrier grid.** `(20000/500)^(1/230)` is 1.016168, which rounds to the printed α;
+  `2^(1/43)` is 1.016250, which does not. The grid is therefore `NumCarriers` steps of
+  `α = (HighFrequency/LowFrequency)^(1/NumCarriers)` from `LowFrequency`: 43.2 carriers per
+  octave at the defaults, the top one at 19,682 Hz. A top carrier at or above Nyquist
+  raises `stimgen:DMR:BandwidthExceedsNyquist`.
+- **erf scaling.** The paper says `erf` maps normally distributed amplitudes onto
+  uniformly distributed ones and reports `σ²_RN = M²/12`, the variance of a uniform
+  distribution on [−M/2, M/2]. For a normal variable of standard deviation σ that
+  requires `erf(x/(√2·σ))`. Eq. 3 and the parameter mapping are printed as `erf(x/σ)`,
+  which gives `σ²_RN = M²/8.61` and a distribution weighted toward its limits.
+  `ErfScaling = "Uniform"` (default) is the first, `"AsPrinted"` the second; it applies to
+  the Ω and Fm trajectories and to the ripple-noise compression alike. The trajectories
+  are only approximately flat either way, because the values between knots are
+  interpolated before `erf` is applied — as in the paper.
+- **Interpolant.** The meaning of `interp1`'s `'cubic'` option has changed between MATLAB
+  releases, and the paper does not say which release it used. The class writes out cubic
+  convolution (Keys, a = −½) over the four nearest knots, so the result does not depend on
+  the release; `tests/DMRTest.m` compares it with `interp1` on the release the suite runs
+  on. On R2026b it equals both `interp1(...,'cubic')` and `interp1(...,'v5cubic')` to
+  rounding (2 × 10⁻¹⁵ cycles/octave) and differs from `'pchip'` by up to 0.25
+  cycles/octave in that test.
+- **Phase integral.** The paper does not say how the integral was evaluated. Here it is a
+  fixed 32-point Gauss–Legendre rule per knot interval, accumulated at the knots. Ω(t),
+  Fm(t) and Φ(t) are then functions of t alone — independent of `Fs` and of the grid they
+  are asked for on — so synthesis and `envelope_at` evaluate one function.
+- **Random numbers, segments, channels.** The paper gives no generator or seeds, and
+  presented an independent sequence to each ear. The class makes one-channel segments,
+  each starting at Φ = 0. It reproduces the published method, not the authors' stimulus
+  files.
+
+**Seeds and segments.** A waveform is a pure function of the properties, `Fs` and
+`GeneratorVersion`. `Seed` must be a non-negative integer — there is no "reseed randomly"
+value, because a stimulus whose seed was never recorded cannot be reconstructed.
+Vectorizing it makes each seed a variant, so a `StimPlayer` run presents a different
+segment per trial and logs which:
+
+```matlab
+s = stimgen.DMR('Duration', 5, 'Seed', 1:40);   % 40 five-second segments
+s.update_signal;
+s.plot_dynamic_spectrum
+```
+
+**Draw contract (`GeneratorVersion`, currently 1).** Random numbers come from a private
+`RandStream('mrg32k3a','Seed',Seed,'NormalTransform','Inversion')` — the global stream is
+never touched — with one substream per quantity:
+
+| Substream | Draw |
+| --- | --- |
+| 1 | carrier phases, `2π·rand(1,NumCarriers)` |
+| 10·l + 1 | envelope l: ripple-density knots, `randn` |
+| 10·l + 2 | envelope l: modulation-rate knots, `randn` |
+
+Changing the carrier count, the number of envelopes or `Duration` therefore leaves the
+other draws as they were; a longer `Duration` appends knots, so a longer segment starts
+with the shorter one's envelope. Knot j sits at j/rate seconds for j = −1, 0, 1, …. Any
+change to the generator, the substream map, the knot grid, the interpolant, the erf
+mapping, the phase quadrature, the carrier grid, the amplitude expression, the ripple-noise
+combination or the summation order changes the waveform a seed produces and must bump
+`GeneratorVersion`.
+
+**Reconstructing what was played.** The envelope must be recoverable for reverse
+correlation, so three things are kept:
+
+- `rec = s.generation_record()` — the base record
+  ([stimgen_StimType.md](stimgen_StimType.md#generation-record)) plus the seed, carriers
+  and phases, every knot (the normal draws themselves), the running phase integral at the
+  knots, the quadrature rule, the rule names, `RawRms`/`RawPeak`, the gate that was
+  applied and `GenerationSeconds`. It is captured when `Signal` is made and is sufficient
+  to rebuild the waveform without this class's random number generator;
+  `tests/DMRTest.m` does exactly that.
+- `[S, x] = s.envelope_at(t)` — the envelope in dB (−M/2 … M/2) at arbitrary times;
+  `[S, t, x] = s.dynamic_spectrum(nTime)` on an even grid (the `TORC` contract);
+  `tr = s.ripple_trajectory(nTime)` — Ω, Fm and Φ.
+- `s.export_envelope(file, 'SampleRate', 4000)` — writes all of the above to one MAT
+  file for every seed, so an analysis does not depend on this class regenerating the
+  same numbers later (see below).
+- The envelope is **not gated**: the onset/offset window is applied to the waveform
+  afterwards and is described by `rec.Gate`.
+
+**Envelope export.** `export_envelope(file, 'SampleRate', fs, 'Combinations', idx)`
+generates each variant combination on a pinned copy — the object it is called on keeps
+its `Signal`, active combination and selection order — and writes a version 7.3 MAT
+file, in double precision, one combination at a time (so only one envelope matrix is in
+memory, and a reader can load one combination without the rest). `SampleRate` defaults
+to 4000 Hz, the rate the paper sampled its envelopes at, and is written into the file;
+a rate below twice the fastest modulation rate raises `stimgen:DMR:EnvelopeRateTooLow`
+before anything is written. An existing file is replaced.
+
+| Variable | Contents |
+| --- | --- |
+| `FormatVersion`, `GeneratorVersion`, `CreatedAt` | 1; the draw contract; local time |
+| `Source` | the stimulus's `toStruct` — restore with `stimgen.StimType.fromStruct` |
+| `EnvelopeFs`, `Gated`, `EnvelopeUnits` | the sample rate used; `false`; text |
+| `Seed`, `VariantIndex`, `RawRms`, `RawPeak` | one value per combination written |
+| `CombinationVariables` | names of the per-combination variables |
+| `C0001`, `C0002`, … | one struct per combination, named by its variant index |
+
+Each `Cnnnn` holds `Seed`, `VariantIndex`, `Time` (`(0:nT-1)/EnvelopeFs`), `OctaveAxis`,
+`CarrierFrequencies`, `Envelope` (carriers × time, dB), `Omega`, `Fm`, `Phase`
+(envelopes × time) and `Record` (that segment's generation record).
+
+```matlab
+s = stimgen.DMR('Duration', 5, 'Seed', 1:40);
+s.export_envelope('dmr_envelopes.mat');          % 40 segments at 4 kHz
+m = matfile('dmr_envelopes.mat');
+c = m.C0007;                                     % the segment StimVariant 7 played
+imagesc(c.Time, c.OctaveAxis, c.Envelope); axis xy
+```
+
+**Level.** `SoundLevel` is the overall rms level of the segment, as for `Noise` and
+`TORC`. The paper states levels per carrier and gives the overall level of its 230-carrier
+stimuli as `10·log10(230)` = 23.6 dB above them. Each segment is normalized to
+its own rms before calibration, so realizations differ slightly in how their envelope
+maps to absolute level; `RawRms` and `RawPeak` hold the figures before normalization.
+
+**Cost.** Synthesis is `NumCarriers × (NumEnvelopes + 2)` transcendental evaluations per
+sample, so ripple noise with 16 envelopes costs about six times a DMR. `StimPlayer`
+resynthesizes the presented stimulus inside its timer after every trial, so with a new
+seed per trial the ISI has to leave room for it (`generation_record().GenerationSeconds`
+reports what a generation took, and `StimPlayer` logs how late each trigger was in
+`StimLateness`). One measurement, on the CI runner (GitHub-hosted Linux, MATLAB R2026b),
+at the paper's 230 carriers and 97656.25 Hz: 0.92 s of synthesis per second of DMR, and
+6.67 s per second of 16-envelope ripple noise. Measure on the machine that will run the
+experiment. The last synthesis is cached: presenting the same seed
+again, or editing only `SoundLevel`, the gate or the calibration, does not synthesize
+again.
 
 ## SoundFile
 

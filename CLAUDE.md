@@ -42,7 +42,7 @@ that spans them.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`, and the background modulations `BackgroundAM`,
+`SweptSine`, `ClickTrain`, `TORC`, `DMR`, `SoundFile`, and the background modulations `BackgroundAM`,
 `BackgroundGap`, `BackgroundFM` (abstract base `stimgen.BackgroundModulation` in
 `@BackgroundModulation/`). The base class owns level/duration/gating/Fs, the
 variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
@@ -327,6 +327,30 @@ getters follow this rule through `active_duration_` (locked combination inside a
 `active_variant_values` outside), so a plot refresh reading `Time` does not step the variant.
 `Time` is `(0:N-1)/Fs`.
 
+**What a waveform was generated from is `generation_record`.** `StimType.generation_record()`
+describes the waveform in `Signal` — class, rate, length, the active combination and its variant
+values, measured rms and peak — through the same non-advancing readers. It reports variant values
+only, never every property: a `SoundFile` catalog can embed audio. A subclass whose waveform
+depends on more than its property values overrides it, starting from the base call, and adds what
+reconstruction needs.
+
+**`DMR` waveforms are a contract with data already recorded.** `stimgen.DMR` (dynamic moving
+ripple / ripple noise, Escabí & Schreiner 2002) is a pure function of its properties, `Fs` and
+`DMR.GeneratorVersion`: the same seed must give the same segment for as long as that version
+stands. Everything that fixes the waveform is in `plan_from_`, `trajectories_`, `envelope_db_`,
+`kernel_`, `map_` and `render_` — the generator (`mrg32k3a`, `NormalTransform` `Inversion`), the
+substream map (1 carrier phases; 10l+1 and 10l+2 envelope l's ripple-density and modulation-rate
+knots), the knot grid, the cubic-convolution interpolant, the erf mapping, the 32-point
+Gauss–Legendre phase rule, the carrier grid, the amplitude expression, the ripple-noise combination
+and the summation order. Changing any of them bumps `GeneratorVersion` and the golden values in
+`tests/DMRTest.m`. Paper-derived defaults live in one bannered properties block; the places the
+class reads or departs from the paper as printed are listed in the class help and in
+`documentation/stimgen_StimTypes.md#dmr`, and named in every record's `Rules`. `Seed` is a
+non-negative integer with no "reseed randomly" value. Ω(t), Fm(t) and Φ(t) are functions of t
+alone, so `envelope_at` returns the envelope synthesis used at any sampling; do not add a second
+evaluation path. The DMR half of `generation_record` is captured inside `update_signal`, never
+rebuilt at call time.
+
 **A presenter selects variants through the stimulus, never by index.** `update_signal()` called
 outside a variant cycle is the one call that selects the next combination per
 `VariantSelectionMode` and regenerates it; `set_variant_index`/`step_variant` pin an index and
@@ -362,7 +386,7 @@ voltage must go through the table's value too.
 unit-amplitude tone and solves for the drive that gives `normative_db`, so a tone/swept-sine table
 voltage `V` is a sine's peak and that sine's rms is `V/sqrt(2)`. A peak-normalized (`absmax`)
 stimulus is scaled to `V`; an rms-normalized one (`Noise`, `AMnoise`, `AttackModNoise`, `TORC`,
-`SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
+`DMR`, `SoundFile` with `LevelReference = "rms"`) is scaled to `V * Engine.LutRmsPerVolt`, the same rms.
 `apply_calibration`, `SoundFile.apply_calibration` and `filter_level_reference` read that constant;
 do not restate it. Scaling an rms-normalized waveform to `V` itself played it 3.01 dB high, which is
 what `tests/LevelConventionTest.m` pins down (offline on a flat table, and through the simulated rig
@@ -398,6 +422,17 @@ bank-editing control goes in the lock list *and*, if it needs something, in a ru
 shortcuts (`on_keypress_` in `create.m`) check the control's `Enable` rather than re-deriving it.
 Every bank edit calls `mark_bank_dirty_`, or close/Load Bank will not offer to save it.
 
+**The presentation log is saved, not just held.** A Run logs one row per presentation in
+`StimOrder`/`StimOrderTime`/`StimPolarity`/`StimVariant`/`StimLateness` and, after the trigger and
+before `advance_variant_`, the presented stimulus's `generation_record()` in `StimRecord` (in its
+own try: a record that cannot be made never stops a session). `timer_startfcn` snapshots the run's
+settings and bank into `RunInfo`, because the bank is unlocked and `HardwareRun_` cleared when the
+timer stops. A hardware run is written by `autosave_presentation_log_` as the timer stops, to
+`PresentationLogDir`; `save_presentation_log` writes any log on request. Both write
+`presentation_log_struct_`, the one layout of a log file, as `bank_struct_` is the one layout of a
+bank (`save_bank` and the snapshot). Anything new a trial should be traceable by goes in a
+stimulus's `generation_record`, not in a new column.
+
 **Error identifiers** follow `stimgen:Class:Reason`. `StimPlayer.format_gui_error_message_` maps
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
 
@@ -410,12 +445,22 @@ save/load round-trip. `StimType.fromStruct` is the only stimulus restore path �
 `Engine.save` and `StimCalibration.toStruct`/`saveobj`, and one reader, `Engine.restore`, used by
 `Engine.load` and `StimCalibration.loadobj`.
 
-**Restoring holds calibration off until the stimulus is whole.** `StimType.fromStruct` sets
-`ApplyCalibration` false first and assigns the saved value **last**, after the serialized
-calibration is back. Each restored property regenerates the signal, and doing that against the
-default, empty `StimCalibration` logged a critical `No calibration data available for stim` about
-a stimulus that was calibrated — the same line an uncalibrated one earns. Route any new restore
-through `fromStruct` rather than writing another.
+**Restoring generates once, when the stimulus is whole.** `StimType.fromStruct` holds regeneration
+(`hold_updates(true)`) while it assigns, restores the serialized calibration, assigns
+`ApplyCalibration` **last**, releases, and then calls `update_signal()` once in a try/catch. Assigned
+live, every restored property synthesized the waveform again — against a partly restored stimulus,
+advancing the variant selection each time, and against the default, empty `StimCalibration`, which
+logged a critical `No calibration data available for stim` about a stimulus that was calibrated.
+The explicit call is required: with the listeners held nothing else generates, and the closing
+`ApplyCalibration` assignment is not even an event when the saved value is false (`AbortSet`). A
+stimulus that cannot be generated is still returned, with one critical log line. Route any new
+restore through `fromStruct` rather than writing another.
+
+**Assigning many properties: hold, assign, release, generate.** `StimType.hold_updates(tf)` (public,
+`Hidden`; returns the state it found) makes `onPropertyChanged` return without regenerating.
+Releasing does not regenerate — the caller calls `update_signal()` itself. `fromStruct` and
+`StimPlayer.apply_remembered_settings_` are the users. A variant-policy edit still invalidates the
+combination cache while held, and property validation still runs.
 
 **Logging.** `stimgen.util.vprintf(level, [red], msg, ...)`, gated by the global `GVerbosity`
 (-1 log-only, 0 critical, 1 info, 2 debug, 3 verbose, 4 trace). With values `msg` is a printf
@@ -443,7 +488,9 @@ becomes unconstructable. See `documentation/stimgen_logging.md`.
 
 `StimPlayer` resolves these names from the host at Run time: `BufferData_0/1`, `BufferSize_0/1`,
 `x_Trigger_0/1`. If any are missing (or no protocol is loaded/connected) Run asks before starting a
-dry run that plays nothing, naming what is missing; a run that started with them and loses one
+dry run that plays nothing, naming what is missing (the same `confirm_run_` dialog lists uneven
+`Reps`, a bank item longer than the shortest ISI — ISI is onset to onset — and items with a
+`Background`); a run that started with them and loses one
 stops with `stimgen:StimPlayer:HardwareLost` rather than continuing silently. Preview falls back
 to the host's calibration adapter. These match the `StimGenCircuit.rcx` RPvds circuit template that a host
 application's hardware circuit must expose to support hardware-triggered playback.
