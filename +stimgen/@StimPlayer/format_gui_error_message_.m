@@ -102,6 +102,10 @@ switch string(ME.identifier)
         messageText = "Component rates must all be positive. Set the direction of travel with the sign of the ripple density instead.";
     case "stimgen:TORC:InvalidRateRange"
         messageText = "Highest Rate must be greater than or equal to Lowest Rate.";
+    case "stimgen:StimPlayer:NoPresentationLog"
+        messageText = "There is no presentation log to save yet. A log exists once a Run (or a dry run) has presented at least one stimulus, and is cleared when the next Run starts.";
+    case "stimgen:StimPlayer:SessionRunning"
+        messageText = "A session is running. Stop it before saving its presentation log.";
     case "stimgen:DMR:BandwidthExceedsNyquist"
         messageText = [ ...
             "The top carrier would reach half the sample rate." + newline + ...

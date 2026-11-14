@@ -79,6 +79,7 @@ classdef StimPlayer < handle
         save_bank(obj, ffn)
         save_bank_as(obj)
         load_bank(obj, ffn)
+        ffn = save_presentation_log(obj, ffn)
         set_control_visibility(obj, options)
         idx = select_next_idx(obj)
     end
@@ -153,6 +154,9 @@ classdef StimPlayer < handle
         lines = uneven_reps_report_(obj)
         n = count_background_items_(obj)
         proceed = confirm_run_(obj)
+        bank = bank_struct_(obj)
+        S = presentation_log_struct_(obj)
+        autosave_presentation_log_(obj)
         initialize_variants_(obj)
         advance_variant_(obj, stimObj)
         sgn = claim_polarity_(obj)
@@ -193,6 +197,13 @@ classdef StimPlayer < handle
         PlaybackOutput (1,1) string {mustBeMember(PlaybackOutput,["Speakers","Hardware"])} = "Speakers"
 
         DataPath (1,1) string = string(fullfile('C:\Users', getenv('USERNAME'))) % Default save path
+
+        % Folder a hardware Run's presentation log is written to when the
+        % run ends (stimgen_run_<yyyymmdd_HHMMSS>.mat), without asking. The
+        % log is otherwise held in memory only and is cleared by the next
+        % Run. "" turns the automatic save off; save_presentation_log writes
+        % a copy anywhere on request. A dry run is never saved automatically.
+        PresentationLogDir (1,1) string = string(fullfile(tempdir, 'stimgen_presentation_logs'))
 
         % Visibility of the session controls an interfacing application may
         % want to own itself.  Scalar struct of logicals; assign whole or by
@@ -247,6 +258,11 @@ classdef StimPlayer < handle
         % yet). save_bank writes here without asking; save_bank_as asks,
         % offering it as the default.
         BankFile (1,1) string = ""
+
+        % The file the presentation log was last written to, by the
+        % automatic save at the end of a hardware Run or by
+        % save_presentation_log ("" = the log in memory has not been saved).
+        PresentationLogFile (1,1) string = ""
     end
 
     % --- Calibration state ---
@@ -273,6 +289,15 @@ classdef StimPlayer < handle
         StimOrderTime (:,1) double = double.empty(0,1) % Presentation log: time since start (s)
         StimPolarity (:,1) double = double.empty(0,1)  % Presentation log: sign played (+1/-1)
         StimVariant (:,1) double = double.empty(0,1)   % Presentation log: variant combination index played
+        StimLateness (:,1) double = double.empty(0,1)  % Presentation log: trigger time minus scheduled time (s)
+        StimRecord (:,1) cell = cell(0,1)              % Presentation log: generation_record() of the stimulus triggered
+
+        % What the run in the log started as: taken by timer_startfcn, so it
+        % describes the run even after the bank is edited or the hardware
+        % released. Fields: StartedAt, StoppedAt, HardwareRun, Completed,
+        % NPresented, NTotal, Fs, ISI, SelectionType, BankFile,
+        % CalibrationFile, BankNames, Bank (the bank as save_bank writes it).
+        RunInfo (1,1) struct = struct()
 
         nextPolarity_ (1,1) double = 1                 % Sign applied to the buffered (next) presentation
     end

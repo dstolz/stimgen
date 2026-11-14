@@ -18,7 +18,16 @@ try
     obj.StimOrderTime = double.empty(0,1);
     obj.StimPolarity  = double.empty(0,1);
     obj.StimVariant   = double.empty(0,1);
+    obj.StimLateness  = double.empty(0,1);
+    obj.StimRecord    = cell(0,1);
+    obj.PresentationLogFile = "";
     obj.PolarityCount_ = {};
+
+    % What this run is, for its log. Taken now because none of it can be
+    % read back afterwards: the bank is unlocked for editing and the
+    % hardware flag is cleared when the timer stops. After the resets
+    % above, so the bank items' own counters are at zero in it.
+    obj.RunInfo = snapshot_run_(obj);
 
     obj.trialCount_ = 0;
     obj.Paused_     = false;
@@ -50,5 +59,33 @@ catch ME
     end
     obj.report_gui_error_(ME, "Timer Start Error", ...
         "StimPlayer failed while preparing playback.");
+end
+end
+
+
+function info = snapshot_run_(obj)
+% The settings and the bank a run starts with. The bank is serialized as
+% save_bank writes it; if that fails the run still starts, with the failure
+% logged and Bank left empty.
+info = struct();
+info.StartedAt       = char(datetime('now', 'Format', 'yyyy-MM-dd''T''HH:mm:ss'));
+info.StoppedAt       = '';
+info.HardwareRun     = obj.HardwareRun_;
+info.Completed       = false;
+info.NPresented      = 0;
+info.NTotal          = obj.total_count_();
+info.Fs              = obj.Fs;
+info.ISI             = obj.ISI;
+info.SelectionType   = obj.SelectionType;
+info.BankFile        = obj.BankFile;
+info.CalibrationFile = obj.CalibrationFile;
+info.BankNames       = string.empty(0, 1);
+info.Bank            = [];
+try
+    info.BankNames = reshape(string({obj.StimPlayObjs.Name}), [], 1);
+    info.Bank      = obj.bank_struct_();
+catch ME
+    stimgen.util.vprintf(0, 1, 'StimPlayer: could not snapshot the bank for the presentation log: %s', ...
+        ME.message);
 end
 end

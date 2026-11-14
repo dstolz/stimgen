@@ -9,6 +9,8 @@ function sync_control_enable_(obj)
 %   Play All                               - needs a selected item
 %                                            (or is its own Stop)
 %   Export All / Export Bank               - need a non-empty bank
+%   Export Presentation Log                - needs a log: a run that
+%                                            has presented something
 %   Output dropdown                        - needs a hardware route
 %                                            (it has one choice
 %                                            without; left on while
@@ -22,6 +24,7 @@ hasSel   = ~isempty(obj.selected_bank_index_());
 hasItems = ~isempty(obj.StimPlayObjs);
 hasHost  = ~isempty(obj.Host);
 hasRoute = obj.has_hardware_route_ || obj.PlaybackOutput == "Hardware";
+hasLog   = ~isempty(obj.StimOrder);
 
 rules = { ...
     {'LoadProtocolMenu','LoadProtocolTool','RecentProtocolsMenu'}, hasHost; ...
@@ -31,6 +34,7 @@ rules = { ...
     {'PlayBtn','PlayTool','PlayMenu'}, hasSel && ~obj.PlayAllActive_; ...
     {'PlayAllBtn'}, hasSel || obj.PlayAllActive_; ...
     {'ExportAllMenu','ExportObjsMenu'}, hasItems; ...
+    {'ExportLogMenu'}, hasLog; ...
     {'OutputDD'}, hasRoute};
 for r = 1:size(rules, 1)
     state = matlab.lang.OnOffSwitchState(unlocked && rules{r, 2});

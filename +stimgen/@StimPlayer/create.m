@@ -403,6 +403,10 @@ mExportAll = uimenu(mTools, 'Text', 'Export &All Signals to Workspace', ...
     'MenuSelectedFcn', @(~,~) export_all_signals_to_workspace_(obj));
 mExportObjs = uimenu(mTools, 'Text', 'Export Bank as &StimType Objects', ...
     'MenuSelectedFcn', @(~,~) export_bank_as_stimtype_(obj));
+% Enabled by sync_control_enable_ once a run has presented something.
+mExportLog = uimenu(mTools, 'Text', 'Export Presentation &Log...', ...
+    'Separator', 'on', 'Enable', 'off', ...
+    'MenuSelectedFcn', @(~,~) export_presentation_log_(obj));
 
 % ---- Toolbar ----
 tb = uitoolbar(f);
@@ -484,6 +488,7 @@ obj.handles.CaptureSettingsMenu = mCaptureSettings;
 obj.handles.ExportSignalMenu  = mExportSignal;
 obj.handles.ExportAllMenu     = mExportAll;
 obj.handles.ExportObjsMenu    = mExportObjs;
+obj.handles.ExportLogMenu     = mExportLog;
 obj.handles.AddStimMenu       = mAddStim;
 obj.handles.DuplicateStimMenu = mDuplicateStim;
 obj.handles.RemoveStimMenu    = mRemoveStim;
@@ -781,6 +786,20 @@ try
 catch ME
     obj.report_gui_error_(ME, "Export All Error", ...
         "StimPlayer could not export all signals to the workspace.");
+end
+end
+
+
+function export_presentation_log_(obj)
+% Save the last run's presentation log to a file the user chooses.
+% save_presentation_log raises when there is nothing to save or a session
+% is running; from the menu that is a message, not an error in the
+% command window.
+try
+    obj.save_presentation_log();
+catch ME
+    obj.report_gui_error_(ME, "Export Presentation Log", ...
+        "StimPlayer could not save the presentation log.");
 end
 end
 

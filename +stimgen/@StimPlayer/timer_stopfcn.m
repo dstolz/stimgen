@@ -6,6 +6,17 @@ obj.Paused_      = false;
 obj.HardwareRun_ = false;
 obj.update_counter_;
 
+% Close the run's entry and, for a hardware run, write its log before
+% anything else can replace it. RunInfo is empty if the run never started.
+saved = "";
+if isfield(obj.RunInfo, 'StartedAt')
+    obj.RunInfo.StoppedAt  = char(datetime('now', 'Format', 'yyyy-MM-dd''T''HH:mm:ss'));
+    obj.RunInfo.NPresented = numel(obj.StimOrder);
+    obj.RunInfo.Completed  = obj.RunInfo.NTotal > 0 && obj.RunInfo.NPresented >= obj.RunInfo.NTotal;
+    obj.autosave_presentation_log_();
+    saved = obj.PresentationLogFile;
+end
+
 h = obj.handles;
 if isfield(h, 'RunBtn') && isvalid(h.RunBtn)
     h.RunBtn.Text = 'Run';
@@ -19,10 +30,14 @@ end
 presented = obj.presented_count_();
 total     = obj.total_count_();
 if total > 0 && presented >= total
-    obj.set_status_(sprintf('Run complete: %d presentations.', presented));
+    msg = sprintf('Run complete: %d presentations.', presented);
 else
-    obj.set_status_(sprintf('Playback stopped after %d of %d presentations.', presented, total));
+    msg = sprintf('Playback stopped after %d of %d presentations.', presented, total);
 end
+if strlength(saved) > 0
+    msg = sprintf('%s Log saved: %s', msg, char(saved));
+end
+obj.set_status_(msg);
 
 obj.lock_bank_controls_(false);
 obj.disconnect_interfaces_;

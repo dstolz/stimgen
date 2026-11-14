@@ -422,6 +422,17 @@ bank-editing control goes in the lock list *and*, if it needs something, in a ru
 shortcuts (`on_keypress_` in `create.m`) check the control's `Enable` rather than re-deriving it.
 Every bank edit calls `mark_bank_dirty_`, or close/Load Bank will not offer to save it.
 
+**The presentation log is saved, not just held.** A Run logs one row per presentation in
+`StimOrder`/`StimOrderTime`/`StimPolarity`/`StimVariant`/`StimLateness` and, after the trigger and
+before `advance_variant_`, the presented stimulus's `generation_record()` in `StimRecord` (in its
+own try: a record that cannot be made never stops a session). `timer_startfcn` snapshots the run's
+settings and bank into `RunInfo`, because the bank is unlocked and `HardwareRun_` cleared when the
+timer stops. A hardware run is written by `autosave_presentation_log_` as the timer stops, to
+`PresentationLogDir`; `save_presentation_log` writes any log on request. Both write
+`presentation_log_struct_`, the one layout of a log file, as `bank_struct_` is the one layout of a
+bank (`save_bank` and the snapshot). Anything new a trial should be traceable by goes in a
+stimulus's `generation_record`, not in a new column.
+
 **Error identifiers** follow `stimgen:Class:Reason`. `StimPlayer.format_gui_error_message_` maps
 known identifiers to user-facing guidance — a new user-triggerable error should get a case there.
 

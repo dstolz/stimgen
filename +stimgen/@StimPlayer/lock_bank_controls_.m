@@ -17,7 +17,9 @@ fields = {'AddBtn','DuplicateBtn','RemoveBtn','TypeDropdown','BankList','RepsFie
     'CombinationsMenu','CombinationsTool', ...
     ... % These step or regenerate the bank items the timer is playing.
     'PlayBtn','PlayAllBtn','PlayTool','PlayMenu', ...
-    'ExportSignalMenu','ExportAllMenu','ExportObjsMenu'};
+    'ExportSignalMenu','ExportAllMenu','ExportObjsMenu', ...
+    ... % The log is still being written during a session.
+    'ExportLogMenu'};
 for i = 1:numel(fields)
     f = fields{i};
     if isfield(h, f) && ~isempty(h.(f)) && isvalid(h.(f))

@@ -3,7 +3,9 @@ function rec = generation_record(obj)
 % What the waveform currently in Signal was generated from.
 %
 % A presenter logs this next to each presentation so that the stimulus a
-% trial played can be identified afterwards without regenerating anything.
+% trial played can be identified afterwards without regenerating anything:
+% StimPlayer stores one per presentation in StimRecord and writes them with
+% its presentation log.
 % Nothing is selected and nothing is regenerated -- the variant state is
 % read with get_variant_info and active_variant_values, which touch no
 % selection state, and the level figures are measured from the samples on

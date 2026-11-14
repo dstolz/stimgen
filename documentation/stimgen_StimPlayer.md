@@ -395,6 +395,7 @@ precondition is missing, so nothing is offered that cannot work:
 | Play All | a bank item is selected (or a cycle is running: it is then its Stop) |
 | Play | additionally, no Play All cycle is running |
 | Export All Signals, Export Bank as StimType Objects | the bank is not empty |
+| Export Presentation Log | a run has presented something (and no session is running) |
 | Output dropdown | there is a hardware route (host or `CaptureAdapter`); its tooltip says so when there is none |
 
 It runs after every change to one of those inputs (selection, bank contents,
@@ -551,24 +552,91 @@ At run time the class:
 2. Adopts the host's sample rate, when it reports one.
 3. Asks for confirmation when the run will do something the operator may not
    expect (see [Before a run starts](#before-a-run-starts)); Cancel abandons it.
-4. Starts a fixed-rate timer, whose start function resets every count and
+4. Starts a fixed-rate timer, whose start function resets every count,
    starts each bank item's variant sequence (see
-   [Variant combinations in a run](#variant-combinations-in-a-run)).
+   [Variant combinations in a run](#variant-combinations-in-a-run)) and
+   snapshots the run's settings and bank into `RunInfo`.
 5. Chooses the next bank index using the player-level `SelectionType`.
 6. Writes the stimulus waveform into one of two hardware buffers, inverted
    on every other presentation of a variant whose stimulus alternates
    polarity (see below).
 7. Toggles the matching trigger parameter.
-8. Logs presentation order, elapsed trigger time, the sign played and the
-   variant combination played (`StimOrder`, `StimOrderTime`, `StimPolarity`,
-   `StimVariant`, row-aligned), and shows it in the status line as
+8. Logs presentation order, elapsed trigger time, the sign played, the
+   variant combination played and how late the trigger was (`StimOrder`,
+   `StimOrderTime`, `StimPolarity`, `StimVariant`, `StimLateness`,
+   row-aligned), and shows it in the status line as
    `Presenting <item> [combo i/n] (k/N)`. When the timer stops the status line
    says `Run complete: N presentations.` or
    `Playback stopped after k of N presentations.`
-9. Lets the presented stimulus select its next combination.
+9. Stores the presented stimulus's
+   [generation record](stimgen_StimType.md#generation-record) in `StimRecord`,
+   after the trigger and before the stimulus moves on.
+10. Lets the presented stimulus select its next combination.
+11. When the timer stops, writes the log of a hardware run to
+    `PresentationLogDir` (see [The presentation log](#the-presentation-log)).
 
 The player uses ping-pong buffering through `TrigBufferID`, alternating
 between buffer `0` and buffer `1` on successive trials.
+
+### The presentation log
+
+The log is the record of what a run presented. It is held in the player, one
+row per presentation, and is cleared when the next Run starts:
+
+| Property | Per presentation |
+| --- | --- |
+| `StimOrder` | index of the bank item presented |
+| `StimOrderTime` | seconds since the run started |
+| `StimPolarity` | sign played, +1 or −1 |
+| `StimVariant` | variant combination index played |
+| `StimLateness` | seconds the trigger came after it was due (one ISI after the last trigger) |
+| `StimRecord` | cell: the stimulus's `generation_record()` — class, rate, length, the combination's variant values, measured rms and peak, and whatever its class adds (`stimgen.DMR`: seed, carriers, every knot of the envelope) |
+
+`StimRecord` is taken from the stimulus object after the trigger, while it
+still holds the waveform that was in the buffer. A record that cannot be made
+is one critical log line and an empty cell; it does not stop the session.
+`StimLateness` is zero to within the timer's resolution unless the timer was
+busy when the presentation fell due — which is what happens when generating
+the next stimulus after the previous trial takes longer than the ISI leaves
+for it (see [Before a run starts](#before-a-run-starts)).
+
+`RunInfo` is taken when the timer starts, because none of it can be read back
+afterwards — the bank is unlocked for editing and the hardware flag is cleared
+when the timer stops: `StartedAt`, `StoppedAt`, `HardwareRun`, `Completed`,
+`NPresented`, `NTotal`, `Fs`, `ISI`, `SelectionType`, `BankFile`,
+`CalibrationFile`, `BankNames` and `Bank` (the bank as `save_bank` writes it).
+
+**Saving it.** A run that had hardware output is written when it ends, without
+asking, to `PresentationLogDir` as `stimgen_run_<yyyymmdd_HHMMSS>.mat` (the
+time it started); the status line and the log say where, and
+`PresentationLogFile` holds the path. `PresentationLogDir` defaults to
+`fullfile(tempdir,'stimgen_presentation_logs')` — point it somewhere durable —
+and `""` turns the automatic save off. A dry run is never saved automatically.
+**Tools > Export Presentation Log...** (`save_presentation_log(ffn)`) writes
+any log, a dry run's included, wherever asked; it is enabled once a run has
+presented something and refused while a session is running. A failed
+automatic save is one critical log line and leaves the log in memory.
+
+Both write the same MAT file (version 7):
+
+| Variable | Contents |
+| --- | --- |
+| `FormatVersion`, `SavedAt` | 1; when the file was written |
+| `RunStartedAt`, `RunStoppedAt` | local time, `yyyy-mm-ddTHH:MM:SS` |
+| `HardwareRun`, `Completed` | `false` = dry run; whether every presentation was made |
+| `NPresented`, `NTotal` | presentations logged; presentations a full run makes |
+| `Fs`, `ISI`, `SelectionType`, `BankFile`, `CalibrationFile`, `BankNames` | the run's settings, as snapshotted at its start |
+| `StimOrder`, `StimOrderTime`, `StimPolarity`, `StimVariant`, `StimLateness`, `StimRecord` | the trial columns above |
+| `Bank` | the bank as it was when the run started — restore an item with `stimgen.StimType.fromStruct(Bank.Items{k}.StimObj)` |
+
+```matlab
+L = load(p.PresentationLogFile);
+k = 17;                                           % a presentation
+rec  = L.StimRecord{k};                           % what it played
+stim = stimgen.StimType.fromStruct(L.Bank.Items{L.StimOrder(k)}.StimObj);
+stim.VariantReselectOnUpdate = false;
+stim.set_variant_index(L.StimVariant(k));         % the same waveform again
+```
 
 ### Pause and resume
 
@@ -664,8 +732,10 @@ stimulus's own `VariantSelectionMode` (`Serial`, `ShuffleUniform`,
   stimulus just presented, which selects its next combination the same way
   and regenerates it.
 - The combination index each presentation was generated from is logged in
-  `StimVariant`, row-aligned with `StimOrder`. With a shuffled mode that log
-  is the only record of the order.
+  `StimVariant`, row-aligned with `StimOrder`, and the stimulus's generation
+  record in `StimRecord`. With a shuffled mode that log is the only record
+  of the order — see [The presentation log](#the-presentation-log) for how
+  it is saved.
 
 Combination stepping (the `<`/`>` buttons and the arrow keys) is disabled
 while a session holds the bank: the next trial's buffer is already loaded,
@@ -731,8 +801,9 @@ marks the bank unsaved, shown as a `*` after the file name in the window
 title. Then:
 
 - **closing the window** offers Save / Discard / Cancel (and, if a session is
-  running or paused, first warns that closing stops it and discards its
-  presentation log);
+  running or paused, first warns that closing stops it and says what becomes
+  of its presentation log: written to `PresentationLogDir` as it stops for a
+  hardware run, discarded with the player otherwise);
 - **Load Bank** (and the Recent Banks entries) offers Save / Discard / Cancel
   before replacing the bank;
 - **Remove** always asks, since a removal cannot be undone.
