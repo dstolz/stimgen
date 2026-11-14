@@ -335,6 +335,52 @@ classdef DMRTest < matlab.unittest.TestCase
             testCase.verifyError(@() s.envelope_at(-0.1), 'stimgen:DMR:TimeOutOfRange');
         end
 
+        function recordAloneGivesTheEnvelopeAndTrajectories(testCase)
+            % envelope_from_record and trajectory_from_record evaluate the
+            % envelope the object reports, exactly, from the record alone --
+            % also after the record has been through a MAT file, as a
+            % presentation log's StimRecord has.
+            configs = { ...
+                {'Seed', 6}; ...
+                {'Seed', 4, 'EnvelopeMode', "RippleNoise", 'NumEnvelopes', 3}};
+            for c = 1:numel(configs)
+                s = small_(configs{c}{:});
+                s.update_signal();
+                r = s.generation_record();
+                t = [0 (1:40) .* (0.5 / 41) 0.5];
+
+                [S, x] = stimgen.DMR.envelope_from_record(r, t);
+                testCase.verifyTrue(isequal(S, s.envelope_at(t)), sprintf('config %d: envelope', c));
+                testCase.verifyEqual(x, s.OctaveAxis);
+
+                tr = stimgen.DMR.trajectory_from_record(r, t);
+                ref = s.ripple_trajectory(40);
+                tr40 = stimgen.DMR.trajectory_from_record(r, ref.t);
+                testCase.verifyTrue(isequal(tr40.Omega, ref.Omega) && isequal(tr40.Fm, ref.Fm) && ...
+                    isequal(tr40.Phase, ref.Phase), sprintf('config %d: trajectories', c));
+                testCase.verifyEqual(tr.t, t);
+
+                f = [tempname '.mat'];
+                testCase.addTeardown(@() delete(f));
+                StimRecord = {r}; %#ok<NASGU>
+                save(f, 'StimRecord', '-v7');
+                L = load(f);
+                testCase.verifyTrue(isequal(stimgen.DMR.envelope_from_record(L.StimRecord{1}, t), S), ...
+                    sprintf('config %d: after a MAT round trip', c));
+            end
+
+            u = small_('Seed', 6);
+            testCase.verifyError(@() stimgen.DMR.envelope_from_record(u.generation_record(), 0), ...
+                'stimgen:DMR:NotGenerated');
+            u.update_signal();
+            r = u.generation_record();
+            testCase.verifyError(@() stimgen.DMR.envelope_from_record(r, 0.6), 'stimgen:DMR:TimeOutOfRange');
+            r.GeneratorVersion = r.GeneratorVersion + 1;
+            testCase.verifyError(@() stimgen.DMR.envelope_from_record(r, 0), 'stimgen:DMR:GeneratorVersion');
+            r.Class = "stimgen.TORC";
+            testCase.verifyError(@() stimgen.DMR.trajectory_from_record(r, 0), 'stimgen:DMR:NotADmrRecord');
+        end
+
         function rangesAndNyquistAreChecked(testCase)
             % The default band (top carrier 19.7 kHz) does not fit under a
             % 30 kHz rate.

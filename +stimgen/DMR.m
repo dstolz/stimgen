@@ -12,7 +12,9 @@ classdef DMR < stimgen.StimType
     % the sum of several independent DMR envelopes: the same long-term
     % statistics without the local structure. Both exist for reverse
     % correlation, so everything needed to reconstruct the envelope that was
-    % played is kept (see generation_record, envelope_at, export_envelope).
+    % played is kept (see generation_record, envelope_at, export_envelope),
+    % and a record alone gives it back (envelope_from_record,
+    % trajectory_from_record) without the object or a synthesis.
     %
     % Reference:
     %   Escabi MA, Schreiner CE (2002) "Nonlinear spectrotemporal sound
@@ -97,8 +99,10 @@ classdef DMR < stimgen.StimType
     % Version 1 divided by sqrt(2) alone, as if that deviation were 1, which
     % left Omega and Fm weighted toward mid-range (variance 0.073 of range^2)
     % and the long-term envelope correlation wider than the paper's Eq. 9. A
-    % version 1 generation record still rebuilds its own waveform: it holds
-    % the divisor that was used.
+    % version 1 generation record still holds what its waveform was made
+    % from (its ErfDivisor was the trajectories' divisor too), but
+    % envelope_from_record and trajectory_from_record evaluate version 2
+    % records only and refuse it.
     %
     % Draw contract (GeneratorVersion). A waveform is a pure function of the
     % properties, Fs and GeneratorVersion. Random numbers come from a private
@@ -357,20 +361,7 @@ classdef DMR < stimgen.StimType
             % Returns:
             %   S - NumCarriers-by-numel(t) envelope, dB.
             %   x - 1-by-NumCarriers tonotopic axis, octaves above LowFrequency.
-            plan = obj.current_plan_();
-            t = reshape(double(t), 1, []);
-            stimgen.DMR.assert_times_in_range_(plan, t);
-
-            x = plan.OctaveAxis;
-            S = zeros(numel(x), numel(t));
-            B = stimgen.DMR.BlockSize;
-            for i0 = 1:B:numel(t)
-                idx = i0:min(i0 + B - 1, numel(t));
-                [om, cyc] = stimgen.DMR.trajectories_(plan, t(idx));
-                for k = 1:numel(x)
-                    S(k, idx) = stimgen.DMR.envelope_db_(plan, x(k), om, cyc);
-                end
-            end
+            [S, x] = stimgen.DMR.envelope_of_(obj.current_plan_(), t);
         end
 
 
@@ -421,8 +412,7 @@ classdef DMR < stimgen.StimType
             end
             dur = plan.N / plan.Fs;
             t   = (0:nTime-1) .* (dur/nTime);
-            [om, cyc, fm] = stimgen.DMR.trajectories_(plan, t);
-            tr = struct('t', t, 'Omega', om, 'Fm', fm, 'Phase', 2*pi*cyc);
+            tr = stimgen.DMR.trajectory_of_(plan, t);
         end
 
 
@@ -595,6 +585,54 @@ classdef DMR < stimgen.StimType
         end
 
     end % methods (public)
+
+
+    methods (Static)
+
+        function [S, x] = envelope_from_record(rec, t)
+            % [S, x] = stimgen.DMR.envelope_from_record(rec, t)
+            % The envelope a generation record describes, at arbitrary
+            % times, without the stimulus object and without synthesizing
+            % the waveform: what envelope_at returned on the object the
+            % record was taken from, by the same evaluation (the record
+            % carries every knot and the trajectories are functions of t
+            % alone). This is how an analysis rebuilds, from a presentation
+            % log's StimRecord, the envelope each presentation played.
+            %
+            % Parameters:
+            %   rec - generation_record() of a stimgen.DMR (Generated true,
+            %         this class's GeneratorVersion).
+            %   t   - times in seconds, 0 <= t <= the record's duration.
+            %
+            % Returns:
+            %   S - NumCarriers-by-numel(t) envelope, dB about mid-range
+            %       (-M/2 to M/2), before the onset/offset gate.
+            %   x - 1-by-NumCarriers tonotopic axis, octaves above LowFrequency.
+            [S, x] = stimgen.DMR.envelope_of_(stimgen.DMR.plan_from_record_(rec), t);
+        end
+
+
+        function tr = trajectory_from_record(rec, t)
+            % tr = stimgen.DMR.trajectory_from_record(rec, t)
+            % The ripple parameters a generation record describes, at
+            % arbitrary times: what ripple_trajectory reports, at the times
+            % asked for. See envelope_from_record.
+            %
+            % Parameters:
+            %   rec - generation_record() of a stimgen.DMR.
+            %   t   - times in seconds, 0 <= t <= the record's duration.
+            %
+            % Returns:
+            %   tr.t     - t, as a row
+            %   tr.Omega - L-by-numel(t) ripple density, cycles/octave
+            %   tr.Fm    - L-by-numel(t) temporal modulation rate, Hz
+            %   tr.Phase - L-by-numel(t) Phi(t), radians (2 pi * integral of Fm)
+            % with one row per envelope: L is 1 for a DMR and NumEnvelopes
+            % for ripple noise.
+            tr = stimgen.DMR.trajectory_of_(stimgen.DMR.plan_from_record_(rec), t);
+        end
+
+    end % methods (Static)
 
 
     methods (Access = protected)
@@ -934,6 +972,74 @@ classdef DMR < stimgen.StimType
                 end
                 y(n + 1) = yb;
             end
+        end
+
+
+        function [S, x] = envelope_of_(plan, t)
+            % [S, x] = envelope_of_(plan, t)
+            % The one evaluation of the envelope at chosen times, for
+            % envelope_at (the object's plan) and envelope_from_record (a
+            % plan rebuilt from a record): the trajectories and Eq. 1 / 2-3,
+            % in blocks of BlockSize times.
+            t = reshape(double(t), 1, []);
+            stimgen.DMR.assert_times_in_range_(plan, t);
+
+            x = plan.OctaveAxis;
+            S = zeros(numel(x), numel(t));
+            B = stimgen.DMR.BlockSize;
+            for i0 = 1:B:numel(t)
+                idx = i0:min(i0 + B - 1, numel(t));
+                [om, cyc] = stimgen.DMR.trajectories_(plan, t(idx));
+                for k = 1:numel(x)
+                    S(k, idx) = stimgen.DMR.envelope_db_(plan, x(k), om, cyc);
+                end
+            end
+        end
+
+
+        function tr = trajectory_of_(plan, t)
+            % tr = trajectory_of_(plan, t)
+            % The ripple parameters at chosen times, for ripple_trajectory
+            % and trajectory_from_record.
+            t = reshape(double(t), 1, []);
+            stimgen.DMR.assert_times_in_range_(plan, t);
+            [om, cyc, fm] = stimgen.DMR.trajectories_(plan, t);
+            tr = struct('t', t, 'Omega', om, 'Fm', fm, 'Phase', 2*pi*cyc);
+        end
+
+
+        function plan = plan_from_record_(rec)
+            % plan = plan_from_record_(rec)
+            % What trajectories_ and envelope_db_ read, taken from a
+            % generation record: the record holds the plan's knots, rates,
+            % ranges, divisors and carriers as update_signal captured them.
+            if ~isstruct(rec) || ~isscalar(rec) || ~isfield(rec, 'Class') || string(rec.Class) ~= "stimgen.DMR"
+                error('stimgen:DMR:NotADmrRecord', 'The record is not the generation record of a stimgen.DMR.');
+            end
+            if ~isfield(rec, 'Generated') || ~rec.Generated
+                error('stimgen:DMR:NotGenerated', ...
+                    'The record describes no waveform (Generated is false), so it has no envelope to report.');
+            end
+            if rec.GeneratorVersion ~= stimgen.DMR.GeneratorVersion
+                error('stimgen:DMR:GeneratorVersion', ...
+                    ['The record follows draw contract version %g; this stimgen.DMR evaluates version %g. ' ...
+                     'Use the stimgen release that made the recording.'], ...
+                    rec.GeneratorVersion, stimgen.DMR.GeneratorVersion);
+            end
+            plan = struct();
+            plan.Fs                  = double(rec.Fs);
+            plan.N                   = double(rec.N);
+            plan.NumEnvelopes        = double(rec.NumEnvelopes);
+            plan.ErfDivisor          = double(rec.ErfDivisor);
+            plan.TrajectoryErfDivisor = double(rec.TrajectoryErfDivisor);
+            plan.ModulationDepth     = double(rec.ModulationDepth);
+            plan.EnvelopeMode        = string(rec.EnvelopeMode);
+            plan.OctaveAxis          = double(rec.OctaveAxis);
+            plan.RippleDensityRange  = double(rec.RippleDensityRange);
+            plan.ModulationRateRange = double(rec.ModulationRateRange);
+            plan.RippleKnotRate      = double(rec.RippleKnotRate);
+            plan.RateKnotRate        = double(rec.RateKnotRate);
+            plan.Envelope            = rec.Envelope;
         end
 
 

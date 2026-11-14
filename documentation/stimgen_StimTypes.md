@@ -330,6 +330,22 @@ typically the PSTH bin rate, not `Fs` — because the full-rate envelope is larg
 not retained. `Duration` is taken from the rendered signal rather than the property so
 that reading it cannot advance the variant index and decouple S from `Signal`.
 
+**Generation record.** `generation_record()` adds to the base record
+([stimgen_StimType.md](stimgen_StimType.md#generation-record)) what made the waveform,
+captured by `update_signal` when it made `Signal`: `RippleRates`, `RippleDensities`,
+`RipplePhases`, `RippleAmplitude`, `RipplePeriod`, `NumPeriods`, `Duration`,
+`LowFrequency`, `Bandwidth`, `ComponentsPerOctave`, `ModulationDepth`, the carriers
+(`CarrierFrequencies`, `CarrierPhases`, `OctaveAxis`), the `Seed` used, `ComponentMode`,
+`RandomizeRipplePhase`, the `Gate` applied and `Rules` (the equations, in words).
+`Generated` is false, and these fields absent, before a waveform exists. The phases are
+recorded, so a record is enough even when `Seed` is negative (reseeded randomly).
+`[S, x] = stimgen.TORC.envelope_from_record(rec, t)` rebuilds the dynamic spectrum from a
+record alone by the evaluation `dynamic_spectrum` uses (identical values), for `t` within
+`[0, Duration]`; it is periodic in `RipplePeriod`, and an analysis that wants the periodic
+extension wraps its times itself. A presentation log's `StimRecord` is therefore enough to
+correlate each presentation's response with the spectrum it played (ephys_analysis's STRF
+panel does). `tests/TORCTest.m` checks both.
+
 Construction sets `Duration = 0.25` (the paper's value) and disables the inherited
 window (`ApplyWindow = false`, `WindowFcn = ""`): an onset/offset gate breaks the exact
 periodicity the method relies on. Enable it only for single, unrepeated presentations.
@@ -424,7 +440,10 @@ every generation record (`rec.Rules`).
   `GeneratorVersion` 1 divided the knot sequences by √2 alone under `"Uniform"`, as if
   their standard deviation after interpolation were still 1. In simulation that gives
   0.073–0.075 and 1.53 ms: parameters weighted toward mid-range. See
-  [Replicating the paper's examples](#replicating-the-papers-examples).
+  [Replicating the paper's examples](#replicating-the-papers-examples). A version 1
+  record holds its knots, phases and `ErfDivisor` (then the trajectories' divisor as
+  well), but `envelope_from_record` and `trajectory_from_record` refuse it
+  (`stimgen:DMR:GeneratorVersion`).
 - **Interpolant.** The meaning of `interp1`'s `'cubic'` option has changed between MATLAB
   releases, and the paper does not say which release it used. The class writes out cubic
   convolution (Keys, a = −½) over the four nearest knots, so the result does not depend on
@@ -511,6 +530,13 @@ correlation, so three things are kept:
 - `[S, x] = s.envelope_at(t)` — the envelope in dB (−M/2 … M/2) at arbitrary times;
   `[S, t, x] = s.dynamic_spectrum(nTime)` on an even grid (the `TORC` contract);
   `tr = s.ripple_trajectory(nTime)` — Ω, Fm and Φ.
+- `[S, x] = stimgen.DMR.envelope_from_record(rec, t)` and
+  `tr = stimgen.DMR.trajectory_from_record(rec, t)` — the same two from a record alone,
+  with no object and no synthesis: a plan is rebuilt from the record's knots and
+  evaluated by the one path `envelope_at` uses, so the values are identical. This is
+  how an analysis gets the envelope of each presentation from a presentation log's
+  `StimRecord` (ephys_analysis's STRF panel does). A record of another
+  `GeneratorVersion` is refused (`stimgen:DMR:GeneratorVersion`).
 - `s.export_envelope(file, 'SampleRate', 4000)` — writes all of the above to one MAT
   file for every seed, so an analysis does not depend on this class regenerating the
   same numbers later (see below).
