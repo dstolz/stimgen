@@ -348,8 +348,13 @@ class reads or departs from the paper as printed are listed in the class help an
 `documentation/stimgen_StimTypes.md#dmr`, and named in every record's `Rules`. `Seed` is a
 non-negative integer with no "reseed randomly" value. Ω(t), Fm(t) and Φ(t) are functions of t
 alone, so `envelope_at` returns the envelope synthesis used at any sampling; do not add a second
-evaluation path. The DMR half of `generation_record` is captured inside `update_signal`, never
-rebuilt at call time.
+evaluation path. `envelope_from_record` and `trajectory_from_record` (static, a record alone, no
+synthesis) are not one: they rebuild a plan from the record (`plan_from_record_`) and go through
+`envelope_of_` / `trajectory_of_`, the same helpers `envelope_at` and `ripple_trajectory` call.
+`stimgen.TORC` likewise captures its ripple list in `update_signal` for its `generation_record`,
+and `TORC.envelope_from_record` evaluates it through `ripple_envelope_`, as `dynamic_spectrum`
+does. Analyses (ephys_analysis's STRF panel) read presentation logs through these. The DMR half
+of `generation_record` is captured inside `update_signal`, never rebuilt at call time.
 
 **A presenter selects variants through the stimulus, never by index.** `update_signal()` called
 outside a variant cycle is the one call that selects the next combination per

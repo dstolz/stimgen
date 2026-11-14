@@ -75,6 +75,11 @@ classdef TORC < stimgen.StimType
     % draw new random phases, whose cross-correlation functions average toward
     % the STRF as 1/sqrt(M).
     %
+    % Reverse correlation needs the dynamic spectrum each presentation played.
+    % generation_record carries the ripple components, carriers and phases
+    % update_signal used (so a presentation log's StimRecord is enough), and
+    % stimgen.TORC.envelope_from_record rebuilds S(t,x) from a record alone.
+    %
     % ApplyWindow defaults to false. An onset/offset gate would break the exact
     % periodicity the method relies on; enable it only for single, unrepeated
     % presentations.
@@ -130,6 +135,10 @@ classdef TORC < stimgen.StimType
         Normalization   = "rms";
     end
 
+    properties (Access = private)
+        record_ = []   % the TORC half of generation_record, captured by update_signal
+    end
+
     methods
 
         function obj = TORC(varargin)
@@ -155,6 +164,10 @@ classdef TORC < stimgen.StimType
                 obj.call_update_signal_with_variant_cycle_();
                 return
             end
+
+            % Until this generation has finished, there is no record that
+            % describes Signal.
+            obj.record_ = [];
 
             t   = obj.Time;
             fs  = double(obj.selected_value("Fs"));
@@ -246,6 +259,50 @@ classdef TORC < stimgen.StimType
             obj.apply_calibration;
 
             obj.apply_gate;
+
+            obj.record_ = obj.build_record_(f0, X, cpo, depth, T);
+        end
+
+
+        function rec = generation_record(obj)
+            % rec = generation_record(obj)
+            % What the waveform currently in Signal was generated from: the
+            % base record (see stimgen.StimType/generation_record) plus the
+            % ripple components, carriers and phases that make it, so the
+            % dynamic spectrum a presentation played can be rebuilt from the
+            % record alone (envelope_from_record) -- a presentation log's
+            % StimRecord is enough, whatever Seed was (a negative Seed
+            % reseeds randomly, and the phases drawn are recorded here).
+            %
+            % The TORC fields are the ones update_signal captured when it
+            % made Signal, not values recomputed now. Generated is false,
+            % and they are absent, when no waveform has been generated.
+            %
+            % Returns rec with the base fields and:
+            %   Generated          - true when the fields below are present
+            %   GeneratedVariantIndex - the combination update_signal had locked
+            %   Seed               - the Seed it used (negative: reseeded randomly)
+            %   ComponentMode, RandomizeRipplePhase
+            %   LowFrequency (Hz), Bandwidth (octaves), ComponentsPerOctave
+            %   ModulationDepth    - dB peak-to-peak requested
+            %   Duration (s), NumPeriods, RipplePeriod (s, T = Duration/NumPeriods)
+            %   RippleRates        - 1-by-N, Hz, positive multiples of 1/T
+            %   RippleDensities    - 1-by-N, cycles/octave, signed
+            %   RipplePhases       - 1-by-N, rad
+            %   RippleAmplitude    - dB, the constant a of Eq. (28)
+            %   CarrierFrequencies, CarrierPhases (rad), OctaveAxis (octaves
+            %                        above LowFrequency)
+            %   Gate               - Applied, WindowFcn, WindowDuration (s), NumSamples
+            %   Rules              - struct of text: Envelope, Waveform, Direction
+            rec = generation_record@stimgen.StimType(obj);
+            rec.Generated = ~isempty(obj.record_);
+            if ~rec.Generated
+                return
+            end
+            fn = fieldnames(obj.record_);
+            for i = 1:numel(fn)
+                rec.(fn{i}) = obj.record_.(fn{i});
+            end
         end
 
 
@@ -319,6 +376,103 @@ classdef TORC < stimgen.StimType
         end
 
     end % methods (public)
+
+
+    methods (Static)
+
+        function [S, x] = envelope_from_record(rec, t)
+            % [S, x] = stimgen.TORC.envelope_from_record(rec, t)
+            % The dynamic spectrum a generation record describes, at
+            % arbitrary times, without the stimulus object: Eq. (28) from
+            % the record's ripple rates, densities, phases and amplitude, by
+            % the same evaluation dynamic_spectrum uses. This is how an
+            % analysis rebuilds, from a presentation log's StimRecord, the
+            % dynamic spectrum each presentation played.
+            %
+            % Parameters:
+            %   rec - generation_record() of a stimgen.TORC (Generated true).
+            %   t   - times in seconds, 0 <= t <= the record's duration. The
+            %         spectrum is periodic in RipplePeriod; an analysis that
+            %         wants the periodic extension wraps its times itself.
+            %
+            % Returns:
+            %   S - nCarriers-by-numel(t) dynamic spectrum, dB about the mean
+            %       level, before the onset/offset gate.
+            %   x - 1-by-nCarriers tonotopic axis, octaves above LowFrequency.
+            if ~isstruct(rec) || ~isscalar(rec) || ~isfield(rec, 'Class') || string(rec.Class) ~= "stimgen.TORC"
+                error('stimgen:TORC:NotATorcRecord', 'The record is not the generation record of a stimgen.TORC.');
+            end
+            if ~isfield(rec, 'Generated') || ~rec.Generated
+                error('stimgen:TORC:NotGenerated', ...
+                    'The record describes no waveform (Generated is false), so it has no dynamic spectrum to report.');
+            end
+            t = reshape(double(t), 1, []);
+            dur = double(rec.N) / double(rec.Fs);
+            if any(~isfinite(t)) || any(t < 0) || any(t > dur)
+                error('stimgen:TORC:TimeOutOfRange', 'Times must lie within the signal, 0 to %g s.', dur);
+            end
+            x = double(rec.OctaveAxis);
+            S = zeros(numel(x), numel(t));
+            for j = 1:numel(x)
+                S(j,:) = stimgen.TORC.ripple_envelope_(t, x(j), double(rec.RippleRates), ...
+                    double(rec.RippleDensities), double(rec.RipplePhases), double(rec.RippleAmplitude));
+            end
+        end
+
+    end % methods (Static)
+
+
+    methods (Access = private)
+
+        function rec = build_record_(obj, f0, X, cpo, depth, T)
+            % rec = build_record_(obj, f0, X, cpo, depth, T)
+            % The TORC half of generation_record, taken while update_signal
+            % still has the combination locked -- so the values read here
+            % are the ones that made Signal.
+            applied = logical(obj.selected_value("ApplyWindow"));
+            gate = struct( ...
+                'Applied',        applied, ...
+                'WindowFcn',      string(obj.WindowFcn), ...
+                'WindowDuration', double(obj.effective_window_duration_()), ...
+                'NumSamples',     0);
+            N = numel(obj.Signal);
+            if applied
+                % What apply_gate applied: the whole window, or -- when the
+                % window is longer than the signal -- one shrunk to fit.
+                nGate = numel(obj.Window);
+                if nGate > N
+                    nGate = N - rem(N, 2);
+                end
+                gate.NumSamples = nGate;
+            end
+
+            rec = struct();
+            rec.GeneratedVariantIndex = obj.variantActiveIdx_;
+            rec.Seed                  = double(obj.selected_value("Seed"));
+            rec.ComponentMode         = string(obj.ComponentMode);
+            rec.RandomizeRipplePhase  = logical(obj.RandomizeRipplePhase);
+            rec.LowFrequency          = f0;
+            rec.Bandwidth             = X;
+            rec.ComponentsPerOctave   = cpo;
+            rec.ModulationDepth       = depth;
+            rec.Duration              = N / double(obj.Fs);
+            rec.NumPeriods            = double(obj.selected_value("NumPeriods"));
+            rec.RipplePeriod          = T;
+            rec.RippleRates           = obj.RippleRates;
+            rec.RippleDensities       = obj.RippleDensities;
+            rec.RipplePhases          = obj.RipplePhases;
+            rec.RippleAmplitude       = obj.RippleAmplitude;
+            rec.CarrierFrequencies    = obj.CarrierFrequencies;
+            rec.CarrierPhases         = obj.CarrierPhases;
+            rec.OctaveAxis            = obj.OctaveAxis;
+            rec.Gate                  = gate;
+            rec.Rules = struct( ...
+                'Envelope',  "S(t,x) = sum_i 2*RippleAmplitude*cos(2*pi*(RippleRates(i)*t + RippleDensities(i)*x) + RipplePhases(i)), dB about the mean level (Klein et al. 2000, Eq. 28)", ...
+                'Waveform',  "s(t) = sum_j 10^(S(t,OctaveAxis(j))/20) * sin(2*pi*CarrierFrequencies(j)*t + CarrierPhases(j)); then rms normalization, calibration and the gate", ...
+                'Direction', "RippleDensities > 0: downward-moving ripple (quadrant 1 of Klein et al. Fig. 3); < 0: upward-moving");
+        end
+
+    end % methods (Access = private)
 
 
     methods (Access = protected)
