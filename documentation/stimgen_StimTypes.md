@@ -406,7 +406,9 @@ every generation record (`rec.Rules`).
   releases, and the paper does not say which release it used. The class writes out cubic
   convolution (Keys, a = −½) over the four nearest knots, so the result does not depend on
   the release; `tests/DMRTest.m` compares it with `interp1` on the release the suite runs
-  on.
+  on. On R2026b it equals both `interp1(...,'cubic')` and `interp1(...,'v5cubic')` to
+  rounding (2 × 10⁻¹⁵ cycles/octave) and differs from `'pchip'` by up to 0.25
+  cycles/octave in that test.
 - **Phase integral.** The paper does not say how the integral was evaluated. Here it is a
   fixed 32-point Gauss–Legendre rule per knot interval, accumulated at the knots. Ω(t),
   Fm(t) and Φ(t) are then functions of t alone — independent of `Fs` and of the grid they
@@ -505,7 +507,11 @@ maps to absolute level; `RawRms` and `RawPeak` hold the figures before normaliza
 sample, so ripple noise with 16 envelopes costs about six times a DMR. `StimPlayer`
 resynthesizes the presented stimulus inside its timer after every trial, so with a new
 seed per trial the ISI has to leave room for it (`generation_record().GenerationSeconds`
-reports what a generation took). The last synthesis is cached: presenting the same seed
+reports what a generation took, and `StimPlayer` logs how late each trigger was in
+`StimLateness`). One measurement, on the CI runner (GitHub-hosted Linux, MATLAB R2026b),
+at the paper's 230 carriers and 97656.25 Hz: 0.92 s of synthesis per second of DMR, and
+6.67 s per second of 16-envelope ripple noise. Measure on the machine that will run the
+experiment. The last synthesis is cached: presenting the same seed
 again, or editing only `SoundLevel`, the gate or the calibration, does not synthesize
 again.
 

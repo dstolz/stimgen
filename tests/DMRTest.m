@@ -562,11 +562,51 @@ classdef DMRTest < matlab.unittest.TestCase
                 'stimgen:DMR:CombinationOutOfRange');
         end
 
+        function generatorVersion1IsPinned(testCase)
+            % The draw contract, as numbers. Seed 1 of the small
+            % configuration produced these under GeneratorVersion 1 (first
+            % recorded on MATLAB R2026b, Linux). A change to the generator,
+            % the substream map, the knot grid, the interpolant, the erf
+            % mapping, the phase rule, the carrier grid, the amplitude
+            % expression or the summation order moves them -- and with them
+            % every waveform a recorded seed stands for. If that is
+            % intended, bump DMR.GeneratorVersion and re-pin from the
+            % DMRGOLD lines; if it is not, this is the failure to heed.
+            %
+            % Tolerances, not bit equality: the draws themselves are exact,
+            % but sin/exp/erf may differ in the last bits between MATLAB
+            % releases and platforms.
+            testCase.assertEqual(stimgen.DMR.GeneratorVersion, 1, ...
+                'GeneratorVersion changed: re-pin these values for the new version.');
+
+            g = small_('Seed', 1, 'ApplyWindow', false);
+            g.update_signal();
+            r = g.generation_record();
+            e = r.Envelope(1);
+
+            testCase.verifyEqual(r.Generator, "mrg32k3a");
+            testCase.verifyEqual(r.NormalTransform, "Inversion");
+            testCase.verifyEqual(r.CarrierPhases(1:3), ...
+                [3.1145577505605586 1.4093505973330447 1.3024220294774538], 'AbsTol', 1e-12);
+            testCase.verifyEqual(e.RippleKnots(1:3), ...
+                [-0.57272222893940872 -1.1877769295146983 0.60799778302990293], 'AbsTol', 1e-12);
+            testCase.verifyEqual(e.RateKnots(1:3), ...
+                [-1.338817886792776 -0.8779439317560096 0.47151540524614488], 'AbsTol', 1e-12);
+            testCase.verifyEqual(e.RateKnotCycles(2:3), ...
+                [-11.943537258229654 -7.9236909246410541], 'AbsTol', 1e-9);
+            testCase.verifyEqual(r.RawRms,  1.2107208878982807, 'RelTol', 1e-9);
+            testCase.verifyEqual(r.RawPeak, 4.3840762245687426, 'RelTol', 1e-9);
+            testCase.verifyEqual(g.Signal([1 2 1000 24000]), ...
+                [-0.088387678174764728 0.19758426100619464 -0.13288482792890682 0.90051482082619427], ...
+                'AbsTol', 1e-9);
+        end
+
         function reportsCostAndGoldenCandidates(testCase)
             % Printed for the CI log. The timing lines are what synthesis
             % costs on this machine (the class runs inside StimPlayer's
-            % timer between trials); the DMRGOLD lines are the values the
-            % golden test pins for GeneratorVersion 1.
+            % timer between trials); the DMRGOLD lines are the values
+            % generatorVersion1IsPinned pins, printed so they can be re-pinned
+            % from a log when GeneratorVersion is bumped.
             d = stimgen.DMR('ApplyCalibration', false, 'Duration', 1);   % paper band, default Fs
             d.update_signal();
             r = d.generation_record();
