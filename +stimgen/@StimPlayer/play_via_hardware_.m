@@ -5,6 +5,11 @@ function play_via_hardware_(obj, stimObj)
 % voltage. Blocks until the hardware finishes so Play All can
 % pace combinations and Stop takes effect between them.
 %
+% A stimulus with a Background is previewed IN it
+% (StimType.audition_signal): a short stretch of the background
+% either side, both at their calibrated levels. That is a preview
+% only -- a Run plays Signal alone (see confirm_run_).
+%
 % Two hardware contracts can carry a preview, and a circuit
 % typically exposes only one of them. The player's own playback
 % tags (BufferData_0, BufferSize_0, x_Trigger_0 — the Run
@@ -24,7 +29,7 @@ if ~isempty(obj.Host)
     obj.ensure_host_connected_;
 end
 
-signal = double(stimObj.Signal);
+signal = double(stimObj.audition_signal());
 peak = max(abs(signal));
 if peak > 10
     error('stimgen:StimPlayer:PreviewVoltageOutOfRange', ...

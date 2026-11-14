@@ -45,8 +45,12 @@ function m = level_as_calibrated(y, fs, req, micSens, spectral)
 %     level_unit       unit of level_db, from stimgen.util.level_unit
 %     level_unit_dbv   unit of level_dbv, likewise
 %     requested_db     the level asked for; NaN when unknown
+%     expected_offset_db  req.expected_offset_db: how far from requested_db
+%                      the stimulus is built to measure (0 unless it is a
+%                      modulation of a background; see level_request)
 %     calibrated       the requested level is a real dB SPL
-%     error_db         level_db - requested_db when both are real; else NaN
+%     error_db         level_db - (requested_db + expected_offset_db) when
+%                      the levels are real; else NaN
 %
 % See also: stimgen.util.level_request, stimgen.calibration.Engine.volts_to_spl,
 %           stimgen.calibration.Engine.spectral_rms
@@ -100,9 +104,13 @@ else
 end
 
 requested  = field_(req, 'level_db', nan);
+expected   = field_(req, 'expected_offset_db', 0);
+if ~isfinite(expected)
+    expected = 0;
+end
 calibrated = logical(field_(req, 'calibrated', false));
 if calibrated && isfinite(requested) && isfinite(levelDb)
-    errorDb = levelDb - requested;
+    errorDb = levelDb - (requested + expected);
 else
     errorDb = nan;
 end
@@ -118,6 +126,7 @@ m = struct( ...
     'level_unit',      stimgen.util.level_unit(mode), ...
     'level_unit_dbv',  stimgen.util.level_unit(mode, true), ...
     'requested_db',    requested, ...
+    'expected_offset_db', expected, ...
     'calibrated',      calibrated, ...
     'error_db',        errorDb);
 end

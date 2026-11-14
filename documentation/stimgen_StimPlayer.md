@@ -63,7 +63,12 @@ The `create()` method builds a single-window UI with three main areas.
 
 ### Signal plot
 
-The top panel shows the waveform for the currently selected bank entry.
+The top panel shows the waveform for the currently selected bank entry. An
+entry with a `Background` is drawn embedded in a stretch of it either side (as
+long as the stimulus, to a quarter second), with time zero still at the
+stimulus onset — a gap or an FM epoch is not visible as anything by itself.
+`Play` and `Play All` audition the same thing (`StimType.audition_signal`),
+through the speakers or the hardware preview route.
 
 `update_signal_plot()` refreshes that plot by:
 
@@ -694,7 +699,12 @@ all and **Cancel** (the default) abandons the run without changing anything:
   protocol, not connected, or the named playback parameters missing (see
   [Required hardware parameters](#required-hardware-parameters));
 - a bank item whose `Reps` is not a multiple of its combination count under a
-  balanced selection mode (see above).
+  balanced selection mode (see above);
+- a bank item with a `Background`. A Run plays each stimulus's `Signal` on its
+  own, with silence between presentations: it does **not** play a background,
+  and a background modulation plays as a burst of its modulated background. A
+  background is played by a presenter that supports one (see
+  [stimgen_Background.md](stimgen_Background.md)).
 
 `playback_control("Run")` shows the same dialog, so a host driving the
 session programmatically is asked too. `"Run"` while a session is already

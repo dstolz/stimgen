@@ -53,6 +53,20 @@ classdef TooltipCatalogTest < matlab.unittest.TestCase
             end
         end
 
+        function backgroundRowsHaveTooltips(testCase)
+            % The Background group shows different rows per type, and the
+            % background modulations retitle some inherited ones; every row
+            % of every case needs its text.
+            for bg = ["None", "Noise", "Tone"]
+                t = stimgen.Tone('ApplyCalibration', false, 'Background', bg);
+                verify_prop_meta_tooltips_(testCase, t, "Tone/Background=" + bg);
+            end
+            for bg = ["Noise", "Tone"]
+                a = stimgen.BackgroundAM('ApplyCalibration', false, 'Background', bg);
+                verify_prop_meta_tooltips_(testCase, a, "BackgroundAM/Background=" + bg);
+            end
+        end
+
         function everyLiteralKeyInSourceResolves(testCase)
             pkg = fullfile(testCase.Root, '+stimgen');
             files = dir(fullfile(pkg, '**', '*.m'));

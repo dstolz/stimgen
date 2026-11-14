@@ -11,8 +11,9 @@ Processing Toolbox; Audio Toolbox only for sound-card playback/preview.
 ## Working in this repo
 
 There is no build. `tests/` holds a `matlab.unittest` suite for the GUI-free, hardware-free
-code (level scale, weighting, band and meter arithmetic, serialization, variants, logging,
-the tooltip catalog, and the calibration engine against `documentation/tools/SimRigAdapter.m`);
+code (level scale, weighting, band and meter arithmetic, serialization, variants, ongoing
+backgrounds, logging, the tooltip catalog, and the calibration engine against
+`documentation/tools/SimRigAdapter.m`);
 `.github/workflows/tests.yml` runs it in CI on pushes to `main` and on pull requests. GUIs and
 real hardware are still verified by running them. See `tests/README.md`.
 
@@ -41,10 +42,24 @@ that spans them.
 
 **Stimulus generation** — `stimgen.StimType` (abstract, in `@StimType/`) plus concrete subclasses
 as loose `.m` files in `+stimgen/`: `Tone`, `Noise`, `AMnoise`, `AttackModNoise`, `FMtone`,
-`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`. The base class owns level/duration/gating/Fs, the
+`SweptSine`, `ClickTrain`, `TORC`, `SoundFile`, and the background modulations `BackgroundAM`,
+`BackgroundGap`, `BackgroundFM` (abstract base `stimgen.BackgroundModulation` in
+`@BackgroundModulation/`). The base class owns level/duration/gating/Fs, the
 variant system, serialization, and GUI generation; subclasses only synthesize a waveform.
 `SoundFile` is the exception that reads rather than synthesizes: it owns a catalog of sound files, uses a vectorizable
 `FileIndex` as its variant axis, and derives `Duration` from the selected file.
+
+**Ongoing backgrounds** — every `StimType` can be *embedded in* a sound a presenter plays
+continuously (`Background` = `"None"`/`"Noise"`/`"Tone"`, `BackgroundLevel`, band or frequency,
+loop duration, seed). stimgen defines and calibrates the background and never plays it
+continuously itself; a presenter (MABR) reads three methods and renders
+`y = G .* B(theta) + add`. `get_background()` returns the calibrated background — a seeded,
+seamlessly loopable noise segment, or a tone's frequency and amplitude — built by
+`stimgen.util.background_source` from a `stimgen.Noise`/`stimgen.Tone` on the stimulus's own
+calibration. `get_embedding()` returns how this stimulus acts on it: `Signal` to add (every
+ordinary class), or a `Gain` envelope / `Phase` deviation with nothing added (the
+`BackgroundModulation` classes). `embedded_signal(pre,post)` is the reference render a
+presenter's own is tested against. See `documentation/stimgen_Background.md`.
 
 **Playback** — `stimgen.StimPlay` wraps a StimType with reps/ISI/selection order.
 `stimgen.StimPlayer` (in `@StimPlayer/`) manages a bank of StimPlay objects, double-buffers audio
@@ -211,6 +226,13 @@ defines its own fields then calls
 `stimgen.StimType.merge_prop_meta(m, propMeta@stimgen.StimType(obj))`. A subclass with clean
 metadata appears in `StimPlayer` with no player-side changes.
 
+`propMeta` may return a different *set* of rows depending on state (the `Background` group
+lists only what its type uses). An edit that changes that set rebuilds the panel in both
+generators — `interpret_gui` (delete the grid, `create_gui` into its container) and
+`set_prop_` (`on_bank_selection_changed`) — last in the callback, since it deletes the widget
+that fired it. A `group` name must be in `group_prop_meta`'s `GROUP_ORDER` or its rows are
+silently not shown.
+
 Widget types are `numeric`, `text`, `checkbox`, `dropdown`, and `button`. A `button` entry is an
 *action*, not a property: its field name is only a widget `Tag` (it need not name a real property),
 and it declares `text` (caption) and `callback` (a public no-argument method on the stimulus
@@ -258,6 +280,43 @@ samples become a million combinations. The cost is that such a property does not
 `toStruct`/`fromStruct` or a `.spl` bank; `CapturedSignal` accepts that and is documented as a
 session object rather than a persistence format. Overriding `is_non_vectorizable_property_`
 instead does not work: that path *errors* on a non-scalar value rather than passing it through.
+
+**A background never changes `Signal`, and is never played by stimgen's own Run.** `Signal`
+stays the stimulus alone, so Run, the inspector, SpotCheck, capture and `level_request` read
+what they always did; only Play, the signal plot and the hardware preview show the stimulus in
+its background (`audition_signal`). `StimPlayer`'s hardware Run plays `Signal` and
+`confirm_run_` says so when a bank item has a background. Rules that keep this honest:
+
+- The `Background*` properties are declared on the base class and appended to every instance's
+  `UserProperties` by the `StimType` constructor (`BackgroundProperties`; skipped when
+  `supports_background_()` is false, as for `CapturedSignal`). `UserProperties` is the one list
+  the variant system, serialization, the expression context and the parameter summary walk, so
+  no second list exists. They are deliberately **not** in `CoreProperties`.
+- A setting the current type does not use is *inactive* (`is_inactive_background_property_`)
+  and skipped by `get_variant_source_values_` and `current_parameter_summary` — otherwise a
+  `BackgroundLevel` vector left under `"None"` multiplies the combinations of a stimulus with
+  no background.
+- Assigning a `Background*` property regenerates `Signal` like any other property. Do not
+  special-case it away: the assignment can add or remove a variant axis, which resets the
+  active index, and a `Signal` left from the old combination would then be misdescribed. The
+  loop is never built inside `update_signal`, which is what keeps that cheap.
+- Nothing is cached on the object. `background_source` memoizes loops by `Key`, recomputed
+  from the settings (and a fingerprint of the calibration) on every call — a `copy()` carries
+  none of its source's listeners, so a cache cleared by a listener would go stale there.
+  `Key` equality is how a presenter knows two stimuli share a background; it is the active
+  combination's, so a vector `SoundLevel` does not change it and a vector `BackgroundLevel`
+  does.
+- The noise loop is seeded through `Noise.RandomStream` (hidden, `NonCopyable`, not
+  observable). The global stream is neither read nor reseeded.
+- `BackgroundModulation`: the gate shapes the *deviation* (from gain 1 / zero frequency
+  deviation), never the carrier — `deviation_gate_` runs ones through `apply_gate`; there is
+  one level (`SoundLevel` is the carrier's, `background_level_` returns it, `BackgroundLevel`
+  is removed from `propMeta` and always inactive); and the level is carrier-referenced, with
+  no renormalization after the modulation. `level_offset_db()` is the resulting offset and
+  `level_request` carries it as `expected_offset_db`, which `level_as_calibrated` subtracts.
+  The `Constant`s are `"filter"`/`"rms"` for the family because a constant cannot follow the
+  `Background` property. An error in `update_signal` empties `Signal` before rethrowing, for
+  the reason `apply_calibration`'s rate check does.
 
 **Reading a variant value without advancing it.** `selected_value` reselects when called outside a
 variant cycle — it advances the selection order and bumps the use count, because generating the

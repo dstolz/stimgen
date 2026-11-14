@@ -16,6 +16,7 @@ This overview is the entry point for the subsystem. The first half is for users 
 - [stimgen_StimTypes.md](stimgen_StimTypes.md): catalog of built-in stimulus classes and their properties
 - [stimgen_StimPlay.md](stimgen_StimPlay.md): repetition and selection wrapper used by playback tools (developer reference)
 - [stimgen_SoundFile.md](stimgen_SoundFile.md): playback of pregenerated sound files, including calibration of spectrotemporally complex material
+- [stimgen_Background.md](stimgen_Background.md): embedding a stimulus in an ongoing background — a tone in noise, or AM, a gap or FM as a change made to the background itself
 - [stimgen_StimPlayer.md](stimgen_StimPlayer.md): standalone stimulus-bank tool with `.spl` save/load support
 - [stimgen_StimInspector.md](stimgen_StimInspector.md): detail window for one stimulus — waveform, spectrum, spectrogram, THD and signal metrics; a microphone recording is shown in Pa and dB SPL, with sound-level-meter readouts and band levels
 - [stimgen_CombinationViewer.md](stimgen_CombinationViewer.md): every variant combination of one stimulus side by side — tiles, overlay or stack, waveform or spectrum — generated on copies so the bank is not moved
@@ -60,6 +61,9 @@ sp.ISI = [0.8 1.2];
 - `stimgen.SweptSine` — logarithmic chirp (also used by calibration)
 - `stimgen.TORC` — temporally orthogonal ripple combination, for STRF estimation by spectrotemporal reverse correlation
 - `stimgen.SoundFile` — playback of pregenerated sound files (vocalizations, phonemes); see [stimgen_SoundFile.md](stimgen_SoundFile.md)
+- `stimgen.BackgroundAM`, `stimgen.BackgroundGap`, `stimgen.BackgroundFM` — a change made to an ongoing background (amplitude modulation, a gap, frequency modulation of a steady tone) rather than a sound of its own
+
+Any of the classes above the last line can also be embedded *in* an ongoing background (a tone in noise) through the `Background` properties every stimulus has. stimgen defines and calibrates the background; a presenter that owns the audio stream plays it continuously. See [stimgen_Background.md](stimgen_Background.md).
 
 See [stimgen_StimTypes.md](stimgen_StimTypes.md) for the full property reference of each class.
 

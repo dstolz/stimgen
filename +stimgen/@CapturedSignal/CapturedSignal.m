@@ -492,6 +492,14 @@ classdef CapturedSignal < stimgen.StimType
             m = stimgen.StimType.merge_prop_meta(m, base);
         end
 
+
+        function tf = supports_background_(~)
+            % A recording is reported as recorded: there is nothing here a
+            % background could correctly be added to, so it carries none of
+            % the Background* properties (see StimType.supports_background_).
+            tf = false;
+        end
+
     end % methods (Access = protected)
 
 

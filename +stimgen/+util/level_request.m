@@ -50,6 +50,16 @@ function req = level_request(stimObj)
 %     calibrated           both: the requested level is a real dB SPL rather
 %                          than a nominal one
 %     variant              struct from active_variant_values
+%     expected_offset_db   how far the measured level is EXPECTED to sit from
+%                          level_db, by construction rather than by error.
+%                          0 for every stimulus whose Signal is scaled to its
+%                          Sound Level. A stimgen.BackgroundModulation is
+%                          carrier-referenced -- Sound Level is the steady
+%                          background's, and the modulated epoch measured
+%                          here is louder or quieter than it by
+%                          10*log10(mean(Gain.^2)) -- and reports that
+%                          through level_offset_db, so
+%                          level_as_calibrated does not call it an error.
 %
 % Example:
 %   req = stimgen.util.level_request(toneObj);
@@ -98,6 +108,14 @@ catch
 end
 applies = logical(stimObj.ApplyCalibration);
 
+expectedOffset = 0;
+if ismethod(stimObj, 'level_offset_db')
+    expectedOffset = scalar_(stimObj.level_offset_db());
+    if isnan(expectedOffset)
+        expectedOffset = 0;
+    end
+end
+
 req = struct( ...
     'class',                string(class(stimObj)), ...
     'calibration_type',     calType, ...
@@ -107,7 +125,8 @@ req = struct( ...
     'applies_calibration',  applies, ...
     'has_calibration_data', hasData, ...
     'calibrated',           applies && hasData, ...
-    'variant',              variant);
+    'variant',              variant, ...
+    'expected_offset_db',   expectedOffset);
 end
 
 

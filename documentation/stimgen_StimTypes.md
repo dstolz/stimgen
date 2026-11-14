@@ -26,6 +26,14 @@ of the onset/offset ramp from a catalog of window functions -- see
 | [`SweptSine`](#sweptsine) | Logarithmic or linear chirp | `"swept_sine"` | `"absmax"` |
 | [`TORC`](#torc) | Temporally orthogonal ripple combination, for STRF estimation | `"filter"` | `"rms"` |
 | [`SoundFile`](#soundfile) | Playback of a catalog of sound files | overridden per instance (`CalibrationMode`) | overridden per instance (`LevelReference`) |
+| [`BackgroundAM`](#backgroundam) | Amplitude modulation **of an ongoing background** | `"filter"` | `"rms"` (carrier-referenced) |
+| [`BackgroundGap`](#backgroundgap) | A gap (or level decrement) **in an ongoing background** | `"filter"` | `"rms"` (carrier-referenced) |
+| [`BackgroundFM`](#backgroundfm) | Frequency modulation **of an ongoing tone** | `"filter"` | `"rms"` (carrier-referenced) |
+
+Every class above the last three can also be *embedded in* an ongoing background (a
+tone in noise) by setting the inherited `Background` properties; the last three are a
+change made *to* the background and add nothing. Both are covered in
+[stimgen_Background.md](stimgen_Background.md).
 
 `CalibrationType` selects which LUT `apply_calibration` looks up and which property
 supplies the key — see [Calibration coupling](../CLAUDE.md) in the repo root guide.
@@ -335,6 +343,71 @@ selected per instance (`CalibrationMode`, `LevelReference`) rather than fixed
 
 - [+stimgen/SoundFile.m](../+stimgen/SoundFile.m)
 
+## BackgroundAM
+
+Amplitude modulation of an ongoing background for `Duration` seconds. The background
+is the inherited `Background` (band-passed noise by default, or a tone) at `SoundLevel`;
+a presenter that plays it continuously applies the gain
+
+```
+G(t) = 1 + AMDepth * w(t) * sin(2*pi*AMRate*t + OnsetPhase)
+```
+
+at each presentation, where `w` is the gate applied to the *modulation* (the background
+is never gated).
+
+- [+stimgen/BackgroundAM.m](../+stimgen/BackgroundAM.m)
+
+| Property | Vectorizable | Meaning |
+| --- | --- | --- |
+| `AMRate` | yes | Hz |
+| `AMDepth` | yes | 0-1 about the steady level: gain between `1 - depth` and `1 + depth` |
+| `OnsetPhase` | yes | degrees, of the modulator. Default 0: the envelope leaves the steady level rising |
+
+`Duration` defaults to 0.5 s (five cycles at the default 10 Hz). Unlike
+[`AMnoise`](#amnoise) nothing is renormalized: `SoundLevel` is the steady background's
+level, and the modulated epoch is louder than it by `10*log10(1 + AMDepth^2/2)`
+(1.76 dB at full depth). `Signal` is the stand-alone rendition — the background for
+`Duration` with the modulation applied.
+
+## BackgroundGap
+
+A gap in an ongoing background: its gain is `G(t) = 1 - GapDepth * w(t)` for
+`Duration` seconds.
+
+- [+stimgen/BackgroundGap.m](../+stimgen/BackgroundGap.m)
+
+| Property | Vectorizable | Meaning |
+| --- | --- | --- |
+| `GapDepth` | yes | 0-1. 1 = silence; less is a decrement of `20*log10(1 - depth)` dB |
+
+`Duration` (default 20 ms) is the whole gap, ramps included; `WindowDuration` is the
+fall plus the rise (each half), and `ApplyWindow = false` makes the gap rectangular.
+
+## BackgroundFM
+
+Frequency modulation of an ongoing tone. The background must be `"Tone"` (the default
+for this class, at `BackgroundFrequency`); its instantaneous frequency deviates by
+
+```
+df(t) = FMDeviation * w(t) * sin(2*pi*FMRate*t + OnsetPhase)      [Hz]
+```
+
+and the phase deviation handed to a presenter is the running integral of that, starting
+at 0. The tone's amplitude never changes and it never stops: whatever phase the
+modulation ends on is where the tone carries on from.
+
+- [+stimgen/BackgroundFM.m](../+stimgen/BackgroundFM.m)
+
+| Property | Vectorizable | Meaning |
+| --- | --- | --- |
+| `FMRate` | yes | Hz |
+| `FMDeviation` | yes | Hz, peak deviation from `BackgroundFrequency` |
+| `OnsetPhase` | yes | degrees, of the modulator |
+
+A noise background is refused (`stimgen:BackgroundFM:NeedsToneBackground`). Unlike
+[`FMtone`](#fmtone), a gated burst, this has no onset of its own.
+
 ## Adding a new stimulus type
 
 A new class in `+stimgen/` (loose `.m` file, not a class folder) is picked up
@@ -349,4 +422,5 @@ it when you do.
 - [+stimgen/@StimType/StimType.m](../+stimgen/@StimType/StimType.m)
 - [stimgen_StimType.md](stimgen_StimType.md) — base contract, variant system, GUI generation
 - [stimgen_SoundFile.md](stimgen_SoundFile.md) — `SoundFile` deep dive
+- [stimgen_Background.md](stimgen_Background.md) — ongoing backgrounds and the stimuli embedded in them
 - [stimgen_overview.md](stimgen_overview.md) — package orientation
