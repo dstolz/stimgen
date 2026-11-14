@@ -41,6 +41,23 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         VariantSelectorClass (1,1) string = ""
         VariantSelectorConfig (1,1) struct = struct()
         VariantReselectOnUpdate (1,1) logical = true
+
+        % --- Ongoing background (documentation/stimgen_Background.md) ---
+        % The sound this stimulus is EMBEDDED in by a presenter that plays
+        % one continuously (a tone in noise, a gap in noise, FM of a steady
+        % tone). Signal itself is unchanged by any of these: it stays the
+        % stimulus alone. get_background / get_embedding / embedded_signal
+        % are how a presenter, a preview or a test reads the rest.
+        Background             (1,1) string {mustBeMember(Background,["None","Noise","Tone"])} = "None"
+        BackgroundLevel        (1,:) double {mustBeFinite} = 50;              % dB SPL if calibrated
+        BackgroundHighPass     (1,:) double {mustBePositive,mustBeFinite} = 500;   % Hz (Noise)
+        BackgroundLowPass      (1,:) double {mustBePositive,mustBeFinite} = 20000; % Hz (Noise)
+        BackgroundFrequency    (1,:) double {mustBePositive,mustBeFinite} = 1000;  % Hz (Tone)
+        % Length of the loopable noise segment a presenter tiles, in seconds.
+        BackgroundLoopDuration (1,1) double {mustBeGreaterThanOrEqual(BackgroundLoopDuration,1),mustBeLessThanOrEqual(BackgroundLoopDuration,60)} = 10;
+        % Seed of that segment. Two stimuli with the same background
+        % settings and seed share one waveform (see get_background's Key).
+        BackgroundSeed         (1,1) double {mustBeNonnegative,mustBeInteger,mustBeFinite} = 1;
     end
 
 
@@ -86,6 +103,19 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
             "WindowDuration","WindowFcn", ...
             "VariantSelectionMode","VariantCombinationMode", ...
             "VariantSelectorClass","VariantSelectorConfig","VariantReselectOnUpdate"]
+
+        % The background properties, appended to every instance's
+        % UserProperties by the constructor (unless supports_background_
+        % says no). UserProperties is the one list the variant system,
+        % toStruct/fromStruct, the expression context and the parameter
+        % summary all walk, so listing them there -- rather than keeping a
+        % second list each of those would have to learn -- is what makes a
+        % BackgroundLevel vector a variant axis and a saved bank carry its
+        % background. A struct written before they existed names none of
+        % them, and fromStruct then leaves the defaults: no background.
+        BackgroundProperties (1,:) string = ["Background","BackgroundLevel", ...
+            "BackgroundHighPass","BackgroundLowPass","BackgroundFrequency", ...
+            "BackgroundLoopDuration","BackgroundSeed"]
     end
 
     properties (Abstract, Constant)
@@ -143,6 +173,15 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
 
             if ~isempty(varargin)
                 set(obj, varargin{:});
+            end
+
+            % After set(), so it lands behind whatever list the subclass
+            % (or the caller) declared: fromStruct restores UserProperties
+            % in order, and SoundFile depends on its own coming first.
+            if obj.supports_background_()
+                extra = stimgen.StimType.BackgroundProperties;
+                obj.UserProperties = [obj.UserProperties, ...
+                    extra(~ismember(extra, obj.UserProperties))];
             end
 
             obj.create_listeners;
@@ -233,7 +272,12 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         info = step_variant(obj, step)                                            % Step variant index
         reset_variant_selection(obj)                                              % Forget selection history (cursor, counts, selector)
         text = current_parameter_summary(obj)                                     % Non-default parameter summary
+        names = active_user_properties(obj)                                       % UserProperties less unused Background settings
         tf = alternates_polarity(obj)                                             % Presenter should invert every other presentation
+        B = get_background(obj)                                                   % The ongoing background this stimulus is embedded in ([] = none)
+        E = get_embedding(obj)                                                    % How a presenter embeds this stimulus: add / gain / phase
+        [y, t] = embedded_signal(obj, pre, post)                                  % Reference render of one presentation in its background
+        [y, t] = audition_signal(obj)                                             % What Play auditions: Signal, or Signal in its background
         h = create_gui(obj, src, event)                                           % Auto-build parameter GUI
         m = get_prop_meta(obj)                                                    % Public accessor for propMeta()
         set_gui_handles(obj, handleStruct)                                        % Register widgets built by a host GUI
@@ -276,6 +320,11 @@ classdef (Hidden) StimType < handle & matlab.mixin.Heterogeneous & matlab.mixin.
         expressionText = rewrite_qualified_property_refs_(obj, expressionText)    % Replace Class.Prop refs with bare Prop
         tf = is_variant_policy_property_(obj, propName)                           % True for variant-policy property names
         d = active_duration_(obj)                                                  % Duration of the active combination, without reselecting
+        value = active_value_(obj, propName)                                       % Any property of the active combination, without reselecting
+        tf = supports_background_(obj)                                             % False for a class that cannot be embedded (CapturedSignal)
+        L = background_level_(obj)                                                 % Level of the background for the active combination
+        tf = is_inactive_background_property_(obj, propName)                      % A Background* property the current Background does not use
+        spec = background_spec_(obj)                                               % The active combination's background, as plain values
         on_gui_changed(obj, propName, value)                                       % Hook: called after GUI widget change
         m = propMeta(obj)                                                          % Return GUI display metadata struct
     end % methods (protected external)

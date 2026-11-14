@@ -128,6 +128,57 @@ classdef GuiSmokeTest < matlab.unittest.TestCase
             testCase.verifyFalse(isvalid(p));
         end
 
+        function backgroundRowsFollowTheDropdown(testCase)
+            % Choosing a Background in the bank editor changes WHICH rows the
+            % stimulus has, so the panel is rebuilt around the edit -- the
+            % one path where a value change, not a button, rebuilds it.
+            if ~testCase.GuiOk
+                fprintf('GUISMOKE skipped backgroundRowsFollowTheDropdown\n');
+                return
+            end
+            % An edit made in the panel is remembered for the stimulus type
+            % (pref StimPlayer/StimSettings); put the user's own back.
+            had = ispref('StimPlayer', 'StimSettings');
+            old = [];
+            if had
+                old = getpref('StimPlayer', 'StimSettings');
+            end
+            testCase.addTeardown(@() restore_stim_settings_(had, old));
+
+            p = stimgen.StimPlayer();
+            testCase.addTeardown(@() delete_if_valid_(p));
+            p.Fs = 48000;
+            p.open_stim(stimgen.Tone('Fs', 48000, 'Duration', 0.02, ...
+                'ApplyCalibration', false), Name="tone");
+            stim = p.StimPlayObjs(1).CurrentStimObj;
+
+            lb = findall(groot, 'Tag', 'BankList');
+            testCase.assertNotEmpty(lb);
+            lb = lb(1);
+            lb.Value = 1;
+            p.on_bank_selection_changed(lb, []);
+
+            testCase.assertNotEmpty(findall(groot, 'Tag', 'Background'));
+            testCase.verifyEmpty(findall(groot, 'Tag', 'BackgroundLevel'));
+
+            choose_background_(testCase, "Noise");
+            testCase.verifyEqual(stim.Background, "Noise");
+            testCase.verifyNotEmpty(findall(groot, 'Tag', 'BackgroundLevel'));
+            testCase.verifyNotEmpty(findall(groot, 'Tag', 'BackgroundHighPass'));
+            testCase.verifyEmpty(findall(groot, 'Tag', 'BackgroundFrequency'));
+
+            choose_background_(testCase, "Tone");
+            testCase.verifyNotEmpty(findall(groot, 'Tag', 'BackgroundFrequency'));
+            testCase.verifyEmpty(findall(groot, 'Tag', 'BackgroundHighPass'));
+
+            choose_background_(testCase, "None");
+            testCase.verifyEqual(stim.Background, "None");
+            testCase.verifyEmpty(findall(groot, 'Tag', 'BackgroundLevel'));
+            testCase.verifyNotEmpty(findall(groot, 'Tag', 'Background'));
+
+            delete(p);
+        end
+
         function calibrationGuiOfflineWithEveryTable(testCase)
             if ~testCase.GuiOk
                 fprintf('GUISMOKE skipped calibrationGuiOfflineWithEveryTable\n');
@@ -245,6 +296,30 @@ end
 
 
 % ====================================================================== %
+
+function restore_stim_settings_(had, old)
+% Put the remembered-settings pref back as it was before a test edited a
+% stimulus through the panel.
+if had
+    setpref('StimPlayer', 'StimSettings', old);
+elseif ispref('StimPlayer', 'StimSettings')
+    rmpref('StimPlayer', 'StimSettings');
+end
+end
+
+
+function choose_background_(testCase, value)
+% Pick a Background in the parameter panel as a click on the dropdown would:
+% set the widget, then run its callback with the event a click delivers.
+dd = findall(groot, 'Tag', 'Background');
+testCase.assertNotEmpty(dd, 'no Background dropdown in the parameter panel');
+dd = dd(1);
+previous = dd.Value;
+dd.Value = value;
+feval(dd.ValueChangedFcn, dd, struct('Value', dd.Value, 'PreviousValue', previous));
+drawnow;
+end
+
 
 function invoke_menu_(testCase, text)
 % Run a menu item's callback as a click would.

@@ -32,6 +32,20 @@ if ~isempty(uneven)
         "combination count for equal counts.";
 end
 
+% A Run plays each stimulus's Signal on its own. A bank item set to be
+% embedded in an ongoing background would be presented WITHOUT it, and the
+% presentation log would not say so.
+nBg = obj.count_background_items_();
+if nBg > 0
+    stimgen.util.vprintf(0, 1, ['StimPlayer: %d bank item(s) have a Background, ' ...
+        'which a StimPlayer Run does not play.'], nBg);
+    issues(end+1, 1) = sprintf(['%d bank item(s) are set to be embedded in an ongoing ' ...
+        'Background. A StimPlayer Run does not play a background: each stimulus is ' ...
+        'played on its own, with silence between presentations (a background ' ...
+        'modulation plays as a burst of its modulated background). A background is ' ...
+        'played by a presenter that supports one.'], nBg);
+end
+
 proceed = true;
 if isempty(issues) || isempty(obj.hFig) || ~isvalid(obj.hFig)
     return

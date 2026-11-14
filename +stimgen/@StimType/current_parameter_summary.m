@@ -34,6 +34,11 @@ for k = 1:numel(propNames)
     if ~isprop(obj, char(propName))
         continue
     end
+    % A background setting the current Background does not use is not a
+    % parameter of this stimulus, whatever value was left in it.
+    if obj.is_inactive_background_property_(propName)
+        continue
+    end
 
     try
         value = obj.selected_value(propName);

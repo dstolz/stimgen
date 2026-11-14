@@ -3,18 +3,19 @@ function sections = group_prop_meta(meta)
 % Bucket a propMeta() struct into canonically ordered display sections.
 %
 % Returns a cell array of {groupName, propNames} pairs in a fixed group
-% order: Waveform, Level, Timing, Variant. A group is omitted if none of
-% the supplied properties belong to it.
+% order: Waveform, Level, Timing, Background, Variant. A group is omitted if
+% none of the supplied properties belong to it. A group name that is not on
+% that list is not emitted at all, so a new group has to be added here.
 %
 % Each propMeta entry may declare:
-%   group (optional) - 'Waveform'|'Level'|'Timing'|'Variant'. Properties
+%   group (optional) - 'Waveform'|'Level'|'Timing'|'Background'|'Variant'. Properties
 %                       without a 'group' field default to 'Waveform',
 %                       so a subclass with plain metadata needs no
 %                       grouping changes.
 %   order (optional) - numeric sort key within its group (ascending).
 %                       Properties without 'order' sort after ordered
 %                       ones, in propMeta declaration order.
-GROUP_ORDER = ["Waveform", "Level", "Timing", "Variant"];
+GROUP_ORDER = ["Waveform", "Level", "Timing", "Background", "Variant"];
 
 allProps = fieldnames(meta);
 groupOf  = repmat("Waveform", numel(allProps), 1);

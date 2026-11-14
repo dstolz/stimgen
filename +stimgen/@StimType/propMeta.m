@@ -23,7 +23,7 @@ function m = propMeta(obj)
 %   text      (button)   - button caption
 %   callback  (button)   - name of a public no-argument method on the
 %                          stimulus object to invoke when pressed
-%   group     (optional) - 'Waveform'|'Level'|'Timing'|'Variant', used by
+%   group     (optional) - 'Waveform'|'Level'|'Timing'|'Background'|'Variant', used by
 %                          stimgen.StimType.group_prop_meta to lay out the
 %                          GUI in logically related sections. Defaults to
 %                          'Waveform' when omitted, so a subclass with
@@ -41,6 +41,12 @@ function m = propMeta(obj)
 % NOTE: a 'button' entry is an action, not a property. Its field name is
 % only a widget Tag, so it need not name a real property, and no value is
 % read from or written to the object. See stimgen.SoundFile.BrowseFiles.
+%
+% NOTE: the set of fields returned may depend on the object's state -- the
+% Background group lists only the rows the chosen Background uses. Both GUI
+% generators rebuild their panel when an edit changes that set
+% (interpret_gui, StimPlayer's set_prop_), so a widget is never left showing
+% a property that no longer applies.
 m = struct();
 m.SoundLevel     = struct('label', 'Sound Level (dB SPL)', 'format', '%.1f dB SPL', 'group', 'Level', 'order', 10, ...
                           'tooltip', stimgen.util.tooltip(obj, 'SoundLevel'));
@@ -83,4 +89,49 @@ m.VariantSelectorClass = struct('label', 'Variant Selector Class', 'group', 'Var
     'tooltip', stimgen.util.tooltip(obj, 'VariantSelectorClass'));
 m.VariantReselectOnUpdate = struct('label', 'Reselect Variant Each Update', 'group', 'Variant', 'order', 40, ...
     'tooltip', stimgen.util.tooltip(obj, 'VariantReselectOnUpdate'));
+
+if obj.supports_background_()
+    m = add_background_meta_(obj, m);
+end
+end
+
+
+function m = add_background_meta_(obj, m)
+% The Background group: the type, then only the settings that type uses.
+% "None" is one row, so a stimulus with no background costs the panel one
+% line; choosing a type rebuilds the panel with the rest (see the NOTE above).
+m.Background = struct('label', 'Background', 'widget', 'dropdown', ...
+    'items', ["None" "Noise" "Tone"], 'group', 'Background', 'order', 10, ...
+    'tooltip', stimgen.util.tooltip(obj, 'Background'));
+
+switch obj.Background
+    case "Noise"
+        m.BackgroundLevel = level_meta_(obj);
+        m.BackgroundHighPass = struct('label', 'Background High Pass Fc (Hz)', ...
+            'format', '%.1f Hz', 'limits', [100 40000], 'group', 'Background', 'order', 30, ...
+            'tooltip', stimgen.util.tooltip(obj, 'BackgroundHighPass'));
+        m.BackgroundLowPass = struct('label', 'Background Low Pass Fc (Hz)', ...
+            'format', '%.1f Hz', 'limits', [100 40000], 'group', 'Background', 'order', 40, ...
+            'tooltip', stimgen.util.tooltip(obj, 'BackgroundLowPass'));
+        % Stored in seconds, shown in ms like every other time property.
+        m.BackgroundLoopDuration = struct('label', 'Background Loop (ms)', ...
+            'format', '%.0f ms', 'limits', [1000 60000], 'scale', 1000, ...
+            'group', 'Background', 'order', 50, ...
+            'tooltip', stimgen.util.tooltip(obj, 'BackgroundLoopDuration'));
+        m.BackgroundSeed = struct('label', 'Background Seed', ...
+            'format', '%d', 'limits', [0 2^31-1], 'group', 'Background', 'order', 60, ...
+            'tooltip', stimgen.util.tooltip(obj, 'BackgroundSeed'));
+    case "Tone"
+        m.BackgroundLevel = level_meta_(obj);
+        m.BackgroundFrequency = struct('label', 'Background Frequency (Hz)', ...
+            'format', '%.1f Hz', 'limits', [100 40000], 'group', 'Background', 'order', 30, ...
+            'tooltip', stimgen.util.tooltip(obj, 'BackgroundFrequency'));
+end
+end
+
+
+function pm = level_meta_(obj)
+pm = struct('label', 'Background Level (dB SPL)', 'format', '%.1f dB SPL', ...
+    'group', 'Background', 'order', 20, ...
+    'tooltip', stimgen.util.tooltip(obj, 'BackgroundLevel'));
 end

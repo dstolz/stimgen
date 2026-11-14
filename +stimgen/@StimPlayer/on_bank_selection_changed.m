@@ -1,7 +1,7 @@
 function on_bank_selection_changed(obj, src, ~)
 % on_bank_selection_changed(obj, src) - Rebuild the parameter panel when listbox selection changes.
 % Clears existing contents and builds labeled sections (Waveform, Level,
-% Timing, Variant) inside a single scrollable grid layout. Section
+% Timing, Background, Variant) inside a single scrollable grid layout. Section
 % membership and in-section order come from each property's propMeta
 % 'group'/'order' metadata (see stimgen.StimType.group_prop_meta), so a
 % subclass that tags a new property (e.g. Tone.WindowMethod as 'Timing')
@@ -140,6 +140,10 @@ function set_prop_(obj, stimObj, src, event)
 % value as a MATLAB expression via evalPropertyExpression before assignment.
 % Widget values are in display units (ms for time properties) and are divided
 % by the propMeta display scale before being written to the property.
+%
+% An edit that changes WHICH rows the stimulus's propMeta returns (Background:
+% None -> Noise brings four more) rebuilds the panel, as a 'button' action
+% does: notify_gui_changed can retitle a widget that exists, not add one.
 
 % An edit still pending when its panel is torn down (a bank rebuilt or
 % reloaded, the window closed) commits on the destroyed widget, and the
@@ -149,7 +153,9 @@ if ~isvalid(obj) || ~isvalid(src) || ~isvalid(stimObj)
     return
 end
 isNumExpr =isstruct(src.UserData) && isfield(src.UserData, 'isNumericExpression') && src.UserData.isNumericExpression;
-sc = stimgen.StimType.display_scale(stimObj.get_prop_meta(), src.Tag);
+metaBefore = stimObj.get_prop_meta();
+sc = stimgen.StimType.display_scale(metaBefore, src.Tag);
+metaBefore = fieldnames(metaBefore);
 try
     value = event.Value;
     if isNumExpr
@@ -198,6 +204,12 @@ if isNumExpr
     src.Value = stimgen.StimType.localFormatPropertyValue_(stimObj.(src.Tag) * sc);
 end
 obj.refresh_combo_controls_();
+
+% Last, because the rebuild deletes src with the rest of the panel.
+if ~isequal(metaBefore, fieldnames(stimObj.get_prop_meta())) ...
+        && isfield(obj.handles, 'BankList') && isvalid(obj.handles.BankList)
+    obj.on_bank_selection_changed(obj.handles.BankList, []);
+end
 end
 
 
