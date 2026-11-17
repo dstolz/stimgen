@@ -84,6 +84,31 @@ classdef TORC < stimgen.StimType
     % periodicity the method relies on; enable it only for single, unrepeated
     % presentations.
     %
+    % EnvelopeScale selects how S drives the carriers. "dB" (the default) is
+    % the level form above, S in dB and its peak-to-peak excursion
+    % ModulationDepth. "Linear" is the form the Shamma lab's own TORCs were
+    % built in -- each carrier's amplitude is the mean plus S, scaled so that
+    % S stays within +/-ModulationFraction of the mean (0.9, "within +/-90% of
+    % the mean value", Klein, Simon, Depireux & Shamma 2006, J Comput
+    % Neurosci 20:111-136, Section 2.2.3):
+    %
+    %   s(t) = sum_j (1 + S(t,x_j)) sin(2 pi f_j t + phi_j)
+    %
+    % S, RippleAmplitude and the record are then in fractions of the mean
+    % level rather than dB; the reverse correlation is unchanged.
+    %
+    % EnvelopePolarity = -1 inverts the dynamic spectrum, S -> -S, by adding
+    % pi to every ripple phase; the carriers and their phases are untouched.
+    % A TORC and its inverse are the stimulus pair of the inverse-repeat
+    % method (Klein et al. 2006, Section 2.2.5): their linear responses are
+    % opposite in sign and their even-order distortion products identical,
+    % so the difference of the two responses cancels the latter. Because the
+    % pi is folded into RipplePhases, a record (and envelope_from_record)
+    % describes the inverted spectrum with no field a reader must know about.
+    % Vectorizing it beside RippleDensity, e.g. RippleDensity = -1.4:0.2:1.4
+    % and EnvelopePolarity = [1 -1], gives the paired 30-TORC set those papers
+    % used: variants 1-15 one polarity, 16-30 their inverses.
+    %
     % Example:
     %   s = stimgen.TORC;                 % 250 ms, 5 oct from 125 Hz
     %   s.RippleDensity = -1.6:0.4:1.6;   % 9-TORC method I ensemble
@@ -108,11 +133,19 @@ classdef TORC < stimgen.StimType
         ComponentRates     (1,1) string = "4 8 12 16 20 24";                  % Hz
         ComponentDensities (1,1) string = "0.2 0.6 1.0 -0.2 -0.6 -1.0";       % c/o
 
-        ModulationDepth (1,:) double {mustBePositive,mustBeFinite} = 30;      % dB peak-to-peak
-        NumPeriods      (1,:) double {mustBePositive,mustBeInteger,mustBeFinite} = 1;
+        % How S drives the carriers: as a level in dB, or as a linear
+        % fraction of the mean amplitude. Each scale has its own depth.
+        EnvelopeScale      (1,1) string {mustBeMember(EnvelopeScale,["dB","Linear"])} = "dB";
+        ModulationDepth    (1,:) double {mustBePositive,mustBeFinite} = 30;   % dB peak-to-peak ("dB")
+        ModulationFraction (1,:) double {mustBePositive,mustBeLessThanOrEqual(ModulationFraction,1)} = 0.9; % peak, fraction of mean ("Linear")
+        NumPeriods         (1,:) double {mustBePositive,mustBeInteger,mustBeFinite} = 1;
 
         RandomizeRipplePhase (1,1) logical = true;
         Seed (1,:) double {mustBeFinite} = 1; % negative reseeds randomly each update
+
+        % -1 inverts the dynamic spectrum (S -> -S) for the inverse-repeat
+        % method; the carriers are unchanged.
+        EnvelopePolarity (1,:) double {mustBeMember(EnvelopePolarity,[-1 1])} = 1;
     end
 
     % Derived by update_signal. Deliberately neither SetObservable (writing
@@ -123,7 +156,7 @@ classdef TORC < stimgen.StimType
         RippleRates        (1,:) double = [];  % Hz, positive, multiples of 1/RipplePeriod
         RippleDensities    (1,:) double = [];  % c/o, signed
         RipplePhases       (1,:) double = [];  % rad
-        RippleAmplitude    (1,1) double = 0;   % dB, the constant a of Eq. (28)
+        RippleAmplitude    (1,1) double = 0;   % the constant a of Eq. (28): dB, or fraction of the mean ("Linear")
         RipplePeriod       (1,1) double = 0;   % s, T = Duration/NumPeriods
         CarrierFrequencies (1,:) double = [];  % Hz
         CarrierPhases      (1,:) double = [];  % rad
@@ -149,7 +182,11 @@ classdef TORC < stimgen.StimType
                     "LowFrequency","Bandwidth","ComponentsPerOctave","ComponentMode", ...
                     "RippleDensity","LowestRate","HighestRate", ...
                     "ComponentRates","ComponentDensities", ...
-                    "ModulationDepth","NumPeriods","RandomizeRipplePhase","Seed"], ...
+                    "EnvelopeScale","ModulationDepth","ModulationFraction", ...
+                    "NumPeriods","RandomizeRipplePhase","Seed", ...
+                    ... % Last, so it is the slowest variant axis: with RippleDensity
+                    ... % vectorized, the inverses follow the whole first set.
+                    "EnvelopePolarity"], ...
                 ... % 250 ms is the stimulus duration used throughout the paper.
                 'Duration', 0.25, ...
                 ... % Gating breaks the periodicity the reverse correlation relies on.
@@ -176,7 +213,14 @@ classdef TORC < stimgen.StimType
             f0    = double(obj.selected_value("LowFrequency"));
             X     = double(obj.selected_value("Bandwidth"));
             cpo   = double(obj.selected_value("ComponentsPerOctave"));
-            depth = double(obj.selected_value("ModulationDepth"));
+            scale = obj.EnvelopeScale;
+            % Each scale has its own depth; only the active one is read.
+            if scale == "Linear"
+                depth = double(obj.selected_value("ModulationFraction"));
+            else
+                depth = double(obj.selected_value("ModulationDepth"));
+            end
+            polarity = double(obj.selected_value("EnvelopePolarity"));
 
             % --- Ripple period, Eq. (11): available rates are multiples of 1/T ---
             T = dur / double(obj.selected_value("NumPeriods"));
@@ -215,10 +259,19 @@ classdef TORC < stimgen.StimType
             else
                 psi = zeros(1, numel(w));
             end
+            if polarity < 0
+                % cos(theta + pi) = -cos(theta), so this is S -> -S exactly,
+                % drawn after the phases so an inverse shares every random
+                % value with its partner. Folded into the phases rather than
+                % applied as a sign so the record needs no new field to
+                % describe the inverted spectrum.
+                psi = mod(psi + pi, 2*pi);
+            end
 
             % --- Ripple amplitude a ---
             % Components are equal-amplitude, so a is fixed by the requested
-            % peak-to-peak excursion of the dynamic spectrum. Computed against
+            % excursion of the dynamic spectrum: half the peak-to-peak dB
+            % depth, or the linear peak fraction itself. Computed against
             % the realized envelope rather than the 2Na worst case, which the
             % randomized phases never approach.
             %
@@ -230,17 +283,27 @@ classdef TORC < stimgen.StimType
             for j = 1:nCarriers
                 peak = max(peak, max(abs(stimgen.TORC.ripple_envelope_(t, x(j), w, Om, psi, 1))));
             end
+            if scale == "Linear"
+                excursion = depth;     % peak, fraction of the mean
+            else
+                excursion = depth/2;   % dB, half of peak-to-peak
+            end
             if peak <= 0
                 a = 0;
             else
-                a = (depth/2) / peak;
+                a = excursion / peak;
             end
 
             % --- Waveform ---
             y = zeros(1, numel(t));
             for j = 1:nCarriers
-                S = stimgen.TORC.ripple_envelope_(t, x(j), w, Om, psi, a); % dB re mean level
-                y = y + 10.^(S/20) .* sin(2*pi*fc(j)*t + phi(j));
+                S = stimgen.TORC.ripple_envelope_(t, x(j), w, Om, psi, a); % about the mean level
+                if scale == "Linear"
+                    g = 1 + S;
+                else
+                    g = 10.^(S/20);
+                end
+                y = y + g .* sin(2*pi*fc(j)*t + phi(j));
             end
 
             obj.RippleRates        = w;
@@ -260,7 +323,7 @@ classdef TORC < stimgen.StimType
 
             obj.apply_gate;
 
-            obj.record_ = obj.build_record_(f0, X, cpo, depth, T);
+            obj.record_ = obj.build_record_(f0, X, cpo, scale, depth, polarity, T);
         end
 
 
@@ -284,12 +347,20 @@ classdef TORC < stimgen.StimType
             %   Seed               - the Seed it used (negative: reseeded randomly)
             %   ComponentMode, RandomizeRipplePhase
             %   LowFrequency (Hz), Bandwidth (octaves), ComponentsPerOctave
-            %   ModulationDepth    - dB peak-to-peak requested
+            %   EnvelopeScale      - "dB" or "Linear": the units of S, of
+            %                        RippleAmplitude and of the depth below.
+            %                        A record without it predates the field
+            %                        and is "dB".
+            %   ModulationDepth    - dB peak-to-peak requested ("dB" only)
+            %   ModulationFraction - peak excursion requested, fraction of
+            %                        the mean ("Linear" only)
+            %   EnvelopePolarity   - 1, or -1 for an inverted spectrum (already
+            %                        folded into RipplePhases)
             %   Duration (s), NumPeriods, RipplePeriod (s, T = Duration/NumPeriods)
             %   RippleRates        - 1-by-N, Hz, positive multiples of 1/T
             %   RippleDensities    - 1-by-N, cycles/octave, signed
             %   RipplePhases       - 1-by-N, rad
-            %   RippleAmplitude    - dB, the constant a of Eq. (28)
+            %   RippleAmplitude    - the constant a of Eq. (28), in EnvelopeScale units
             %   CarrierFrequencies, CarrierPhases (rad), OctaveAxis (octaves
             %                        above LowFrequency)
             %   Gate               - Applied, WindowFcn, WindowDuration (s), NumSamples
@@ -321,7 +392,9 @@ classdef TORC < stimgen.StimType
             %   nTime - Number of time samples (default: the signal length).
             %
             % Returns:
-            %   S - nCarriers-by-nTime dynamic spectrum, dB about the mean level.
+            %   S - nCarriers-by-nTime dynamic spectrum about the mean level:
+            %       dB, or a fraction of the mean when the waveform was made
+            %       with EnvelopeScale "Linear".
             %   t - 1-by-nTime time axis, seconds.
             %   x - 1-by-nCarriers tonotopic axis, octaves above LowFrequency.
 
@@ -372,7 +445,13 @@ classdef TORC < stimgen.StimType
             xlabel(ax,'time (ms)');
             ylabel(ax,sprintf('octaves above %.0f Hz', obj.CarrierFrequencies(1)));
             c = colorbar(ax);
-            c.Label.String = 'level (dB re mean)';
+            % The units of the waveform shown, not of the property now:
+            % EnvelopeScale may have been edited since it was generated.
+            if ~isempty(obj.record_) && obj.record_.EnvelopeScale == "Linear"
+                c.Label.String = 'amplitude (fraction of mean)';
+            else
+                c.Label.String = 'level (dB re mean)';
+            end
         end
 
     end % methods (public)
@@ -396,8 +475,9 @@ classdef TORC < stimgen.StimType
             %         wants the periodic extension wraps its times itself.
             %
             % Returns:
-            %   S - nCarriers-by-numel(t) dynamic spectrum, dB about the mean
-            %       level, before the onset/offset gate.
+            %   S - nCarriers-by-numel(t) dynamic spectrum about the mean
+            %       level, before the onset/offset gate, in the record's
+            %       EnvelopeScale units (dB, or a fraction of the mean).
             %   x - 1-by-nCarriers tonotopic axis, octaves above LowFrequency.
             if ~isstruct(rec) || ~isscalar(rec) || ~isfield(rec, 'Class') || string(rec.Class) ~= "stimgen.TORC"
                 error('stimgen:TORC:NotATorcRecord', 'The record is not the generation record of a stimgen.TORC.');
@@ -424,8 +504,8 @@ classdef TORC < stimgen.StimType
 
     methods (Access = private)
 
-        function rec = build_record_(obj, f0, X, cpo, depth, T)
-            % rec = build_record_(obj, f0, X, cpo, depth, T)
+        function rec = build_record_(obj, f0, X, cpo, scale, depth, polarity, T)
+            % rec = build_record_(obj, f0, X, cpo, scale, depth, polarity, T)
             % The TORC half of generation_record, taken while update_signal
             % still has the combination locked -- so the values read here
             % are the ones that made Signal.
@@ -454,7 +534,21 @@ classdef TORC < stimgen.StimType
             rec.LowFrequency          = f0;
             rec.Bandwidth             = X;
             rec.ComponentsPerOctave   = cpo;
-            rec.ModulationDepth       = depth;
+            rec.EnvelopeScale         = scale;
+            % Only the depth that made the waveform; the other is NaN rather
+            % than a value a reader could mistake for one in force.
+            if scale == "Linear"
+                rec.ModulationDepth    = NaN;
+                rec.ModulationFraction = depth;
+                envelopeRule = "S(t,x) = sum_i 2*RippleAmplitude*cos(2*pi*(RippleRates(i)*t + RippleDensities(i)*x) + RipplePhases(i)), a fraction of the mean amplitude (linear scale; Klein et al. 2000, Eq. 28; Klein et al. 2006, Section 2.2.3)";
+                waveformRule = "s(t) = sum_j (1 + S(t,OctaveAxis(j))) * sin(2*pi*CarrierFrequencies(j)*t + CarrierPhases(j)); then rms normalization, calibration and the gate";
+            else
+                rec.ModulationDepth    = depth;
+                rec.ModulationFraction = NaN;
+                envelopeRule = "S(t,x) = sum_i 2*RippleAmplitude*cos(2*pi*(RippleRates(i)*t + RippleDensities(i)*x) + RipplePhases(i)), dB about the mean level (Klein et al. 2000, Eq. 28)";
+                waveformRule = "s(t) = sum_j 10^(S(t,OctaveAxis(j))/20) * sin(2*pi*CarrierFrequencies(j)*t + CarrierPhases(j)); then rms normalization, calibration and the gate";
+            end
+            rec.EnvelopePolarity      = polarity;
             rec.Duration              = N / double(obj.Fs);
             rec.NumPeriods            = double(obj.selected_value("NumPeriods"));
             rec.RipplePeriod          = T;
@@ -467,9 +561,10 @@ classdef TORC < stimgen.StimType
             rec.OctaveAxis            = obj.OctaveAxis;
             rec.Gate                  = gate;
             rec.Rules = struct( ...
-                'Envelope',  "S(t,x) = sum_i 2*RippleAmplitude*cos(2*pi*(RippleRates(i)*t + RippleDensities(i)*x) + RipplePhases(i)), dB about the mean level (Klein et al. 2000, Eq. 28)", ...
-                'Waveform',  "s(t) = sum_j 10^(S(t,OctaveAxis(j))/20) * sin(2*pi*CarrierFrequencies(j)*t + CarrierPhases(j)); then rms normalization, calibration and the gate", ...
-                'Direction', "RippleDensities > 0: downward-moving ripple (quadrant 1 of Klein et al. Fig. 3); < 0: upward-moving");
+                'Envelope',  envelopeRule, ...
+                'Waveform',  waveformRule, ...
+                'Direction', "RippleDensities > 0: downward-moving ripple (quadrant 1 of Klein et al. Fig. 3); < 0: upward-moving", ...
+                'Polarity',  "EnvelopePolarity = -1 adds pi to every ripple phase (S -> -S); RipplePhases already include it");
         end
 
     end % methods (Access = private)
@@ -584,9 +679,21 @@ classdef TORC < stimgen.StimType
                                             'tooltip',stimgen.util.tooltip(obj,'RandomizeRipplePhase'),'order',100);
             m.Seed                = struct('label','Phase Seed','format','%.0f','limits',[-1 4294967295], ...
                                            'tooltip',stimgen.util.tooltip(obj,'Seed'),'order',110);
+            m.EnvelopePolarity    = struct('label','Envelope Polarity (+1 / -1)','format','%+.0f','limits',[-1 1], ...
+                                           'tooltip',stimgen.util.tooltip(obj,'EnvelopePolarity'),'order',120);
 
-            m.ModulationDepth = struct('label','Modulation Depth (dB pk-pk)','format','%.1f dB', ...
-                                       'limits',[0.1 120],'tooltip',stimgen.util.tooltip(obj,'ModulationDepth'),'group','Level','order',15);
+            m.EnvelopeScale = struct('label','Envelope Scale','widget','dropdown','items',["dB","Linear"], ...
+                                     'tooltip',stimgen.util.tooltip(obj,'EnvelopeScale'),'group','Level','order',14);
+            % Only the active scale's depth is a row: the other does nothing,
+            % and an edit to EnvelopeScale changes the row set, which both
+            % GUI generators answer by rebuilding the panel.
+            if obj.EnvelopeScale == "Linear"
+                m.ModulationFraction = struct('label','Modulation Depth (peak, fraction of mean)','format','%.2f', ...
+                                              'limits',[0.01 1],'tooltip',stimgen.util.tooltip(obj,'ModulationFraction'),'group','Level','order',15);
+            else
+                m.ModulationDepth = struct('label','Modulation Depth (dB pk-pk)','format','%.1f dB', ...
+                                           'limits',[0.1 120],'tooltip',stimgen.util.tooltip(obj,'ModulationDepth'),'group','Level','order',15);
+            end
             m.NumPeriods      = struct('label','Ripple Periods','format','%.0f','limits',[1 1000], ...
                                        'tooltip',stimgen.util.tooltip(obj,'NumPeriods'),'group','Timing','order',20);
 

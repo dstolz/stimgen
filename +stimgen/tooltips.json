@@ -129,7 +129,10 @@
     "RandomizeRipplePhase": "Randomize ripple phases to reduce spectral peakiness.",
     "Seed": "Random seed for carrier and ripple phases. Negative reseeds randomly each update.",
     "ModulationDepth": "Peak-to-peak dynamic spectrum level excursion.",
-    "NumPeriods": "Number of ripple periods in stimulus duration."
+    "NumPeriods": "Number of ripple periods in stimulus duration.",
+    "EnvelopeScale": "dB: the dynamic spectrum is a level in dB. Linear: each carrier's amplitude is the mean plus the dynamic spectrum (Klein et al. 2006).",
+    "ModulationFraction": "Peak excursion of the linear envelope as a fraction of the mean amplitude (0.9 = within +/-90% of the mean).",
+    "EnvelopePolarity": "-1 inverts the dynamic spectrum, for the inverse-repeat method. [1 -1] gives each TORC and its inverse as variants."
   },
 
   "DMR": {

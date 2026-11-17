@@ -272,10 +272,13 @@ the source refer to that paper.
 | `LowestRate` / `HighestRate` | yes | Hz, ends of the rate run; Range mode only |
 | `ComponentRates` | no (text) | Hz, explicit rate list; Explicit mode only |
 | `ComponentDensities` | no (text) | c/o, explicit density list, recycled to fit; Explicit mode only |
-| `ModulationDepth` | yes | dB peak-to-peak excursion of the dynamic spectrum |
+| `EnvelopeScale` | no | `"dB"` (default) \| `"Linear"` — how the dynamic spectrum drives the carriers |
+| `ModulationDepth` | yes | dB peak-to-peak excursion of the dynamic spectrum; `"dB"` scale only |
+| `ModulationFraction` | yes | peak excursion as a fraction of the mean amplitude, ≤ 1 (default 0.9); `"Linear"` scale only |
 | `NumPeriods` | yes | ripple periods within `Duration`; T = `Duration`/`NumPeriods` |
 | `RandomizeRipplePhase` | no | randomize ψ to reduce peakiness (Section 4.1) |
 | `Seed` | yes | RNG seed for ripple and carrier phases; negative reseeds each update |
+| `EnvelopePolarity` | yes | `1`, or `-1` to invert the dynamic spectrum (inverse-repeat method) |
 
 Read-only outputs, refreshed by every `update_signal`: `RippleRates`,
 `RippleDensities`, `RipplePhases`, `RippleAmplitude`, `RipplePeriod`,
@@ -289,6 +292,49 @@ carriers, each a random-phase tone driven by S at its own tonotopic position:
 `s(t) = Σⱼ 10^(S(t,xⱼ)/20)·sin(2πfⱼt + φⱼ)`. Components are equal-amplitude
 (Section 4.1), so recovering the STRF from the reverse-correlation function C is a
 division by the scalar `RippleAmplitude²` (Eq. 38) rather than a deconvolution.
+
+**Envelope scale.** With `EnvelopeScale = "Linear"` each carrier's amplitude is the mean
+plus S, `s(t) = Σⱼ (1 + S(t,xⱼ))·sin(2πfⱼt + φⱼ)`, scaled so S stays within
+±`ModulationFraction` of the mean. This is how the Shamma lab built its own TORCs ("within
+±90% of the mean value", Klein, Simon, Depireux & Shamma 2006, *Stimulus-invariant processing
+and spectrotemporal reverse correlation in primary auditory cortex*, J Comput Neurosci
+20:111–136, Section 2.2.3). S, `RippleAmplitude` and the record are then fractions of the mean
+rather than dB. The reverse correlation is unchanged. Only the active scale's depth is a GUI
+row, and the record carries the other as `NaN`.
+
+**Envelope polarity.** `EnvelopePolarity = -1` inverts the dynamic spectrum, S → −S, by adding
+π to every ripple phase after the phases are drawn. The carriers, their phases and the ripple
+amplitude are the partner's, so a TORC and its inverse share every random value. They are the
+stimulus pair of the inverse-repeat method (Klein et al. 2006, Section 2.2.5). The linear
+responses to the two are opposite in sign and the even-order distortion products are
+identical, so subtracting the two responses removes the distortion products. In the linear
+scale the two envelopes sum to a constant. The π is folded into `RipplePhases`, so a record
+(and `envelope_from_record`) describes the inverted spectrum without a reader having to know
+the field exists. `EnvelopePolarity` is the last entry in `UserProperties` and therefore the
+slowest variant axis.
+
+The paired 30-TORC set of the Shamma lab's behaving-ferret studies (Fritz et al. 2003,
+2005) is one object, 15 densities × 2 polarities, with variants 16–30 the inverses of 1–15:
+
+```matlab
+t = stimgen.TORC('EnvelopeScale', "Linear", 'ModulationFraction', 0.9, ...
+    'ComponentsPerOctave', 100, 'LowestRate', 4, 'HighestRate', 24, ...
+    'Duration', 3, 'NumPeriods', 12);          % 12 periods of T = 250 ms
+t.RippleDensity    = -1.4:0.2:1.4;             % 15 rows of the ripple domain
+t.EnvelopePolarity = [1 -1];                   % ... and their inverses
+```
+
+Crossed this way, all 15 TORCs share one `Seed`, and so one draw of ripple phases: every
+TORC in the set then has the same temporal pattern. To give each TORC its own phases, list
+the 30 combinations element by element instead, each inverse with its partner's seed:
+
+```matlab
+d = -1.4:0.2:1.4;
+t.VariantCombinationMode = "PairwiseStrict";
+t.RippleDensity    = [d d];
+t.Seed             = [1:15 1:15];
+t.EnvelopePolarity = [ones(1,15) -ones(1,15)];
+```
 
 **Direction of travel** is carried by the sign of the ripple density, not the rate:
 rates are always positive here, which spans the same physical ripples as the paper's
@@ -334,7 +380,9 @@ that reading it cannot advance the variant index and decouple S from `Signal`.
 ([stimgen_StimType.md](stimgen_StimType.md#generation-record)) what made the waveform,
 captured by `update_signal` when it made `Signal`: `RippleRates`, `RippleDensities`,
 `RipplePhases`, `RippleAmplitude`, `RipplePeriod`, `NumPeriods`, `Duration`,
-`LowFrequency`, `Bandwidth`, `ComponentsPerOctave`, `ModulationDepth`, the carriers
+`LowFrequency`, `Bandwidth`, `ComponentsPerOctave`, `EnvelopeScale` (absent from a record
+written before the field, which is `"dB"`), `ModulationDepth` / `ModulationFraction` (the
+inactive one `NaN`), `EnvelopePolarity`, the carriers
 (`CarrierFrequencies`, `CarrierPhases`, `OctaveAxis`), the `Seed` used, `ComponentMode`,
 `RandomizeRipplePhase`, the `Gate` applied and `Rules` (the equations, in words).
 `Generated` is false, and these fields absent, before a waveform exists. The phases are

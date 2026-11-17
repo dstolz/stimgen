@@ -90,6 +90,83 @@ classdef TORCTest < matlab.unittest.TestCase
             testCase.verifyEqual(r2.GeneratedVariantIndex, 2);
         end
 
+        function inversePairNegatesTheSpectrum(testCase)
+            % The inverse-repeat pair (Klein et al. 2006, Section 2.2.5):
+            % EnvelopePolarity is the last, slowest variant axis, so with
+            % two densities variants 3-4 are the inverses of 1-2, and each
+            % shares every random value with its partner.
+            s = small_('Seed', 7, 'RippleDensity', [-0.4 0.4], 'EnvelopePolarity', [1 -1]);
+            s.VariantReselectOnUpdate = false;
+            testCase.verifyEqual(s.get_variant_info().NumCombinations, 4);
+            t = (0:63) / 256;
+            for k = 1:2
+                s.set_variant_index(k);
+                rp = s.generation_record();
+                s.set_variant_index(k + 2);
+                rn = s.generation_record();
+                testCase.verifyEqual(rp.EnvelopePolarity, 1);
+                testCase.verifyEqual(rn.EnvelopePolarity, -1);
+                testCase.verifyEqual(rn.RippleDensities, rp.RippleDensities);
+                testCase.verifyEqual(rn.RippleRates, rp.RippleRates);
+                testCase.verifyEqual(rn.RippleAmplitude, rp.RippleAmplitude, 'RelTol', 1e-12);
+                testCase.verifyEqual(rn.CarrierPhases, rp.CarrierPhases);
+                % The record alone describes the inverted spectrum.
+                testCase.verifyEqual(stimgen.TORC.envelope_from_record(rn, t), ...
+                    -stimgen.TORC.envelope_from_record(rp, t), 'AbsTol', 1e-10);
+            end
+        end
+
+        function linearScaleIsTheMeanPlusTheSpectrum(testCase)
+            % EnvelopeScale "Linear": each carrier's amplitude is 1 + S, with
+            % S within +/-ModulationFraction of the mean (Klein et al. 2006,
+            % Section 2.2.3), and the record says so.
+            s = small_('Seed', 4, 'EnvelopeScale', "Linear", 'ModulationFraction', 0.9);
+            s.update_signal();
+            r = s.generation_record();
+            testCase.verifyEqual(r.EnvelopeScale, "Linear");
+            testCase.verifyEqual(r.ModulationFraction, 0.9);
+            testCase.verifyTrue(isnan(r.ModulationDepth));
+            [S, ~, ~] = s.dynamic_spectrum(numel(s.Signal));
+            testCase.verifyEqual(max(abs(S(:))), 0.9, 'RelTol', 1e-12);
+
+            % The waveform rebuilt from the record by the linear rule.
+            testCase.verifyEqual(s.Signal, rebuild_(r, s.Time, @(S) 1 + S), 'AbsTol', 1e-10);
+
+            % An inverse pair's envelopes sum to a constant, twice the mean:
+            % the two stimuli of the inverse-repeat method.
+            n = small_('Seed', 4, 'EnvelopeScale', "Linear", 'EnvelopePolarity', -1);
+            n.update_signal();
+            [Sn, ~, ~] = n.dynamic_spectrum(numel(n.Signal));
+            testCase.verifyEqual((1 + S) + (1 + Sn), 2 * ones(size(S)), 'AbsTol', 1e-10);
+        end
+
+        function dbScaleIsStillTheDefault(testCase)
+            % A TORC that names neither new property is the dB stimulus it
+            % always was: same rule, uninverted.
+            s = small_('Seed', 9);
+            s.update_signal();
+            r = s.generation_record();
+            testCase.verifyEqual(r.EnvelopeScale, "dB");
+            testCase.verifyEqual(r.EnvelopePolarity, 1);
+            testCase.verifyEqual(r.ModulationDepth, 30);
+            testCase.verifyTrue(isnan(r.ModulationFraction));
+            testCase.verifyEqual(s.Signal, rebuild_(r, s.Time, @(S) 10.^(S/20)), 'AbsTol', 1e-10);
+        end
+
+        function newPropertiesSurviveSerialization(testCase)
+            s = small_('Seed', 2, 'RippleDensity', [-0.2 0.2], 'EnvelopePolarity', [1 -1], ...
+                'EnvelopeScale', "Linear", 'ModulationFraction', 0.8);
+            c = stimgen.StimType.fromStruct(s.toStruct());
+            testCase.verifyEqual(c.EnvelopeScale, "Linear");
+            testCase.verifyEqual(c.ModulationFraction, 0.8);
+            testCase.verifyEqual(c.EnvelopePolarity, [1 -1]);
+            s.VariantReselectOnUpdate = false;
+            c.VariantReselectOnUpdate = false;
+            s.set_variant_index(4);
+            c.set_variant_index(4);
+            testCase.verifyEqual(c.Signal, s.Signal);
+        end
+
         function badRecordsAndTimesAreRefused(testCase)
             s = small_();
             testCase.verifyError(@() stimgen.TORC.envelope_from_record(s.generation_record(), 0), ...
@@ -109,4 +186,17 @@ end
 function s = small_(varargin)
 % The default 250 ms, 5-octave TORC at 48 kHz, uncalibrated, few carriers.
 s = stimgen.TORC('Fs', 48000, 'ApplyCalibration', false, 'ComponentsPerOctave', 4, varargin{:});
+end
+
+
+function y = rebuild_(r, t, gain)
+% The rms-normalized waveform a record describes, by the record's rule:
+% sum over carriers of gain(S) times the carrier, for an ungated,
+% uncalibrated TORC.
+[S, ~] = stimgen.TORC.envelope_from_record(r, t);
+y = zeros(1, numel(t));
+for j = 1:numel(r.CarrierFrequencies)
+    y = y + gain(S(j,:)) .* sin(2*pi*r.CarrierFrequencies(j)*t + r.CarrierPhases(j));
+end
+y = y ./ sqrt(mean(y.^2));
 end
